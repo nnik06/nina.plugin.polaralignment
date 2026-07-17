@@ -96,8 +96,11 @@ function Read-TppaStabilityMeasurements {
     try { $rows = @($reader.ReadToEnd() | ConvertFrom-Csv) } finally { $reader.Dispose(); $stream.Dispose() }
     $pattern = 'TPPA fresh 3-point calculated error: Az: (?<az>.*?), Alt: (?<alt>.*?), Tot: (?<tot>.*)$'
     $results = New-Object System.Collections.Generic.List[object]
+    $seenFreshLines = [System.Collections.Generic.HashSet[string]]::new()
     foreach ($row in $rows) {
-        $m = [regex]::Match([string]$row.fresh_error_log_line, $pattern)
+        $freshLine = [string]$row.fresh_error_log_line
+        if (-not $seenFreshLines.Add($freshLine)) { continue }
+        $m = [regex]::Match($freshLine, $pattern)
         $captured = Try-ParseDateTime ([string]$row.captured_local)
         if (-not $m.Success -or $null -eq $captured) { continue }
         $azArcsec = Convert-AngleTextToArcseconds $m.Groups['az'].Value
@@ -277,10 +280,22 @@ if (-not $NinaLogPath) {
 
 $guideCsvs = @(Get-ChildItem -LiteralPath $RunDir -File -Filter "*-phd2-guidesteps.csv" -ErrorAction SilentlyContinue | Sort-Object Name)
 $segments = @($guideCsvs | ForEach-Object { Analyze-GuideCsv -Path $_.FullName })
-$tppaErrors = if ($NinaLogPath) { @(Read-TppaErrors -Path $NinaLogPath) } else { @() }
 $stabilityMeasurementsPath = Join-Path $RunDir "tppa-stability-measurements.csv"
 $stabilityMeasurements = @(Read-TppaStabilityMeasurements -Path $stabilityMeasurementsPath)
 $stabilitySummary = Get-TppaStabilitySummary -Measurements $stabilityMeasurements
+$tppaErrors = if ($NinaLogPath) { @(Read-TppaErrors -Path $NinaLogPath) } else { @() }
+
+$runTimes = New-Object System.Collections.Generic.List[datetime]
+foreach ($measurement in $stabilityMeasurements) { [void]$runTimes.Add($measurement.Time) }
+foreach ($segment in $segments) {
+    if ($null -ne $segment.StartUtc) { [void]$runTimes.Add($segment.StartUtc.ToLocalTime()) }
+    if ($null -ne $segment.EndUtc) { [void]$runTimes.Add($segment.EndUtc.ToLocalTime()) }
+}
+if ($runTimes.Count -gt 0) {
+    $runStart = ($runTimes | Measure-Object -Minimum).Minimum.AddMinutes(-2)
+    $runEnd = ($runTimes | Measure-Object -Maximum).Maximum.AddMinutes(2)
+    $tppaErrors = @($tppaErrors | Where-Object { $null -ne $_.Time -and $_.Time -ge $runStart -and $_.Time -le $runEnd })
+}
 
 $csvOut = Join-Path $RunDir "phd2-drift-summary.csv"
 if ($segments.Count -gt 0) {
@@ -326,9 +341,12 @@ if ($null -eq $stabilitySummary) {
 } else {
     [void]$lines.Add("| Axis | Mean | Sample SD | Peak-to-peak | Linear trend |")
     [void]$lines.Add("| --- | ---: | ---: | ---: | ---: |")
-    [void]$lines.Add("| Azimuth | $('{0:F1}' -f $stabilitySummary.AzMeanArcsec) arcsec | $('{0:F1}' -f $stabilitySummary.AzStdDevArcsec) arcsec | $('{0:F1}' -f $stabilitySummary.AzRangeArcsec) arcsec | $('{0:F1}' -f $stabilitySummary.AzSlopeArcsecPerHour) arcsec/hour |")
-    [void]$lines.Add("| Altitude | $('{0:F1}' -f $stabilitySummary.AltMeanArcsec) arcsec | $('{0:F1}' -f $stabilitySummary.AltStdDevArcsec) arcsec | $('{0:F1}' -f $stabilitySummary.AltRangeArcsec) arcsec | $('{0:F1}' -f $stabilitySummary.AltSlopeArcsecPerHour) arcsec/hour |")
-    [void]$lines.Add("| Total | $('{0:F1}' -f $stabilitySummary.TotalMeanArcsec) arcsec | $('{0:F1}' -f $stabilitySummary.TotalStdDevArcsec) arcsec | $('{0:F1}' -f $stabilitySummary.TotalRangeArcsec) arcsec | $('{0:F1}' -f $stabilitySummary.TotalSlopeArcsecPerHour) arcsec/hour |")
+    $azTrend = if ($null -eq $stabilitySummary.AzSlopeArcsecPerHour) { "n/a" } else { "{0:F1} arcsec/hour" -f $stabilitySummary.AzSlopeArcsecPerHour }
+    $altTrend = if ($null -eq $stabilitySummary.AltSlopeArcsecPerHour) { "n/a" } else { "{0:F1} arcsec/hour" -f $stabilitySummary.AltSlopeArcsecPerHour }
+    $totalTrend = if ($null -eq $stabilitySummary.TotalSlopeArcsecPerHour) { "n/a" } else { "{0:F1} arcsec/hour" -f $stabilitySummary.TotalSlopeArcsecPerHour }
+    [void]$lines.Add("| Azimuth | $('{0:F1}' -f $stabilitySummary.AzMeanArcsec) arcsec | $('{0:F1}' -f $stabilitySummary.AzStdDevArcsec) arcsec | $('{0:F1}' -f $stabilitySummary.AzRangeArcsec) arcsec | $azTrend |")
+    [void]$lines.Add("| Altitude | $('{0:F1}' -f $stabilitySummary.AltMeanArcsec) arcsec | $('{0:F1}' -f $stabilitySummary.AltStdDevArcsec) arcsec | $('{0:F1}' -f $stabilitySummary.AltRangeArcsec) arcsec | $altTrend |")
+    [void]$lines.Add("| Total | $('{0:F1}' -f $stabilitySummary.TotalMeanArcsec) arcsec | $('{0:F1}' -f $stabilitySummary.TotalStdDevArcsec) arcsec | $('{0:F1}' -f $stabilitySummary.TotalRangeArcsec) arcsec | $totalTrend |")
     [void]$lines.Add("")
     [void]$lines.Add("Measurements: $($stabilitySummary.Count) over $('{0:F1}' -f $stabilitySummary.DurationMinutes) minutes.")
 }

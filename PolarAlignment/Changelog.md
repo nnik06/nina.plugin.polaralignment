@@ -1,5 +1,11 @@
 # Changelog
 
+## Version 2.2.6.6
+- Changed Avalon UPAS automation to learn and plan only from independent fresh three-point measurements taken before and after each actuator move.
+- Kept the continuous correction estimate display-only for UPAS automation so projection drift cannot train or steer the actuator response model.
+- Added a fail-closed twelve-move limit for fresh-measured UPAS correction attempts.
+- Hardened fixed-tripod diagnostics against stale fresh-result log markers and duplicate measurement rows.
+
 ## Version 2.2.6.5
 - Added reproducibility context to passive same-solves diagnostics: observation time, latitude, target-pole altitudes and separation, and atmospheric parameters.
 - Kept true/apparent-pole comparison diagnostic-only with no controller or target-selection behavior change.

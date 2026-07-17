@@ -642,7 +642,12 @@ function Wait-NinaFreshDetermination {
             throw "UPAS movement was detected during the fixed-tripod stability test: $($movement[-1])"
         }
 
-        $fresh = @($lines | Where-Object { $_ -match 'TPPA fresh 3-point calculated error:' } | Select-Object -Last 1)
+        $fresh = @($lines | Where-Object {
+            if ($_ -notmatch 'TPPA fresh 3-point calculated error:' -or $_.Length -lt 23) { return $false }
+            $freshStamp = [datetime]::MinValue
+            if (-not [datetime]::TryParse($_.Substring(0, 23), [ref]$freshStamp)) { return $false }
+            return $freshStamp -ge $SinceLocal
+        } | Select-Object -Last 1)
         if ($fresh.Count -gt 0) {
             Log "Fresh TPPA determination captured; stopping before continuous correction: $($fresh[0])"
             Stop-NinaSequence -Base $Base

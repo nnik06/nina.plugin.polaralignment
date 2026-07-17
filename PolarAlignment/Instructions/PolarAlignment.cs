@@ -576,6 +576,9 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                                                                           decSpread.ArcSeconds),
                                                        localCTS.Token);
                     TPAPAVM.PolarErrorDetermination = determination;
+                    if (TPAPAVM.AutomatedAdjustmentRequiresFreshMeasurementFeedback) {
+                        TPAPAVM.RebaseAutomatedAdjustmentToFreshDetermination();
+                    }
 
                     var correctForRefraction = Properties.Settings.Default.RefractionAdjustment;
                     var activeTarget = correctForRefraction ? "true celestial pole" : "refracted apparent pole";
@@ -627,6 +630,8 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
 
                     var sw = Stopwatch.StartNew();
                     var completionGuard = new AutomatedAlignmentCompletionGuard();
+                    var freshFeedbackMoveCount = 0;
+                    const int MaximumFreshFeedbackMoves = 12;
                     do {
                         await WaitIfPaused(localCTS.Token, progress);
 
@@ -704,7 +709,25 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                     sw.Reset();
                                 }
                                 localCTS.Token.ThrowIfCancellationRequested();
-                                await TPAPAVM.MoveCloser(progress, localCTS.Token);
+                                if (TPAPAVM.AutomatedAdjustmentRequiresFreshMeasurementFeedback
+                                    && freshFeedbackMoveCount >= MaximumFreshFeedbackMoves) {
+                                    throw new InvalidOperationException($"UPAS automated alignment stopped after {MaximumFreshFeedbackMoves} fresh-measured moves without converging.");
+                                }
+
+                                var moved = await TPAPAVM.MoveCloser(progress, localCTS.Token);
+                                if (moved && TPAPAVM.AutomatedAdjustmentRequiresFreshMeasurementFeedback) {
+                                    freshFeedbackMoveCount++;
+                                    Logger.Info("UPAS move completed. Measuring an independent fresh three-point response before allowing another automated move.");
+                                    progress?.Report(new ApplicationStatus() { Status = "Measuring fresh three-point UPAS response" });
+
+                                    var feedbackDetermination = await MeasureFreshThreePointCompletionVerification(TPAPAVM,
+                                                                                                                    progress,
+                                                                                                                    localCTS.Token);
+                                    TPAPAVM.PolarErrorDetermination = feedbackDetermination;
+                                    TPAPAVM.UpdateAutomatedAdjustmentFromFreshDetermination();
+                                    Logger.Info($"TPPA fresh post-move response: Az: {feedbackDetermination.InitialMountAxisAzimuthError}, " +
+                                                $"Alt: {feedbackDetermination.InitialMountAxisAltitudeError}, Tot: {feedbackDetermination.InitialMountAxisTotalError}");
+                                }
                             } else {
                                 Logger.Warning("Skipping error publication and automated correction because the continuous estimate was unstable.");
                             }

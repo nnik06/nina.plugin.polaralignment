@@ -60,6 +60,8 @@ namespace NINA.Plugins.PolarAlignment {
         private bool upasResponseMemorySeeded;
 
         public bool AutomatedAdjustmentRequiresCompletionValidation => automatedAdjustmentController.RequiresCompletionValidation;
+        public bool AutomatedAdjustmentRequiresFreshMeasurementFeedback =>
+            ActiveAlignmentSystemVM is NINA.Plugins.PolarAlignment.Avalon.UniversalPolarAlignmentVM;
 
         public void RebaseAutomatedAdjustmentToFreshDetermination() {
             if (PolarErrorDetermination == null) {
@@ -69,6 +71,18 @@ namespace NINA.Plugins.PolarAlignment {
             ConfigureAutomatedAdjustmentControllerForActiveSystem();
             automatedAdjustmentController.RebaseObservation(PolarErrorDetermination.InitialMountAxisAzimuthError.Degree,
                                                              PolarErrorDetermination.InitialMountAxisAltitudeError.Degree);
+            lastContinuousEstimateStable = true;
+        }
+
+        public void UpdateAutomatedAdjustmentFromFreshDetermination() {
+            if (PolarErrorDetermination == null) {
+                return;
+            }
+
+            ConfigureAutomatedAdjustmentControllerForActiveSystem();
+            automatedAdjustmentController.UpdateObservation(PolarErrorDetermination.InitialMountAxisAzimuthError.Degree,
+                                                             PolarErrorDetermination.InitialMountAxisAltitudeError.Degree);
+            PersistUpasAzimuthResponseMemory();
             lastContinuousEstimateStable = true;
         }
 
@@ -208,7 +222,9 @@ namespace NINA.Plugins.PolarAlignment {
                                                     ArcsecPerPix,
                                                     refractionParams),
                                          token);
-            ApplyErrorDetailComputation(overlay, updateAutomatedAdjustmentController: !useContinuousErrorEstimator);
+            ApplyErrorDetailComputation(overlay,
+                                        updateAutomatedAdjustmentController: !useContinuousErrorEstimator
+                                            && !AutomatedAdjustmentRequiresFreshMeasurementFeedback);
             WaitingForUpdate = false;
             return estimateStable;
         }
@@ -314,28 +330,28 @@ namespace NINA.Plugins.PolarAlignment {
             Logger.Info($"Persisted UPAS azimuth response memory: Az/X={Math.Round(azimuthDeltaPerXUnit * 60.0, 4)}'/unit, ReverseAzimuth={Properties.Settings.Default.AvalonReverseAzimuth}.");
         }
 
-        public async Task MoveCloser(IProgress<ApplicationStatus> progress, CancellationToken token) {
+        public async Task<bool> MoveCloser(IProgress<ApplicationStatus> progress, CancellationToken token) {
             var activeSystem = ActiveAlignmentSystemVM;
-            if (activeSystem == null || !activeSystem.DoAutomatedAdjustments) { return; }
+            if (activeSystem == null || !activeSystem.DoAutomatedAdjustments) { return false; }
 
             ConfigureAutomatedAdjustmentControllerForActiveSystem();
             var useContinuousErrorEstimator = UseContinuousErrorEstimator;
 
             if (useContinuousErrorEstimator && !lastContinuousEstimateStable) {
                 progress?.Report(new ApplicationStatus() { Status = "Skipping automated adjustment because the continuous error estimate is unstable." });
-                return;
+                return false;
             }
 
             if (PolarErrorDetermination.CurrentCorrectionFieldNearEastWest) {
                 Logger.Info("Skipping automated adjustment because the current correction field is too close to exact east or west.");
                 progress?.Report(new ApplicationStatus() { Status = "Skipping automated adjustment because the current correction field is too close to exact east or west." });
-                return;
+                return false;
             }
 
             var plan = automatedAdjustmentController.CreatePlan();
             if (!plan.HasMovement) {
                 progress?.Report(new ApplicationStatus() { Status = plan.Reason });
-                return;
+                return false;
             }
 
             progress?.Report(new ApplicationStatus() {
@@ -348,7 +364,7 @@ namespace NINA.Plugins.PolarAlignment {
             if (Math.Abs(plan.XMagnitude) > 0) {
                 if (!await activeSystem.TryNudgeXForAutomation((float)plan.XMagnitude, token)) {
                     automatedAdjustmentController.NoteFailedExecution();
-                    return;
+                    return false;
                 }
                 executedX = plan.XMagnitude;
             }
@@ -361,17 +377,18 @@ namespace NINA.Plugins.PolarAlignment {
                                                                                                            plan.IsProbe,
                                                                                                            $"{plan.Reason} (partial X move)"));
                         await CoreUtil.Wait(TimeSpan.FromSeconds(activeSystem.AutomatedAdjustmentSettleTime), token, progress, "Settling");
-                        return;
+                        return true;
                     }
 
                     automatedAdjustmentController.NoteFailedExecution();
-                    return;
+                    return false;
                 }
                 executedY = plan.YMagnitude;
             }
 
             automatedAdjustmentController.NoteSuccessfulExecution(new AutomatedAdjustmentPlan(executedX, executedY, plan.IsProbe, plan.Reason));
             await CoreUtil.Wait(TimeSpan.FromSeconds(activeSystem.AutomatedAdjustmentSettleTime), token, progress, "Settling");
+            return true;
         }
 
         internal sealed class ErrorDetailComputation {
