@@ -661,7 +661,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
 
                                     Logger.Info($"TPPA completion-verification fresh 3-point calculated error: Az: {verificationDetermination.InitialMountAxisAzimuthError}, Alt: {verificationDetermination.InitialMountAxisAltitudeError}, Tot: {verificationDetermination.InitialMountAxisTotalError}");
                                     if (freshDecision == AutomatedAlignmentCompletionDecision.AbortAfterFreshVerificationFailures) {
-                                        throw new InvalidOperationException($"Fresh three-point completion verification remained above the selected {AlignmentTolerance}' tolerance on two attempts. Automated alignment was stopped to prevent repeated verification slews.");
+                                        throw new InvalidOperationException($"Fresh three-point completion verification was above the selected {AlignmentTolerance}' tolerance. Automated alignment was stopped immediately because correction-frame feedback did not agree with an independent measurement.");
                                     } else if (freshDecision == AutomatedAlignmentCompletionDecision.Finish) {
                                         Logger.Info($"Fresh three-point verification is below alignment tolerance ({AlignmentTolerance}'). " +
                                             $"Altitude Error: {Math.Round(verificationDetermination.InitialMountAxisAltitudeError.ArcMinutes, 2)}'. " +

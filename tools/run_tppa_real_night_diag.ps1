@@ -1,4 +1,4 @@
-$stopAt = (Get-Date).Date.AddHours(4)
+$stopAt = (Get-Date).Date.AddHours(4).AddMinutes(20)
 if ((Get-Date) -ge $stopAt) { $stopAt = $stopAt.AddDays(1) }
 
 & "$env:USERPROFILE\Documents\tppa_phd2_supervisor.ps1" `

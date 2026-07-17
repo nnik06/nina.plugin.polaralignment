@@ -13,7 +13,7 @@ namespace NINA.Plugins.PolarAlignment {
     /// that the result is repeatable.
     /// </summary>
     internal sealed class AutomatedAlignmentCompletionGuard {
-        private const int MaximumFailedFreshVerifications = 2;
+        private const int MaximumFailedFreshVerifications = 1;
         private int consecutiveBelowToleranceObservations;
         private int failedFreshVerifications;
 

@@ -52,22 +52,9 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
-        public void AutomatedAlignmentCompletionGuard_FailedFreshVerificationRestartsContinuousValidation() {
+        public void AutomatedAlignmentCompletionGuard_FailedFreshVerificationAbortsImmediately() {
             var guard = new AutomatedAlignmentCompletionGuard();
 
-            guard.Evaluate(0.8, 1.0).Should().Be(AutomatedAlignmentCompletionDecision.ValidateWithoutMoving);
-            guard.Evaluate(0.8, 1.0).Should().Be(AutomatedAlignmentCompletionDecision.VerifyFreshThreePoint);
-            guard.EvaluateFreshVerification(1.1, 1.0).Should().Be(AutomatedAlignmentCompletionDecision.ContinueCorrection);
-            guard.Evaluate(0.8, 1.0).Should().Be(AutomatedAlignmentCompletionDecision.ValidateWithoutMoving);
-        }
-
-        [Test]
-        public void AutomatedAlignmentCompletionGuard_AbortsAfterSecondFailedFreshVerification() {
-            var guard = new AutomatedAlignmentCompletionGuard();
-
-            guard.Evaluate(0.8, 1.0).Should().Be(AutomatedAlignmentCompletionDecision.ValidateWithoutMoving);
-            guard.Evaluate(0.8, 1.0).Should().Be(AutomatedAlignmentCompletionDecision.VerifyFreshThreePoint);
-            guard.EvaluateFreshVerification(1.1, 1.0).Should().Be(AutomatedAlignmentCompletionDecision.ContinueCorrection);
             guard.Evaluate(0.8, 1.0).Should().Be(AutomatedAlignmentCompletionDecision.ValidateWithoutMoving);
             guard.Evaluate(0.8, 1.0).Should().Be(AutomatedAlignmentCompletionDecision.VerifyFreshThreePoint);
             guard.EvaluateFreshVerification(1.1, 1.0).Should().Be(AutomatedAlignmentCompletionDecision.AbortAfterFreshVerificationFailures);
