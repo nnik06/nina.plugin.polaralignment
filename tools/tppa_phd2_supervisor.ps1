@@ -417,8 +417,34 @@ function Load-NinaSequence {
     Log "NINA sequence load response: $($loadResponse.Response)"
 }
 
+function Wait-NinaSequenceIdle {
+    param([string]$Base, [int]$TimeoutSeconds = 45)
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    $consecutiveIdleReads = 0
+    while ((Get-Date) -lt $deadline) {
+        try {
+            $state = Invoke-Nina -Base $Base -Path "/sequence/state" -TimeoutSec 5
+            $statuses = @(Get-NinaSequenceStatuses -Node $state.Response)
+            if ($statuses.Count -gt 0 -and -not ($statuses -contains "RUNNING")) {
+                $consecutiveIdleReads += 1
+                if ($consecutiveIdleReads -ge 2) { return $true }
+            } else {
+                $consecutiveIdleReads = 0
+            }
+        } catch {
+            $consecutiveIdleReads = 0
+            Log "Waiting for NINA sequence state to settle: $($_.Exception.Message)"
+        }
+        Start-Sleep -Seconds 2
+    }
+    return $false
+}
+
 function Start-NinaSequence {
     param([string]$Base)
+    if (-not (Wait-NinaSequenceIdle -Base $Base)) {
+        throw "NINA sequence state did not become idle before the next start."
+    }
     if ($SequencePath) {
         Load-NinaSequence -Base $Base
     } else {
