@@ -54,7 +54,7 @@ namespace NINA.Plugins.PolarAlignment.OAPA {
             }
         }
 
-        [GeneratedRegex(@"<(?<status>\w+)\|MPos:(?<x>[+-]?\d+(\.\d+)?),(?<y>[+-]?\d+(\.\d+)?),(?<z>[+-]?\d+(\.\d+)?)(?:\|T:(?<target>[+-]?\d+),R:(?<running>[01]),E:(?<endstop>[01]),S:(?<speed>[+-]?\d+(\.\d+)?))?\|>")]
-        private static partial Regex StatusRegex();
+        [GeneratedRegex(@"<(?<status>[^|>]+)\|(?:MPos|WPos):(?<x>[+-]?(?:\d+(?:\.\d*)?|\.\d+)),(?<y>[+-]?(?:\d+(?:\.\d*)?|\.\d+)),(?<z>[+-]?(?:\d+(?:\.\d*)?|\.\d+))(?:\|T:(?<target>[+-]?\d+),R:(?<running>[01]),E:(?<endstop>[01]),S:(?<speed>[+-]?(?:\d+(?:\.\d*)?|\.\d+)))?\|>")]
+        internal static partial Regex StatusRegex();
     }
 }

@@ -358,6 +358,114 @@ namespace NINA.Plugins.PolarAlignment.Properties {
                 this["AvalonReverseAltitude"] = value;
             }
         }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("0")]
+        public double AvalonRememberedAzimuthResponsePerUnit {
+            get {
+                return ((double)(this["AvalonRememberedAzimuthResponsePerUnit"]));
+            }
+            set {
+                this["AvalonRememberedAzimuthResponsePerUnit"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("False")]
+        public bool AvalonRememberedAzimuthResponseReverseAzimuth {
+            get {
+                return ((bool)(this["AvalonRememberedAzimuthResponseReverseAzimuth"]));
+            }
+            set {
+                this["AvalonRememberedAzimuthResponseReverseAzimuth"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("False")]
+        public bool AvalonPreSeatAzimuthBeforeMeasurement {
+            get {
+                return ((bool)(this["AvalonPreSeatAzimuthBeforeMeasurement"]));
+            }
+            set {
+                this["AvalonPreSeatAzimuthBeforeMeasurement"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("24")]
+        public double AvalonAzimuthPreSeatUnits {
+            get {
+                return ((double)(this["AvalonAzimuthPreSeatUnits"]));
+            }
+            set {
+                this["AvalonAzimuthPreSeatUnits"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("1")]
+        public int AvalonAzimuthPreSeatDirection {
+            get {
+                return ((int)(this["AvalonAzimuthPreSeatDirection"]));
+            }
+            set {
+                this["AvalonAzimuthPreSeatDirection"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("False")]
+        public bool AvalonAzimuthTravelGuardEnabled {
+            get {
+                return ((bool)(this["AvalonAzimuthTravelGuardEnabled"]));
+            }
+            set {
+                this["AvalonAzimuthTravelGuardEnabled"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("False")]
+        public bool AvalonAzimuthTravelGuardConfirmed {
+            get {
+                return ((bool)(this["AvalonAzimuthTravelGuardConfirmed"]));
+            }
+            set {
+                this["AvalonAzimuthTravelGuardConfirmed"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("2")]
+        public double AvalonAzimuthTravelLimitDegrees {
+            get {
+                return ((double)(this["AvalonAzimuthTravelLimitDegrees"]));
+            }
+            set {
+                this["AvalonAzimuthTravelLimitDegrees"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("0.025")]
+        public double AvalonAzimuthDegreesPerNudgeUnit {
+            get {
+                return ((double)(this["AvalonAzimuthDegreesPerNudgeUnit"]));
+            }
+            set {
+                this["AvalonAzimuthDegreesPerNudgeUnit"] = value;
+            }
+        }
         
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]

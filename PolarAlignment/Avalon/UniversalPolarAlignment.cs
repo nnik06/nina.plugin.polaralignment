@@ -1,4 +1,4 @@
-﻿using System.Text.RegularExpressions;
+using System.Text.RegularExpressions;
 
 namespace NINA.Plugins.PolarAlignment.Avalon {
     public partial class UniversalPolarAlignment : UniversalPolarAlignmentBase {
@@ -12,7 +12,7 @@ namespace NINA.Plugins.PolarAlignment.Avalon {
 
         protected override Regex GetStatusRegex() => StatusRegex();
 
-        [GeneratedRegex(@"<(?<status>\w+)\|MPos:(?<x>[+-]?\d+(\.\d+)?),(?<y>[+-]?\d+(\.\d+)?),(?<z>[+-]?\d+(\.\d+)?)\|")]
-        private static partial Regex StatusRegex();
+        [GeneratedRegex(@"<(?<status>[^|>]+)\|(?:MPos|WPos):(?<x>[+-]?(?:\d+(?:\.\d*)?|\.\d+)),(?<y>[+-]?(?:\d+(?:\.\d*)?|\.\d+)),(?<z>[+-]?(?:\d+(?:\.\d*)?|\.\d+))\|")]
+        internal static partial Regex StatusRegex();
     }
 }

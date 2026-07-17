@@ -11,6 +11,7 @@
     xmlns:ns="clr-namespace:NINA.Core.Locale;assembly=NINA.Core"
     xmlns:properties="clr-namespace:NINA.Plugins.PolarAlignment.Properties"
     xmlns:rules="clr-namespace:NINA.Core.Utility.ValidationRules;assembly=NINA.Core"
+    xmlns:s="clr-namespace:System;assembly=mscorlib"
     xmlns:util="clr-namespace:NINA.Core.Utility;assembly=NINA.Core"
     xmlns:xceed="http://schemas.xceed.com/wpf/xaml/toolkit">
     <converter:InverseCollectionContainsItemsToVisibilityConverter x:Key="InverseCollectionContainsItemsToVisibilityConverter" />
@@ -18,6 +19,12 @@
     <converter:InverseBooleanToVisibilityCollapsedConverter x:Key="InverseBooleanToVisibilityCollapsedConverter" />
     <converter:BooleanToVisibilityCollapsedConverter x:Key="BooleanToVisibilityCollapsedConverter" />
     <converter:CameraDefaultValueConverter x:Key="CameraDefaultValueConverter" />
+    <s:String x:Key="UpasPreSeatAzimuthToolTip">When enabled for UPAS automated adjustment, TPPA sends one azimuth X move before the first plate solve to seat the mechanism in a known direction. This requires the UPAS visual-marker travel guard to be enabled and confirmed.</s:String>
+    <s:String x:Key="UpasAzimuthPreSeatUnitsToolTip">Logical UPAS X nudge units used by the optional pre-seat move before the first plate solve.</s:String>
+    <s:String x:Key="UpasAzimuthTravelGuardToolTip">Enables a conservative run budget for automated UPAS azimuth X movement, based on the visual marker and scale rather than GRBL motor position.</s:String>
+    <s:String x:Key="UpasAzimuthTravelLimitToolTip">Maximum cumulative automated UPAS azimuth X travel allowed for this TPPA run, in estimated marker degrees from the visually checked starting position.</s:String>
+    <s:String x:Key="UpasAzimuthTravelConfirmToolTip">Confirms that you visually checked the UPAS azimuth marker and that the selected travel limit is safely available.</s:String>
+    <s:String x:Key="UpasAzimuthDegreesPerUnitToolTip">Estimated physical UPAS azimuth marker degrees per logical X nudge unit. Default 0.025 means 30 units consumes about 0.75 degrees of travel budget.</s:String>
 
     <DataTemplate x:Key="PolarAlignmentInstructionSettings">
         <StackPanel x:Name="PART_StackPanel" Orientation="Vertical">
@@ -176,13 +183,81 @@
                             <TextBlock Text="Setting the Polar Alignment Tolerance to non-zero will specify a tolerance in arcminutes where the polar alignment routine automatically completes when below the threshold" />
                         </TextBlock.ToolTip>
                     </TextBlock>
-                    <ninactrl:UnitTextBox
+                    <TextBox
                         MinWidth="40"
                         Margin="5,0,0,0"
                         VerticalAlignment="Center"
-                        Text="{Binding AlignmentTolerance, UpdateSourceTrigger=PropertyChanged}"
-                        Unit="arcmin" />
+                        Text="{Binding AlignmentTolerance, UpdateSourceTrigger=LostFocus}" />
+                    <TextBlock
+                        Margin="3,0,0,0"
+                        VerticalAlignment="Center"
+                        Text="arcmin" />
                 </StackPanel>
+            </WrapPanel>
+
+            <WrapPanel
+                Margin="0,5,0,0"
+                Orientation="Horizontal"
+                Visibility="{Binding ShowUpasRunSettings, Converter={StaticResource BooleanToVisibilityCollapsedConverter}}">
+                <TextBlock
+                    VerticalAlignment="Center"
+                    Text="UPAS travel guard"
+                    ToolTip="{StaticResource UpasAzimuthTravelGuardToolTip}" />
+                <CheckBox
+                    Margin="5,0,10,0"
+                    VerticalAlignment="Center"
+                    IsChecked="{Binding UniversalPolarAlignmentVM.AzimuthTravelGuardEnabled, UpdateSourceTrigger=PropertyChanged}"
+                    ToolTip="{StaticResource UpasAzimuthTravelGuardToolTip}" />
+                <TextBlock
+                    VerticalAlignment="Center"
+                    Text="Limit"
+                    ToolTip="{StaticResource UpasAzimuthTravelLimitToolTip}" />
+                <ninactrl:UnitTextBox
+                    MinWidth="55"
+                    Margin="5,0,10,0"
+                    VerticalAlignment="Center"
+                    Text="{Binding UniversalPolarAlignmentVM.AzimuthTravelLimitDegrees, UpdateSourceTrigger=LostFocus}"
+                    ToolTip="{StaticResource UpasAzimuthTravelLimitToolTip}"
+                    Unit="deg" />
+                <TextBlock
+                    VerticalAlignment="Center"
+                    Text="Marker checked"
+                    ToolTip="{StaticResource UpasAzimuthTravelConfirmToolTip}" />
+                <CheckBox
+                    Margin="5,0,10,0"
+                    VerticalAlignment="Center"
+                    IsChecked="{Binding UniversalPolarAlignmentVM.AzimuthTravelGuardConfirmed, UpdateSourceTrigger=PropertyChanged}"
+                    ToolTip="{StaticResource UpasAzimuthTravelConfirmToolTip}" />
+                <TextBlock
+                    VerticalAlignment="Center"
+                    Text="deg/unit"
+                    ToolTip="{StaticResource UpasAzimuthDegreesPerUnitToolTip}" />
+                <ninactrl:UnitTextBox
+                    MinWidth="55"
+                    Margin="5,0,10,0"
+                    VerticalAlignment="Center"
+                    Text="{Binding UniversalPolarAlignmentVM.AzimuthDegreesPerNudgeUnit, UpdateSourceTrigger=LostFocus}"
+                    ToolTip="{StaticResource UpasAzimuthDegreesPerUnitToolTip}" />
+                <TextBlock
+                    VerticalAlignment="Center"
+                    Text="Pre-seat"
+                    ToolTip="{StaticResource UpasPreSeatAzimuthToolTip}" />
+                <CheckBox
+                    Margin="5,0,10,0"
+                    VerticalAlignment="Center"
+                    IsChecked="{Binding UniversalPolarAlignmentVM.PreSeatAzimuthBeforeMeasurement, UpdateSourceTrigger=PropertyChanged}"
+                    ToolTip="{StaticResource UpasPreSeatAzimuthToolTip}" />
+                <TextBlock
+                    VerticalAlignment="Center"
+                    Text="Pre-seat units"
+                    ToolTip="{StaticResource UpasAzimuthPreSeatUnitsToolTip}" />
+                <ninactrl:UnitTextBox
+                    MinWidth="55"
+                    Margin="5,0,0,0"
+                    VerticalAlignment="Center"
+                    Text="{Binding UniversalPolarAlignmentVM.AzimuthPreSeatUnits, UpdateSourceTrigger=LostFocus}"
+                    ToolTip="{StaticResource UpasAzimuthPreSeatUnitsToolTip}"
+                    Unit="steps" />
             </WrapPanel>
 
             <WrapPanel Margin="0,5,0,0" Orientation="Horizontal">

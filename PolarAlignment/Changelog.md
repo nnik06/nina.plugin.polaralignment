@@ -1,5 +1,14 @@
 # Changelog
 
+## Version 2.2.6.3
+- Hardened UPAS/OAPA serial status parsing and command acknowledgement handling on slow or lossy links.
+- Improved automated adjustment learning so sub-noise probes do not poison the response model.
+- Improved automated correction scoring to avoid sacrificing an already-solved axis for a small cross-axis improvement.
+- Prevented reference-star selection from feeding false motion samples into automated adjustment learning.
+- Required two consecutive correction solves inside the selected tolerance before automatic completion, holding the adjustment system fixed between them.
+- Interpreted the selected tolerance strictly as the total polar-error vector; per-axis values remain diagnostics and no longer provide an alternate completion condition.
+- Prevented a worsening UPAS zero crossing from poisoning remembered azimuth response gain while preserving engagement and recovery-direction evidence.
+- Excluded the runtime TPPA image from JSON serialization to keep Advanced API sequence-state responses bounded.
 ## Version 2.2.6.2
 - Fixed TPPA cancellation during plate solving so skipping the sequence item does not surface ASTAP sidecar cleanup errors.
 

@@ -1,4 +1,4 @@
-﻿using Accord.Math;
+using Accord.Math;
 using Accord.Math.Geometry;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -57,10 +57,12 @@ namespace NINA.Plugins.PolarAlignment {
 
         private readonly AutomatedAdjustmentController automatedAdjustmentController = new AutomatedAdjustmentController();
         private bool lastContinuousEstimateStable = true;
+        private bool upasResponseMemorySeeded;
 
         public void ActivateFirstStep() {
             automatedAdjustmentController.Reset();
             lastContinuousEstimateStable = true;
+            upasResponseMemorySeeded = false;
             Steps[0].Active = true;
             Steps[0].Relevant = true;
         }
@@ -121,7 +123,7 @@ namespace NINA.Plugins.PolarAlignment {
                                                         ArcsecPerPix,
                                                         refractionParams),
                                              token);
-                ApplyErrorDetailComputation(overlay);
+                ApplyErrorDetailComputation(overlay, updateAutomatedAdjustmentController: false);
             } catch (Exception ex) {
                 Logger.Error("An error occurred during selection of new reference star", ex);
                 Notification.ShowWarning("Failed to determine new reference star on current image");
@@ -136,6 +138,7 @@ namespace NINA.Plugins.PolarAlignment {
             var refractionParams = RefractionParameters.GetRefractionParameters(weatherDataMediator.GetInfo());
             PolarErrorDetermination.UpdateCurrentCorrectionFieldWarnings(refractionParams);
             var useContinuousErrorEstimator = UseContinuousErrorEstimator;
+            LogTimingDiagnostic("TPPA update", PolarErrorDetermination, psr, useContinuousErrorEstimator);
             var estimateStable = true;
 
             if (useContinuousErrorEstimator) {
@@ -153,6 +156,7 @@ namespace NINA.Plugins.PolarAlignment {
                     PolarErrorDetermination.CurrentMountAxisAltitudeError = Angle.ByDegree(estimate.AltitudeErrorDegrees);
                     PolarErrorDetermination.CurrentMountAxisTotalError = Angle.ByDegree(Accord.Math.Tools.Hypotenuse(estimate.AzimuthErrorDegrees, estimate.AltitudeErrorDegrees));
                     automatedAdjustmentController.UpdateObservation(estimate.AzimuthErrorDegrees, estimate.AltitudeErrorDegrees);
+                    PersistUpasAzimuthResponseMemory();
                     lastContinuousEstimateStable = true;
                 } else {
                     Logger.Warning($"Continuous polar error estimate was unstable. Condition number: {estimate.ConditionNumber}; residual: {estimate.ResidualArcSeconds}\"");
@@ -185,15 +189,117 @@ namespace NINA.Plugins.PolarAlignment {
                                                     ArcsecPerPix,
                                                     refractionParams),
                                          token);
-            ApplyErrorDetailComputation(overlay);
+            ApplyErrorDetailComputation(overlay, updateAutomatedAdjustmentController: !useContinuousErrorEstimator);
             WaitingForUpdate = false;
             return estimateStable;
+        }
+
+
+        public async Task PrepareUpasBeforeInitialMeasurement(IProgress<ApplicationStatus> progress, CancellationToken token) {
+            ConfigureAutomatedAdjustmentControllerForActiveSystem();
+
+            if (ActiveAlignmentSystemVM is not NINA.Plugins.PolarAlignment.Avalon.UniversalPolarAlignmentVM upas
+                || !upas.DoAutomatedAdjustments
+                || !Properties.Settings.Default.AvalonPreSeatAzimuthBeforeMeasurement) {
+                return;
+            }
+
+            var units = Math.Abs(Properties.Settings.Default.AvalonAzimuthPreSeatUnits);
+            if (units <= 0) {
+                return;
+            }
+
+            if (!Properties.Settings.Default.AvalonAzimuthTravelGuardEnabled
+                || !Properties.Settings.Default.AvalonAzimuthTravelGuardConfirmed) {
+                Logger.Warning("Skipping UPAS azimuth pre-seat because the visual-marker travel guard is not enabled and confirmed.");
+                progress?.Report(new ApplicationStatus() { Status = "Skipping UPAS azimuth pre-seat: confirm visual travel guard first" });
+                return;
+            }
+
+            if (!upas.Connected) {
+                progress?.Report(new ApplicationStatus() { Status = "Connecting UPAS before azimuth pre-seat" });
+                await upas.Connect();
+            }
+
+            if (!upas.Connected) {
+                throw new InvalidOperationException("Unable to connect to UPAS before azimuth pre-seat.");
+            }
+
+            var direction = Properties.Settings.Default.AvalonAzimuthPreSeatDirection < 0 ? -1 : 1;
+            var command = direction * units;
+            if (!automatedAdjustmentController.CanExecuteAzimuthTravel(command, out var guardReason)) {
+                Logger.Warning($"Skipping UPAS azimuth pre-seat. {guardReason}");
+                progress?.Report(new ApplicationStatus() { Status = guardReason });
+                return;
+            }
+
+            Logger.Info($"Pre-seating UPAS azimuth before initial TPPA measurement. Logical X command: {Math.Round(command, 3)}.");
+            progress?.Report(new ApplicationStatus() { Status = $"Pre-seating UPAS azimuth X {Math.Round(command, 1)}" });
+
+            if (!await upas.TryNudgeXForAutomation((float)command, token)) {
+                throw new InvalidOperationException("UPAS azimuth pre-seat move failed.");
+            }
+
+            automatedAdjustmentController.NoteExternalAzimuthTravel(command, "UPAS azimuth pre-seat");
+            automatedAdjustmentController.SeedXSeating(direction);
+            await CoreUtil.Wait(TimeSpan.FromSeconds(upas.AutomatedAdjustmentSettleTime), token, progress, "Settling after UPAS azimuth pre-seat");
+        }
+
+        private void ConfigureAutomatedAdjustmentControllerForActiveSystem() {
+            var useUpasController = ActiveAlignmentSystemVM is NINA.Plugins.PolarAlignment.Avalon.UniversalPolarAlignmentVM;
+            automatedAdjustmentController.UseUpasEngagementController = useUpasController;
+            automatedAdjustmentController.AzimuthTravelGuardEnabled = useUpasController && Properties.Settings.Default.AvalonAzimuthTravelGuardEnabled;
+            automatedAdjustmentController.AzimuthTravelGuardConfirmed = Properties.Settings.Default.AvalonAzimuthTravelGuardConfirmed;
+            automatedAdjustmentController.AzimuthTravelLimitDegrees = Properties.Settings.Default.AvalonAzimuthTravelLimitDegrees;
+            automatedAdjustmentController.AzimuthDegreesPerXUnit = Properties.Settings.Default.AvalonAzimuthDegreesPerNudgeUnit;
+
+            if (!useUpasController) {
+                upasResponseMemorySeeded = false;
+                return;
+            }
+
+            if (upasResponseMemorySeeded) {
+                return;
+            }
+
+            upasResponseMemorySeeded = true;
+            var rememberedResponse = Properties.Settings.Default.AvalonRememberedAzimuthResponsePerUnit;
+            if (Math.Abs(rememberedResponse) <= 0) {
+                return;
+            }
+
+            if (Properties.Settings.Default.AvalonRememberedAzimuthResponseReverseAzimuth != Properties.Settings.Default.AvalonReverseAzimuth) {
+                Logger.Info("Clearing remembered UPAS Az/X response because the azimuth reversal setting changed.");
+                Properties.Settings.Default.AvalonRememberedAzimuthResponsePerUnit = 0;
+                CoreUtil.SaveSettings(Properties.Settings.Default);
+                return;
+            }
+
+            automatedAdjustmentController.SeedUpasAzimuthResponseMemory(rememberedResponse);
+        }
+
+        private void PersistUpasAzimuthResponseMemory() {
+            if (!automatedAdjustmentController.UseUpasEngagementController
+                || !automatedAdjustmentController.TryGetTrustedXAzimuthResponse(out var azimuthDeltaPerXUnit)) {
+                return;
+            }
+
+            if (Math.Abs(Properties.Settings.Default.AvalonRememberedAzimuthResponsePerUnit - azimuthDeltaPerXUnit) < 1e-9
+                && Properties.Settings.Default.AvalonRememberedAzimuthResponseReverseAzimuth == Properties.Settings.Default.AvalonReverseAzimuth) {
+                return;
+            }
+
+            Properties.Settings.Default.AvalonRememberedAzimuthResponsePerUnit = azimuthDeltaPerXUnit;
+            Properties.Settings.Default.AvalonRememberedAzimuthResponseReverseAzimuth = Properties.Settings.Default.AvalonReverseAzimuth;
+            CoreUtil.SaveSettings(Properties.Settings.Default);
+            Logger.Info($"Persisted UPAS azimuth response memory: Az/X={Math.Round(azimuthDeltaPerXUnit * 60.0, 4)}'/unit, ReverseAzimuth={Properties.Settings.Default.AvalonReverseAzimuth}.");
         }
 
         public async Task MoveCloser(IProgress<ApplicationStatus> progress, CancellationToken token) {
             var activeSystem = ActiveAlignmentSystemVM;
             if (activeSystem == null || !activeSystem.DoAutomatedAdjustments) { return; }
 
+            ConfigureAutomatedAdjustmentControllerForActiveSystem();
             var useContinuousErrorEstimator = UseContinuousErrorEstimator;
 
             if (useContinuousErrorEstimator && !lastContinuousEstimateStable) {
@@ -201,7 +307,8 @@ namespace NINA.Plugins.PolarAlignment {
                 return;
             }
 
-            if (useContinuousErrorEstimator && PolarErrorDetermination.CurrentCorrectionFieldNearEastWest) {
+            if (PolarErrorDetermination.CurrentCorrectionFieldNearEastWest) {
+                Logger.Info("Skipping automated adjustment because the current correction field is too close to exact east or west.");
                 progress?.Report(new ApplicationStatus() { Status = "Skipping automated adjustment because the current correction field is too close to exact east or west." });
                 return;
             }
@@ -220,7 +327,7 @@ namespace NINA.Plugins.PolarAlignment {
             var executedY = 0.0;
 
             if (Math.Abs(plan.XMagnitude) > 0) {
-                if (!await activeSystem.TryNudgeX((float)plan.XMagnitude, token)) {
+                if (!await activeSystem.TryNudgeXForAutomation((float)plan.XMagnitude, token)) {
                     automatedAdjustmentController.NoteFailedExecution();
                     return;
                 }
@@ -269,6 +376,7 @@ namespace NINA.Plugins.PolarAlignment {
                                                                           double arcsecPerPix,
                                                                           RefractionParameters refractionParams) {
             var currentCenter = determination.CurrentReferenceFrame;
+            LogOverlayProjectionTiming("TPPA legacy overlay", determination, currentCenter);
             var originPixel = determination.InitialReferenceFrame.Coordinates.XYProjection(currentCenter.Coordinates,
                                                                                            center,
                                                                                            arcsecPerPix,
@@ -362,6 +470,7 @@ namespace NINA.Plugins.PolarAlignment {
                                                                     double arcsecPerPix,
                                                                     RefractionParameters refractionParams) {
             var currentCenter = determination.CurrentReferenceFrame;
+            LogOverlayProjectionTiming("TPPA continuous overlay", determination, currentCenter);
             var originPixel = determination.InitialReferenceFrame.Coordinates.XYProjection(currentCenter.Coordinates,
                                                                                            center,
                                                                                            arcsecPerPix,
@@ -445,14 +554,57 @@ namespace NINA.Plugins.PolarAlignment {
         private static double GetProjectionAngle(PlateSolveResult plateSolveResult) => plateSolveResult.Orientation;
 #pragma warning restore CS0618
 
-        private void ApplyErrorDetailComputation(ErrorDetailComputation overlay) {
+        private static void LogTimingDiagnostic(string context, PolarErrorDetermination determination, PlateSolveResult currentFrame, bool useContinuousErrorEstimator) {
+            if (determination == null) {
+                return;
+            }
+
+            var initialTime = GetCoordinateTime(determination.InitialReferenceFrame);
+            var currentTime = GetCoordinateTime(currentFrame);
+            Logger.Info($"{context} timing: continuousEstimator={useContinuousErrorEstimator}; initialSolveUtc={FormatDiagnosticTime(initialTime)}; currentSolveUtc={FormatDiagnosticTime(currentTime)}; solveElapsedSeconds={FormatDiagnosticDeltaSeconds(initialTime, currentTime)}; wallClockUtc={DateTime.UtcNow:O}");
+        }
+
+        private static void LogOverlayProjectionTiming(string context, PolarErrorDetermination determination, PlateSolveResult currentFrame) {
+            if (determination == null) {
+                return;
+            }
+
+            var initialTime = GetCoordinateTime(determination.InitialReferenceFrame);
+            var currentTime = GetCoordinateTime(currentFrame);
+            Logger.Info($"{context} projection timing: initialSolveUtc={FormatDiagnosticTime(initialTime)}; currentSolveUtc={FormatDiagnosticTime(currentTime)}; solveElapsedSeconds={FormatDiagnosticDeltaSeconds(initialTime, currentTime)}; destinationProjectionTime=initial-reference-frame; wallClockUtc={DateTime.UtcNow:O}");
+        }
+
+        private static DateTime? GetCoordinateTime(PlateSolveResult frame) {
+            if (frame?.Coordinates?.DateTime == null) {
+                return null;
+            }
+
+            return frame.Coordinates.DateTime.Now;
+        }
+
+        private static string FormatDiagnosticTime(DateTime? time) {
+            return time.HasValue ? time.Value.ToUniversalTime().ToString("O") : "n/a";
+        }
+
+        private static string FormatDiagnosticDeltaSeconds(DateTime? start, DateTime? end) {
+            if (!start.HasValue || !end.HasValue) {
+                return "n/a";
+            }
+
+            return Math.Round((end.Value.ToUniversalTime() - start.Value.ToUniversalTime()).TotalSeconds, 3).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        private void ApplyErrorDetailComputation(ErrorDetailComputation overlay, bool updateAutomatedAdjustmentController) {
             if (overlay.HasErrorEstimate) {
                 var azimuthErrorDegrees = overlay.AzimuthErrorDegrees.Value;
                 var altitudeErrorDegrees = overlay.AltitudeErrorDegrees.Value;
                 PolarErrorDetermination.CurrentMountAxisAzimuthError = Angle.ByDegree(azimuthErrorDegrees);
                 PolarErrorDetermination.CurrentMountAxisAltitudeError = Angle.ByDegree(altitudeErrorDegrees);
                 PolarErrorDetermination.CurrentMountAxisTotalError = Angle.ByDegree(Accord.Math.Tools.Hypotenuse(altitudeErrorDegrees, azimuthErrorDegrees));
-                automatedAdjustmentController.UpdateObservation(azimuthErrorDegrees, altitudeErrorDegrees);
+                if (updateAutomatedAdjustmentController) {
+                    automatedAdjustmentController.UpdateObservation(azimuthErrorDegrees, altitudeErrorDegrees);
+                    PersistUpasAzimuthResponseMemory();
+                }
                 lastContinuousEstimateStable = true;
             }
 
@@ -596,6 +748,7 @@ namespace NINA.Plugins.PolarAlignment {
         public Angle Longitude {
             get => Angle.ByDegree(profileService.ActiveProfile.AstrometrySettings.Longitude);
         }
+        [JsonIgnore]
         public IRenderedImage Image {
             get => image;
             internal set {
@@ -933,6 +1086,8 @@ namespace NINA.Plugins.PolarAlignment {
         }
 
         public TopocentricCoordinates GetDestinationCoordinates(double azAngle, double altAngle, RefractionParameters refractionParameters) {
+            var observationTime = InitialReferenceFrame.Coordinates.DateTime.Now;
+            var fixedObservationTime = new FixedObservationDateTime(observationTime);
             var referenceTopocentric = InitialReferenceFrame.Coordinates.Transform(Latitude, Longitude, Elevation);
             var referenceVector = Vector3.CoordinatesToUnitVector(referenceTopocentric);
 
@@ -943,8 +1098,9 @@ namespace NINA.Plugins.PolarAlignment {
             var altitudeAxis = Vector3.RotateByRodrigues(new Vector3(0, 1, 0), new Vector3(0, 0, 1), azimuthRotation);
             var finalDestination = Vector3.RotateByRodrigues(azimuthDestination, altitudeAxis, altitudeRotation);
 
-            return finalDestination.ToTopocentric(Latitude, Longitude, Elevation);
+            return finalDestination.ToTopocentric(Latitude, Longitude, Elevation, fixedObservationTime);
         }
+
 
     }
 

@@ -1,4 +1,4 @@
-﻿using NINA.Core.Utility;
+using NINA.Core.Utility;
 using NINA.Profile.Interfaces;
 using NINA.Plugins.PolarAlignment.Avalon;
 
@@ -73,6 +73,9 @@ namespace NINA.Plugins.PolarAlignment.Avalon {
         public override bool ReverseAzimuth {
             get => Properties.Settings.Default.AvalonReverseAzimuth;
             set {
+                if (Properties.Settings.Default.AvalonReverseAzimuth != value) {
+                    Properties.Settings.Default.AvalonRememberedAzimuthResponsePerUnit = 0;
+                }
                 Properties.Settings.Default.AvalonReverseAzimuth = value;
                 CoreUtil.SaveSettings(Properties.Settings.Default);
                 RaisePropertyChanged();
@@ -92,6 +95,60 @@ namespace NINA.Plugins.PolarAlignment.Avalon {
             get => Properties.Settings.Default.AvalonXBacklashCompensation;
             set {
                 Properties.Settings.Default.AvalonXBacklashCompensation = value;
+                CoreUtil.SaveSettings(Properties.Settings.Default);
+                RaisePropertyChanged();
+            }
+        }
+
+        public bool PreSeatAzimuthBeforeMeasurement {
+            get => Properties.Settings.Default.AvalonPreSeatAzimuthBeforeMeasurement;
+            set {
+                Properties.Settings.Default.AvalonPreSeatAzimuthBeforeMeasurement = value;
+                CoreUtil.SaveSettings(Properties.Settings.Default);
+                RaisePropertyChanged();
+            }
+        }
+
+        public double AzimuthPreSeatUnits {
+            get => Properties.Settings.Default.AvalonAzimuthPreSeatUnits;
+            set {
+                Properties.Settings.Default.AvalonAzimuthPreSeatUnits = value < 0 ? 0 : value;
+                CoreUtil.SaveSettings(Properties.Settings.Default);
+                RaisePropertyChanged();
+            }
+        }
+
+        public bool AzimuthTravelGuardEnabled {
+            get => Properties.Settings.Default.AvalonAzimuthTravelGuardEnabled;
+            set {
+                Properties.Settings.Default.AvalonAzimuthTravelGuardEnabled = value;
+                CoreUtil.SaveSettings(Properties.Settings.Default);
+                RaisePropertyChanged();
+            }
+        }
+
+        public bool AzimuthTravelGuardConfirmed {
+            get => Properties.Settings.Default.AvalonAzimuthTravelGuardConfirmed;
+            set {
+                Properties.Settings.Default.AvalonAzimuthTravelGuardConfirmed = value;
+                CoreUtil.SaveSettings(Properties.Settings.Default);
+                RaisePropertyChanged();
+            }
+        }
+
+        public double AzimuthTravelLimitDegrees {
+            get => Properties.Settings.Default.AvalonAzimuthTravelLimitDegrees;
+            set {
+                Properties.Settings.Default.AvalonAzimuthTravelLimitDegrees = value < 0 ? 0 : value;
+                CoreUtil.SaveSettings(Properties.Settings.Default);
+                RaisePropertyChanged();
+            }
+        }
+
+        public double AzimuthDegreesPerNudgeUnit {
+            get => Properties.Settings.Default.AvalonAzimuthDegreesPerNudgeUnit;
+            set {
+                Properties.Settings.Default.AvalonAzimuthDegreesPerNudgeUnit = value <= 0 ? 0.025 : value;
                 CoreUtil.SaveSettings(Properties.Settings.Default);
                 RaisePropertyChanged();
             }

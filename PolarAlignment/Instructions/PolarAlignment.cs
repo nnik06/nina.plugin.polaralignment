@@ -1,4 +1,4 @@
-﻿using Newtonsoft.Json;
+using Newtonsoft.Json;
 using NINA.Astrometry;
 using NINA.Core.Locale;
 using NINA.Core.Model;
@@ -77,6 +77,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
         private bool eastDirection;
         private bool manualMode;
         private bool startFromCurrentPosition;
+        private const double MinimumPositiveAlignmentTolerance = 0.5;
         private double alignmentTolerance;
         private IList<string> issues = new List<string>();
         private const string ResumeAlignmentTopic = $"{nameof(PolarAlignmentPlugin)}_{nameof(PolarAlignment)}_ResumeAlignment";
@@ -193,7 +194,9 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 ManualMode = ManualMode,
                 StartFromCurrentPosition = StartFromCurrentPosition,
                 AlignmentTolerance = AlignmentTolerance,
-                Coordinates = new InputTopocentricCoordinates(Coordinates.Coordinates.Copy())
+                Coordinates = this.Coordinates == null
+                    ? null
+                    : new InputTopocentricCoordinates(this.Coordinates.Coordinates.Copy())
             };
 
             if (clone.Binning == null) {
@@ -264,6 +267,12 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
         public double AlignmentTolerance {
             get => alignmentTolerance;
             set {
+                if (value < 0) {
+                    value = 0;
+                } else if (value > 0 && value < MinimumPositiveAlignmentTolerance) {
+                    value = MinimumPositiveAlignmentTolerance;
+                }
+
                 alignmentTolerance = value;
                 RaisePropertyChanged();
             }
@@ -274,6 +283,10 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
         private ApplicationStatus GetStatus(string status) {
             return new ApplicationStatus { Source = "TPPA", Status = status };
         }
+
+        public NINA.Plugins.PolarAlignment.Avalon.UniversalPolarAlignmentVM UniversalPolarAlignmentVM => PolarAlignmentPlugin.UniversalPolarAlignmentVM;
+
+        public bool ShowUpasRunSettings => PolarAlignmentPlugin.ActiveAlignmentSystemVM is NINA.Plugins.PolarAlignment.Avalon.UniversalPolarAlignmentVM;
 
         private TPAPAVM tpapa;
         public TPAPAVM TPAPAVM {
@@ -481,6 +494,8 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         await domeMediator.WaitForDomeSynchronization(token);
                     }
 
+                    await TPAPAVM.PrepareUpasBeforeInitialMeasurement(progress, localCTS.Token);
+
                     var solve1 = await Solve(TPAPAVM, 5.0, progress, localCTS.Token);
                     var refractionParameter = RefractionParameters.GetRefractionParameters(weatherDataMediator.GetInfo());
 
@@ -560,7 +575,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                                        localCTS.Token);
                     TPAPAVM.PolarErrorDetermination = determination;
 
-                    Logger.Info($"Calculated Error: Az: {TPAPAVM.PolarErrorDetermination.InitialMountAxisAzimuthError}, Alt: {TPAPAVM.PolarErrorDetermination.InitialMountAxisAltitudeError}, Tot: {TPAPAVM.PolarErrorDetermination.InitialMountAxisTotalError}");
+                    Logger.Info($"TPPA fresh 3-point calculated error: Az: {TPAPAVM.PolarErrorDetermination.InitialMountAxisAzimuthError}, Alt: {TPAPAVM.PolarErrorDetermination.InitialMountAxisAltitudeError}, Tot: {TPAPAVM.PolarErrorDetermination.InitialMountAxisTotalError}");
 
                     TPAPAVM.ActivateFourthStep();
 
@@ -579,6 +594,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     await TPAPAVM.SelectNewReferenceStar(TPAPAVM.Center, localCTS.Token);
 
                     var sw = Stopwatch.StartNew();
+                    var completionGuard = new AlignmentCompletionGuard();
                     do {
                         await WaitIfPaused(localCTS.Token, progress);
 
@@ -596,18 +612,20 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                     )
                                 );
 
-                                Logger.Info($"Calculated Error: Az: {TPAPAVM.PolarErrorDetermination.CurrentMountAxisAzimuthError}, Alt: {TPAPAVM.PolarErrorDetermination.CurrentMountAxisAltitudeError}, Tot: {TPAPAVM.PolarErrorDetermination.CurrentMountAxisTotalError}");
+                                Logger.Info($"TPPA correction-loop calculated error: Az: {TPAPAVM.PolarErrorDetermination.CurrentMountAxisAzimuthError}, Alt: {TPAPAVM.PolarErrorDetermination.CurrentMountAxisAltitudeError}, Tot: {TPAPAVM.PolarErrorDetermination.CurrentMountAxisTotalError}");
 
                                 var totalErrorMinutes = Math.Abs(TPAPAVM.PolarErrorDetermination.CurrentMountAxisTotalError.ArcMinutes);
-                                if (totalErrorMinutes <= AlignmentTolerance) {
-                                    Logger.Info($"Total Error is below alignment tolerance ({AlignmentTolerance}'). " +
+                                var completionConfirmed = completionGuard.Observe(totalErrorMinutes, AlignmentTolerance);
+                                var completionCriterionDescription = $"Total Error is below alignment tolerance ({AlignmentTolerance}')";
+                                if (completionConfirmed) {
+                                    Logger.Info($"{completionCriterionDescription}. " +
                                         $"Altitude Error: {Math.Round(TPAPAVM.PolarErrorDetermination.CurrentMountAxisAltitudeError.ArcMinutes, 2)}'. " +
                                         $"Azimuth Error: {Math.Round(TPAPAVM.PolarErrorDetermination.CurrentMountAxisAzimuthError.ArcMinutes, 2)}'. " +
                                         $"Total Error: {Math.Round(totalErrorMinutes, 2)}'. " +
                                         $"Automatically finishing polar alignment.");
                                     Notification.ShowInformation(
-                                        $"Total Error is below alignment tolerance.{Environment.NewLine}" +
-                                        $"Tolerance: {AlignmentTolerance}{Environment.NewLine}'" +
+                                        $"{completionCriterionDescription}.{Environment.NewLine}" +
+                                        $"Tolerance: {AlignmentTolerance}'{Environment.NewLine}" +
                                         $"Altitude Error: {Math.Round(TPAPAVM.PolarErrorDetermination.CurrentMountAxisAltitudeError.ArcMinutes, 2)}'{Environment.NewLine}" +
                                         $"Azimuth Error: {Math.Round(TPAPAVM.PolarErrorDetermination.CurrentMountAxisAzimuthError.ArcMinutes, 2)}'{Environment.NewLine}" +
                                         $"Total Error: {Math.Round(totalErrorMinutes, 2)}'{Environment.NewLine}" +
@@ -615,14 +633,21 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                         TimeSpan.FromMinutes(1));
                                     localCTS.Cancel();
                                 }
-                                if (sw.Elapsed > TimeSpan.FromMinutes(5)) {
+                                else if (completionGuard.AwaitingConfirmation) {
+                                    Logger.Info($"{completionCriterionDescription} on the first confirmation solve. " +
+                                        $"Holding UPAS position and requiring one more consecutive solve before finishing. " +
+                                        $"Total Error: {Math.Round(totalErrorMinutes, 2)}'.");
+                                }
+                                else if (sw.Elapsed > TimeSpan.FromMinutes(5)) {
                                     Logger.Info("Correction phase exceeded 5 minutes");
                                     Notification.ShowInformation($"Polar alignment correction phase has been running for multiple minutes.{Environment.NewLine}Consider restarting the process to improve precision");
                                     sw.Stop();
                                     sw.Reset();
                                 }
                                 localCTS.Token.ThrowIfCancellationRequested();
-                                await TPAPAVM.MoveCloser(progress, localCTS.Token);
+                                if (!completionGuard.AwaitingConfirmation) {
+                                    await TPAPAVM.MoveCloser(progress, localCTS.Token);
+                                }
                             } else {
                                 Logger.Warning("Skipping error publication and automated correction because the continuous estimate was unstable.");
                             }
@@ -753,6 +778,19 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             }
         }
 
+        private static void StampSolveObservationTime(PlateSolveResult result, DateTime observationTimeUtc) {
+            if (result?.Success != true || result.Coordinates == null) {
+                return;
+            }
+
+            var source = result.Coordinates;
+            result.Coordinates = new Coordinates(Angle.ByDegree(source.RADegrees),
+                                                 Angle.ByDegree(source.Dec),
+                                                 source.Epoch,
+                                                 new FixedObservationDateTime(observationTimeUtc));
+            Logger.Info($"TPPA plate solve timestamp fixed to exposure midpoint: observationUtc={observationTimeUtc:O}");
+        }
+
         private async Task<PlateSolveResult> Solve(TPAPAVM context, double searchRadiusIncrementOnFailure, IProgress<ApplicationStatus> progress, CancellationToken token) {
             PlateSolveResult result = new PlateSolveResult { Success = false };
             double usedSearchRadius = SearchRadius;
@@ -767,6 +805,8 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 }
 
                 var seq = new CaptureSequence() { Binning = Binning, Gain = Gain, ExposureTime = ExposureTime, Offset = Offset, FilterType = Filter, ImageType = ImageTypes.SNAPSHOT };
+                var captureStartedUtc = DateTime.UtcNow;
+                var observationTimeUtc = captureStartedUtc.AddSeconds(Math.Max(0, seq.ExposureTime) / 2.0);
                 IRenderedImage image = null;
                 try {
                     progress.Report(new ApplicationStatus() { Status = $"Capturing new image to solve..." });
@@ -805,6 +845,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                                          parameter,
                                                          progress,
                                                          token).ConfigureAwait(false);
+                        StampSolveObservationTime(result, observationTimeUtc);
                     } catch (Exception ex) when (token.IsCancellationRequested) {
                         throw new OperationCanceledException("Plate solve was cancelled.", ex, token);
                     }
