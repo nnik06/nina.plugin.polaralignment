@@ -895,6 +895,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             var mountConnected = new bool[3];
             var mountDeclinations = new double[3];
             PlateSolveResult returnSolve = null;
+            Exception measurementFailure = null;
 
             try {
                 solves[0] = await Solve(context, 5.0, progress, token);
@@ -928,21 +929,31 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 positions[2] = new Position(solves[2].Coordinates, solves[2].PositionAngle, Latitude, Longitude, Elevation, refractionParameter);
                 var mountInfoSuffix2 = mountInfo2.Connected ? $" - Mount RA: {mountInfo2.RightAscensionString}; Mount Dec: {mountInfo2.DeclinationString}" : string.Empty;
                 Logger.Info($"Completion verification third measurement point {solves[2].Coordinates} - Vector: {positions[2].Vector} - Position Angle: {positions[2].PositionAngle}{mountInfoSuffix2}");
+            } catch (Exception ex) {
+                measurementFailure = ex;
+                throw;
             } finally {
                 if (returnToCorrectionPointing && !token.IsCancellationRequested) {
-                    Logger.Info($"Returning to the pre-verification correction pointing {correctionPointing}.");
-                    progress?.Report(new ApplicationStatus() { Status = "Returning to correction pointing" });
-                    SetTrackingSidereal(true);
-                    await telescopeMediator.SlewToCoordinatesAsync(correctionPointing, token);
-                    if (domeMediator.GetInfo().Connected) {
-                        await domeMediator.WaitForDomeSynchronization(token);
-                    }
+                    try {
+                        Logger.Info($"Returning to the pre-verification correction pointing {correctionPointing}.");
+                        progress?.Report(new ApplicationStatus() { Status = "Returning to correction pointing" });
+                        SetTrackingSidereal(true);
+                        await telescopeMediator.SlewToCoordinatesAsync(correctionPointing, token);
+                        if (domeMediator.GetInfo().Connected) {
+                            await domeMediator.WaitForDomeSynchronization(token);
+                        }
 
-                    returnSolve = await Solve(context, 5.0, progress, token);
-                    if (returnSolve?.Success != true) {
-                        throw new InvalidOperationException("Unable to plate solve the returned correction field after fresh completion verification. Automated correction was stopped to avoid mixing reference frames.");
+                        returnSolve = await Solve(context, 5.0, progress, token);
+                        if (returnSolve?.Success != true) {
+                            throw new InvalidOperationException("Unable to plate solve the returned correction field after fresh completion verification. Automated correction was stopped to avoid mixing reference frames.");
+                        }
+                        Logger.Info($"Completion verification captured the returned correction reference frame {returnSolve.Coordinates}.");
+                    } catch (Exception returnFailure) {
+                        if (measurementFailure == null) {
+                            throw;
+                        }
+                        Logger.Error("Returning to the correction field also failed; preserving the original fresh-measurement exception.", returnFailure);
                     }
-                    Logger.Info($"Completion verification captured the returned correction reference frame {returnSolve.Coordinates}.");
                 }
             }
 
