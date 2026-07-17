@@ -244,7 +244,12 @@ namespace NINA.Plugins.PolarAlignment {
                 return Properties.Settings.Default.AlignmentTolerance;
             }
             set {
-                if(value < 0) { value = 0; }
+                if (value < 0) {
+                    value = 0;
+                } else if (value > 0 && value < 0.5) {
+                    value = 0.5;
+                }
+
                 Properties.Settings.Default.AlignmentTolerance = value;
                 CoreUtil.SaveSettings(Properties.Settings.Default);
                 RaisePropertyChanged();

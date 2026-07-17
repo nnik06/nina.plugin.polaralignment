@@ -1,4 +1,4 @@
-using CommunityToolkit.Mvvm.ComponentModel;
+﻿using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using NINA.Core.Utility;
 using NINA.Core.Utility.Notification;
@@ -90,16 +90,28 @@ namespace NINA.Plugins.PolarAlignment {
             await TryNudgeX(position, token);
         }
 
-        public async Task<bool> TryNudgeX(float position, CancellationToken token) {
+        public Task<bool> TryNudgeX(float position, CancellationToken token) {
+            return TryNudgeX(position, token, applyBacklashCompensation: true);
+        }
+
+        public Task<bool> TryNudgeXForAutomation(float position, CancellationToken token) {
+            return TryNudgeX(position, token, applyBacklashCompensation: false);
+        }
+
+        private async Task<bool> TryNudgeX(float position, CancellationToken token, bool applyBacklashCompensation) {
             try {
                 if (ReverseAzimuth) { position = position * -1; }
                 await Application.Current.Dispatcher.BeginInvoke(() => IsNotMoving = false);
 
                 Logger.Info($"Nudging {SystemName} along X axis by {position}");
                 var lastDirection = upa.XLastDirection;
+                var currentDirection = position >= 0 ? LastDirection.Positive : LastDirection.Negative;
+                if (applyBacklashCompensation) {
+                    await PreloadBacklash(lastDirection, currentDirection, token);
+                } else if (lastDirection != currentDirection && Math.Abs(XBacklashCompensation) > 0) {
+                    Logger.Info($"Skipping X backlash compensation for automated {SystemName} nudge so the learned response model only sees the commanded move.");
+                }
                 await upa.MoveRelative(Axis.XAxis, XSpeed, position, token).ConfigureAwait(false);
-                var currentDirection = upa.XLastDirection;
-                await ClearBacklash(lastDirection, currentDirection, token);
                 return true;
             } catch (Exception ex) {
                 Logger.Error(ex);
@@ -150,10 +162,9 @@ namespace NINA.Plugins.PolarAlignment {
 
                 Logger.Info($"Moving {SystemName} along X axis to {target}");
                 var lastDirection = upa.XLastDirection;
-
+                var currentDirection = target - upa.XPosition1 >= 0 ? LastDirection.Positive : LastDirection.Negative;
+                await PreloadBacklash(lastDirection, currentDirection, token);
                 await upa.MoveAbsolute(Axis.XAxis, XSpeed, target, token).ConfigureAwait(false);
-                var currentDirection = upa.XLastDirection;
-                await ClearBacklash(lastDirection, currentDirection, token);
             } catch (Exception ex) {
                 Logger.Error(ex);
                 if (ex is TimeoutException) {
@@ -164,13 +175,12 @@ namespace NINA.Plugins.PolarAlignment {
             }
         }
 
-        private async Task ClearBacklash(LastDirection lastDirection, LastDirection currentDirection, CancellationToken token) {
+        private async Task PreloadBacklash(LastDirection lastDirection, LastDirection currentDirection, CancellationToken token) {
             if (lastDirection != currentDirection) {
                 if (Math.Abs(XBacklashCompensation) > 0) {
-                    Logger.Info("Direction changed. Clearing backlash");
-                    var sequence = BacklashCompensationPlanner.CreateSequence(XBacklashCompensation, currentDirection);
-                    await upa.MoveRelative(Axis.XAxis, XSpeed, sequence.FirstMove, token).ConfigureAwait(false);
-                    await upa.MoveRelative(Axis.XAxis, XSpeed, sequence.SecondMove, token).ConfigureAwait(false);
+                    Logger.Info("Direction changed. Preloading backlash in new direction before requested X move.");
+                    var preload = BacklashCompensationPlanner.CreatePreloadMove(XBacklashCompensation, currentDirection);
+                    await upa.MoveRelative(Axis.XAxis, XSpeed, preload, token).ConfigureAwait(false);
                 }
             }
         }
@@ -198,11 +208,11 @@ namespace NINA.Plugins.PolarAlignment {
         private async Task StartPoll() {
             pollCts = new CancellationTokenSource();
             var token = pollCts.Token;
-            var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(300));
+            var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
             try {
-                while (await timer.WaitForNextTickAsync(token) && !token.IsCancellationRequested) {
+                while (await timer.WaitForNextTickAsync(token).ConfigureAwait(false) && !token.IsCancellationRequested) {
                     if (IsNotMoving) {
-                        await upa.RefreshStatus(token);
+                        await upa.RefreshStatus(token).ConfigureAwait(false);
                     }
                     await Application.Current.Dispatcher.BeginInvoke(UpdatePositions);
                 }

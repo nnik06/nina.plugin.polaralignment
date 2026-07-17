@@ -127,6 +127,18 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 new Position(s1, 0, latitude, longitude, elevation, refraction), latitude, longitude, elevation, refraction, true);
             error.InitialMountAxisAltitudeError.Degree.Should().BeApproximately(1.0, 1.0 / 3600.0);
             error.InitialMountAxisAzimuthError.Degree.Should().BeApproximately(1.0, 1.0 / 3600.0);
+
+            var truePoleAltitude = error.CalculateTargetPoleAltitudeDegrees(refraction, true);
+            var apparentPoleAltitude = error.CalculateTargetPoleAltitudeDegrees(refraction, false);
+            truePoleAltitude.Should().BeApproximately(latitude.Degree, 1.0 / 3600.0);
+            ((apparentPoleAltitude - truePoleAltitude) * 3600.0).Should().BeApproximately(69.3, 1.0);
+
+            var alternateError = error.CalculateInitialMountAxisError(refraction, false);
+            alternateError.AltitudeError.Degree.Should().BeApproximately(1.0 - 69.3 / 3600.0, 1.0 / 3600.0);
+            alternateError.AzimuthError.Degree.Should().BeApproximately(1.0, 1.0 / 3600.0);
+            alternateError.TotalError.Degree.Should().BeApproximately(
+                Accord.Math.Tools.Hypotenuse(alternateError.AltitudeError.Degree, alternateError.AzimuthError.Degree),
+                1.0 / 3600.0);
         }
 
         [Test]

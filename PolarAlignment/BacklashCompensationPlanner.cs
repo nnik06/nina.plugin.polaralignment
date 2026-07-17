@@ -1,8 +1,8 @@
-namespace NINA.Plugins.PolarAlignment {
+﻿namespace NINA.Plugins.PolarAlignment {
     internal static class BacklashCompensationPlanner {
-        public static (float FirstMove, float SecondMove) CreateSequence(float compensation, LastDirection targetDirection) {
+        public static float CreatePreloadMove(float compensation, LastDirection targetDirection) {
             var directionSign = targetDirection == LastDirection.Positive ? 1f : -1f;
-            return (-directionSign * compensation, directionSign * compensation);
+            return directionSign * compensation;
         }
     }
 }

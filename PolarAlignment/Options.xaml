@@ -33,7 +33,7 @@
     <s:String x:Key="TargetCircleColorToolTip">Color used for the target-circle overlay that shows the correction destination.</s:String>
     <s:String x:Key="SuccessColorToolTip">Color used for success-state TPPA overlay elements.</s:String>
     <s:String x:Key="LogErrorToolTip">When enabled, TPPA writes the current longitude, latitude, altitude error, azimuth error, and total error to its polar-alignment log during continuous updates.</s:String>
-    <s:String x:Key="RefractionAdjustmentToolTip">Controls whether TPPA computes the polar error with refraction-aware topocentric coordinates.</s:String>
+    <s:String x:Key="RefractionAdjustmentToolTip">Enabled: align the mechanical axis to the true celestial pole using refraction-aware topocentric coordinates. Disabled: target the apparent refracted pole, which can differ by several arcminutes at low latitude.</s:String>
     <s:String x:Key="UseContinuousErrorEstimatorToolTip">When enabled, TPPA uses the experimental time-aware continuous estimator for live correction error. When disabled, TPPA uses the legacy image-plane calculation.</s:String>
     <s:String x:Key="StopTrackingWhenDoneToolTip">When enabled, TPPA turns sidereal tracking off in its cleanup path after the run ends.</s:String>
     <s:String x:Key="AutoPauseToolTip">When enabled, TPPA pauses itself after each continuous-correction update.</s:String>
@@ -43,6 +43,12 @@
     <s:String x:Key="AzimuthBacklashCompensationToolTip">If non-zero and the azimuth movement direction changes, TPPA sends an extra negative-then-positive relative X move of this size after the main move.</s:String>
     <s:String x:Key="AutomatedAdjustmentsToolTip">When enabled, TPPA calls its automated correction routine and sends nudge commands through the selected hardware system during the correction phase.</s:String>
     <s:String x:Key="AutomatedAdjustmentSettleTimeToolTip">Number of seconds TPPA waits after each automated adjustment before continuing.</s:String>
+    <s:String x:Key="UpasPreSeatAzimuthToolTip">When enabled for UPAS automated adjustment, TPPA sends one azimuth X move before the first plate solve to seat the mechanism in a known direction. This requires the UPAS visual-marker travel guard to be enabled and confirmed.</s:String>
+    <s:String x:Key="UpasAzimuthPreSeatUnitsToolTip">Logical UPAS X nudge units used by the optional pre-seat move before the first plate solve.</s:String>
+    <s:String x:Key="UpasAzimuthTravelGuardToolTip">Enables a conservative run budget for automated UPAS azimuth X movement, based on the visual marker and scale rather than GRBL motor position.</s:String>
+    <s:String x:Key="UpasAzimuthTravelLimitToolTip">Maximum cumulative automated UPAS azimuth X travel allowed for this TPPA run, in estimated marker degrees from the visually checked starting position.</s:String>
+    <s:String x:Key="UpasAzimuthTravelConfirmToolTip">Confirms that you visually checked the UPAS azimuth marker and that the selected travel limit is safely available.</s:String>
+    <s:String x:Key="UpasAzimuthDegreesPerUnitToolTip">Estimated physical UPAS azimuth marker degrees per logical X nudge unit. Default 0.025 means 30 units consumes about 0.75 degrees of travel budget.</s:String>
     <s:String x:Key="ResetSettingsToolTip">Shows a confirmation dialog and then resets the TPPA plugin settings to their default values.</s:String>
     <s:String x:Key="AlignmentSystemConnectToolTip">Creates the selected hardware system, scans available serial ports for a matching device, and starts status polling.</s:String>
     <s:String x:Key="AlignmentSystemDisconnectToolTip">Disposes the current hardware connection and stops status polling.</s:String>
@@ -66,6 +72,9 @@
                             <ColumnDefinition />
                         </Grid.ColumnDefinitions>
                         <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
@@ -211,16 +220,22 @@
                             VerticalAlignment="Center"
                             Text="Default Alignment Tolerance"
                             ToolTip="{StaticResource AlignmentToleranceToolTip}" />
-                        <ninactrl:UnitTextBox
+                        <StackPanel
                             Grid.Row="7"
                             Grid.Column="1"
-                            MinWidth="80"
                             Margin="5,5,0,0"
                             HorizontalAlignment="Left"
-                            VerticalAlignment="Center"
-                            Text="{Binding AlignmentTolerance}"
-                            ToolTip="{StaticResource AlignmentToleranceToolTip}"
-                            Unit="arcmin" />
+                            Orientation="Horizontal"
+                            ToolTip="{StaticResource AlignmentToleranceToolTip}">
+                            <TextBox
+                                MinWidth="80"
+                                VerticalAlignment="Center"
+                                Text="{Binding AlignmentTolerance, UpdateSourceTrigger=LostFocus}" />
+                            <TextBlock
+                                Margin="3,0,0,0"
+                                VerticalAlignment="Center"
+                                Text="arcmin" />
+                        </StackPanel>
 
                         <TextBlock
                             Grid.Row="8"
@@ -506,8 +521,43 @@
                                 Unit="s"
                                 Visibility="{Binding ActiveSystem.DoAutomatedAdjustments, Converter={StaticResource BooleanToVisibilityConverter}}" />
                         </Grid>
-                        <Grid
+                        <TextBlock
                             Grid.Row="24"
+                            Margin="0,5,0,0"
+                            VerticalAlignment="Center"
+                            Text="Pre-seat UPAS azimuth before first solve?"
+                            ToolTip="{StaticResource UpasPreSeatAzimuthToolTip}"
+                            Visibility="{Binding IsUPASSelected, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                        <CheckBox
+                            Grid.Row="24"
+                            Grid.Column="1"
+                            MinWidth="80"
+                            Margin="5,5,0,0"
+                            HorizontalAlignment="Left"
+                            VerticalAlignment="Center"
+                            IsChecked="{Binding UniversalPolarAlignmentVM.PreSeatAzimuthBeforeMeasurement}"
+                            ToolTip="{StaticResource UpasPreSeatAzimuthToolTip}"
+                            Visibility="{Binding IsUPASSelected, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                        <TextBlock
+                            Grid.Row="25"
+                            Margin="0,5,0,0"
+                            VerticalAlignment="Center"
+                            Text="UPAS azimuth pre-seat amount"
+                            ToolTip="{StaticResource UpasAzimuthPreSeatUnitsToolTip}"
+                            Visibility="{Binding IsUPASSelected, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                        <ninactrl:UnitTextBox
+                            Grid.Row="25"
+                            Grid.Column="1"
+                            MinWidth="80"
+                            Margin="5,5,0,0"
+                            HorizontalAlignment="Left"
+                            VerticalAlignment="Center"
+                            Text="{Binding UniversalPolarAlignmentVM.AzimuthPreSeatUnits}"
+                            ToolTip="{StaticResource UpasAzimuthPreSeatUnitsToolTip}"
+                            Unit="steps"
+                            Visibility="{Binding IsUPASSelected, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                        <Grid
+                            Grid.Row="26"
                             Grid.ColumnSpan="2"
                             Visibility="{Binding IsSystemSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
                             <TextBlock
@@ -517,7 +567,7 @@
                                 Visibility="{Binding ActiveSystem.DoAutomatedAdjustments, Converter={StaticResource BooleanToVisibilityConverter}}" />
                         </Grid>
                         <Button
-                            Grid.Row="25"
+                            Grid.Row="27"
                             Margin="0,20,0,0"
                             Command="{Binding ResetSettingsCommand}"
                             ToolTip="{StaticResource ResetSettingsToolTip}">
@@ -1933,40 +1983,122 @@
                     <ContentPresenter Content="{Binding UniversalPolarAlignmentVM}" Visibility="{Binding UniversalPolarAlignmentVM.DoAutomatedAdjustments, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
                     <!--  Automated UPA Status  -->
                     <Grid HorizontalAlignment="Stretch" Visibility="{Binding UniversalPolarAlignmentVM.DoAutomatedAdjustments, Converter={StaticResource BooleanToVisibilityConverter}}">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition />
-                            <ColumnDefinition />
-                            <ColumnDefinition />
-                        </Grid.ColumnDefinitions>
-                        <StackPanel
-                            HorizontalAlignment="Center"
-                            VerticalAlignment="Center"
-                            Orientation="Horizontal">
-                            <TextBlock FontSize="16" Text="Azimuth: " />
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid Grid.Row="0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition />
+                                <ColumnDefinition />
+                                <ColumnDefinition />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Orientation="Horizontal">
+                                <TextBlock FontSize="16" Text="Azimuth: " />
+                                <TextBlock
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    FontSize="16"
+                                    Text="{Binding UniversalPolarAlignmentVM.PositionX, StringFormat=N2}" />
+                            </StackPanel>
+                            <StackPanel
+                                Grid.Column="1"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Orientation="Horizontal">
+                                <TextBlock FontSize="16" Text="Altitude: " />
+                                <TextBlock
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    FontSize="16"
+                                    Text="{Binding UniversalPolarAlignmentVM.PositionY, StringFormat=N2}" />
+                            </StackPanel>
                             <TextBlock
+                                Grid.Column="2"
                                 HorizontalAlignment="Center"
                                 VerticalAlignment="Center"
                                 FontSize="16"
-                                Text="{Binding UniversalPolarAlignmentVM.PositionX, StringFormat=N2}" />
-                        </StackPanel>
-                        <StackPanel
-                            Grid.Column="1"
+                                Text="Automatic Mode" />
+                        </Grid>
+                        <WrapPanel
+                            Grid.Row="1"
+                            Margin="0,8,0,0"
                             HorizontalAlignment="Center"
-                            VerticalAlignment="Center"
                             Orientation="Horizontal">
-                            <TextBlock FontSize="16" Text="Altitude: " />
                             <TextBlock
-                                HorizontalAlignment="Center"
+                                Margin="0,0,4,0"
                                 VerticalAlignment="Center"
-                                FontSize="16"
-                                Text="{Binding UniversalPolarAlignmentVM.PositionY, StringFormat=N2}" />
-                        </StackPanel>
-                        <TextBlock
-                            Grid.Column="2"
+                                Text="Travel guard"
+                                ToolTip="{StaticResource UpasAzimuthTravelGuardToolTip}" />
+                            <CheckBox
+                                Margin="0,0,12,0"
+                                VerticalAlignment="Center"
+                                IsChecked="{Binding UniversalPolarAlignmentVM.AzimuthTravelGuardEnabled}"
+                                ToolTip="{StaticResource UpasAzimuthTravelGuardToolTip}" />
+                            <TextBlock
+                                Margin="0,0,4,0"
+                                VerticalAlignment="Center"
+                                Text="Limit"
+                                ToolTip="{StaticResource UpasAzimuthTravelLimitToolTip}" />
+                            <ninactrl:UnitTextBox
+                                MinWidth="58"
+                                Margin="0,0,12,0"
+                                VerticalAlignment="Center"
+                                Text="{Binding UniversalPolarAlignmentVM.AzimuthTravelLimitDegrees}"
+                                ToolTip="{StaticResource UpasAzimuthTravelLimitToolTip}"
+                                Unit="deg" />
+                            <TextBlock
+                                Margin="0,0,4,0"
+                                VerticalAlignment="Center"
+                                Text="Marker checked"
+                                ToolTip="{StaticResource UpasAzimuthTravelConfirmToolTip}" />
+                            <CheckBox
+                                Margin="0,0,12,0"
+                                VerticalAlignment="Center"
+                                IsChecked="{Binding UniversalPolarAlignmentVM.AzimuthTravelGuardConfirmed}"
+                                ToolTip="{StaticResource UpasAzimuthTravelConfirmToolTip}" />
+                            <TextBlock
+                                Margin="0,0,4,0"
+                                VerticalAlignment="Center"
+                                Text="deg/unit"
+                                ToolTip="{StaticResource UpasAzimuthDegreesPerUnitToolTip}" />
+                            <ninactrl:UnitTextBox
+                                MinWidth="58"
+                                VerticalAlignment="Center"
+                                Text="{Binding UniversalPolarAlignmentVM.AzimuthDegreesPerNudgeUnit}"
+                                ToolTip="{StaticResource UpasAzimuthDegreesPerUnitToolTip}" />
+                        </WrapPanel>
+                        <WrapPanel
+                            Grid.Row="2"
+                            Margin="0,6,0,0"
                             HorizontalAlignment="Center"
-                            VerticalAlignment="Center"
-                            FontSize="16"
-                            Text="Automatic Mode" />
+                            Orientation="Horizontal">
+                            <TextBlock
+                                Margin="0,0,4,0"
+                                VerticalAlignment="Center"
+                                Text="Pre-seat before first solve"
+                                ToolTip="{StaticResource UpasPreSeatAzimuthToolTip}" />
+                            <CheckBox
+                                Margin="0,0,12,0"
+                                VerticalAlignment="Center"
+                                IsChecked="{Binding UniversalPolarAlignmentVM.PreSeatAzimuthBeforeMeasurement}"
+                                ToolTip="{StaticResource UpasPreSeatAzimuthToolTip}" />
+                            <TextBlock
+                                Margin="0,0,4,0"
+                                VerticalAlignment="Center"
+                                Text="Pre-seat units"
+                                ToolTip="{StaticResource UpasAzimuthPreSeatUnitsToolTip}" />
+                            <ninactrl:UnitTextBox
+                                MinWidth="58"
+                                VerticalAlignment="Center"
+                                Text="{Binding UniversalPolarAlignmentVM.AzimuthPreSeatUnits}"
+                                ToolTip="{StaticResource UpasAzimuthPreSeatUnitsToolTip}"
+                                Unit="steps" />
+                        </WrapPanel>
                     </Grid>
                 </Grid>
             </GroupBox>

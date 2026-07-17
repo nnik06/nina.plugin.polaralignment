@@ -1,5 +1,21 @@
 # Changelog
 
+## Version 2.2.6.5
+- Added reproducibility context to passive same-solves diagnostics: observation time, latitude, target-pole altitudes and separation, and atmospheric parameters.
+- Kept true/apparent-pole comparison diagnostic-only with no controller or target-selection behavior change.
+
+## Version 2.2.6.4
+- Added passive same-solves diagnostics for true-pole versus refracted-apparent-pole alignment targets.
+- Preserved the existing fresh-result log contract and made alternate-target diagnostics non-fatal.
+
+## Version 2.2.6.3
+- Hardened UPAS/OAPA serial status parsing and command acknowledgement handling on slow or lossy links.
+- Improved automated adjustment learning so sub-noise probes do not poison the response model.
+- Improved automated correction scoring to avoid sacrificing an already-solved axis for a small cross-axis improvement.
+- Prevented reference-star selection from feeding false motion samples into automated adjustment learning.
+- Added a stateful UPAS azimuth engagement controller with bounded direction acquisition and response memory.
+- Required consecutive above-noise evidence before early UPAS engagement confirmation or reversal, with at most one early reversal per acquisition episode.
+- Warn when refraction adjustment is disabled and the apparent-pole offset exceeds the selected automated alignment tolerance.
 ## Version 2.2.6.2
 - Fixed TPPA cancellation during plate solving so skipping the sequence item does not surface ASTAP sidecar cleanup errors.
 

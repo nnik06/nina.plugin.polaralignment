@@ -97,3 +97,20 @@ firmware/
 /.dotnet-cli
 /.oracle-venv
 /.oracle-deps
+
+# Local TPPA development and field-test artifacts
+/.dotnet/
+/.dotnet-codex/
+/field-analysis-*/
+/controller-test-output.txt
+/full_diff.txt
+/full_git_diff.txt
+/patch.diff
+/TPPA_PHD2_SOAK_REPORT_*.md
+/deploy_tppa_*.ps1
+/inspect_tppa*.ps1
+/manual_upas_nudge_*.ps1
+/run_tppa_*.ps1
+/run_tppa_*.cmd
+/start_tppa_*.ps1
+/verify_tppa_hash.ps1

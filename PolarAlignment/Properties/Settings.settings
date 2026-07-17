@@ -86,6 +86,33 @@
     <Setting Name="AvalonReverseAltitude" Type="System.Boolean" Scope="User">
       <Value Profile="(Default)">False</Value>
     </Setting>
+    <Setting Name="AvalonRememberedAzimuthResponsePerUnit" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">0</Value>
+    </Setting>
+    <Setting Name="AvalonRememberedAzimuthResponseReverseAzimuth" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">False</Value>
+    </Setting>
+    <Setting Name="AvalonPreSeatAzimuthBeforeMeasurement" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">False</Value>
+    </Setting>
+    <Setting Name="AvalonAzimuthPreSeatUnits" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">24</Value>
+    </Setting>
+    <Setting Name="AvalonAzimuthPreSeatDirection" Type="System.Int32" Scope="User">
+      <Value Profile="(Default)">1</Value>
+    </Setting>
+    <Setting Name="AvalonAzimuthTravelGuardEnabled" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">False</Value>
+    </Setting>
+    <Setting Name="AvalonAzimuthTravelGuardConfirmed" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">False</Value>
+    </Setting>
+    <Setting Name="AvalonAzimuthTravelLimitDegrees" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">2</Value>
+    </Setting>
+    <Setting Name="AvalonAzimuthDegreesPerNudgeUnit" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">0.025</Value>
+    </Setting>
     <Setting Name="AutoPause" Type="System.Boolean" Scope="User">
       <Value Profile="(Default)">False</Value>
     </Setting>
