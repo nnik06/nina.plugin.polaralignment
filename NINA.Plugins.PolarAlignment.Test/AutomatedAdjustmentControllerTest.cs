@@ -11,43 +11,78 @@ namespace NINA.Plugins.PolarAlignment.Test {
     /// </summary>
     public class AutomatedAdjustmentControllerTest {
         [Test]
+        public void AutomatedAdjustmentController_WorseningZeroCrossingDoesNotReplaceTrustedGain() {
+            // Golden trace from the 2026-07-17 02:36 UPAS field run. The former controller
+            // replaced the trusted gain with the weak acquisition response, commanded X=2.566,
+            // overshot through zero, then incorrectly continued in the positive direction.
+            var controller = new AutomatedAdjustmentController(useUpasEngagementController: true);
+            controller.SeedUpasAzimuthResponseMemory(1.4379 / 60.0);
+            controller.UpdateObservation(-10.0 / 60.0, 0);
+
+            var firstAcquisition = controller.CreatePlan();
+            firstAcquisition.XMagnitude.Should().Be(8.0);
+            controller.NoteSuccessfulExecution(firstAcquisition);
+            controller.UpdateObservation(-6.0 / 60.0, 0);
+
+            var confirmingAcquisition = controller.CreatePlan();
+            confirmingAcquisition.XMagnitude.Should().Be(8.0);
+            controller.NoteSuccessfulExecution(confirmingAcquisition);
+            controller.UpdateObservation(6.05 / 60.0, 0);
+            controller.TryGetTrustedXAzimuthResponse(out var trustedAfterCrossing).Should().BeTrue();
+
+            (trustedAfterCrossing * 60.0).Should().BeApproximately(1.4379, 1e-6);
+        }
+
+        [Test]
         public void AutomatedAlignmentCompletionGuard_RequiresTwoConsecutiveBelowToleranceObservations() {
             var guard = new AutomatedAlignmentCompletionGuard();
 
-            guard.Evaluate(true).Should().Be(AutomatedAlignmentCompletionDecision.ValidateWithoutMoving);
-            guard.Evaluate(true).Should().Be(AutomatedAlignmentCompletionDecision.VerifyFreshThreePoint);
-            guard.EvaluateFreshVerification(true).Should().Be(AutomatedAlignmentCompletionDecision.Finish);
+            guard.Evaluate(0.8, 1.0).Should().Be(AutomatedAlignmentCompletionDecision.ValidateWithoutMoving);
+            guard.Evaluate(0.8, 1.0).Should().Be(AutomatedAlignmentCompletionDecision.VerifyFreshThreePoint);
+            guard.EvaluateFreshVerification(0.8, 1.0).Should().Be(AutomatedAlignmentCompletionDecision.Finish);
         }
 
         [Test]
         public void AutomatedAlignmentCompletionGuard_ReboundRestartsValidation() {
             var guard = new AutomatedAlignmentCompletionGuard();
 
-            guard.Evaluate(true).Should().Be(AutomatedAlignmentCompletionDecision.ValidateWithoutMoving);
-            guard.Evaluate(false).Should().Be(AutomatedAlignmentCompletionDecision.ContinueCorrection);
-            guard.Evaluate(true).Should().Be(AutomatedAlignmentCompletionDecision.ValidateWithoutMoving);
+            guard.Evaluate(0.8, 1.0).Should().Be(AutomatedAlignmentCompletionDecision.ValidateWithoutMoving);
+            guard.Evaluate(1.1, 1.0).Should().Be(AutomatedAlignmentCompletionDecision.ContinueCorrection);
+            guard.Evaluate(0.8, 1.0).Should().Be(AutomatedAlignmentCompletionDecision.ValidateWithoutMoving);
         }
 
         [Test]
         public void AutomatedAlignmentCompletionGuard_FailedFreshVerificationRestartsContinuousValidation() {
             var guard = new AutomatedAlignmentCompletionGuard();
 
-            guard.Evaluate(true).Should().Be(AutomatedAlignmentCompletionDecision.ValidateWithoutMoving);
-            guard.Evaluate(true).Should().Be(AutomatedAlignmentCompletionDecision.VerifyFreshThreePoint);
-            guard.EvaluateFreshVerification(false).Should().Be(AutomatedAlignmentCompletionDecision.ContinueCorrection);
-            guard.Evaluate(true).Should().Be(AutomatedAlignmentCompletionDecision.ValidateWithoutMoving);
+            guard.Evaluate(0.8, 1.0).Should().Be(AutomatedAlignmentCompletionDecision.ValidateWithoutMoving);
+            guard.Evaluate(0.8, 1.0).Should().Be(AutomatedAlignmentCompletionDecision.VerifyFreshThreePoint);
+            guard.EvaluateFreshVerification(1.1, 1.0).Should().Be(AutomatedAlignmentCompletionDecision.ContinueCorrection);
+            guard.Evaluate(0.8, 1.0).Should().Be(AutomatedAlignmentCompletionDecision.ValidateWithoutMoving);
         }
 
         [Test]
         public void AutomatedAlignmentCompletionGuard_AbortsAfterSecondFailedFreshVerification() {
             var guard = new AutomatedAlignmentCompletionGuard();
 
-            guard.Evaluate(true).Should().Be(AutomatedAlignmentCompletionDecision.ValidateWithoutMoving);
-            guard.Evaluate(true).Should().Be(AutomatedAlignmentCompletionDecision.VerifyFreshThreePoint);
-            guard.EvaluateFreshVerification(false).Should().Be(AutomatedAlignmentCompletionDecision.ContinueCorrection);
-            guard.Evaluate(true).Should().Be(AutomatedAlignmentCompletionDecision.ValidateWithoutMoving);
-            guard.Evaluate(true).Should().Be(AutomatedAlignmentCompletionDecision.VerifyFreshThreePoint);
-            guard.EvaluateFreshVerification(false).Should().Be(AutomatedAlignmentCompletionDecision.AbortAfterFreshVerificationFailures);
+            guard.Evaluate(0.8, 1.0).Should().Be(AutomatedAlignmentCompletionDecision.ValidateWithoutMoving);
+            guard.Evaluate(0.8, 1.0).Should().Be(AutomatedAlignmentCompletionDecision.VerifyFreshThreePoint);
+            guard.EvaluateFreshVerification(1.1, 1.0).Should().Be(AutomatedAlignmentCompletionDecision.ContinueCorrection);
+            guard.Evaluate(0.8, 1.0).Should().Be(AutomatedAlignmentCompletionDecision.ValidateWithoutMoving);
+            guard.Evaluate(0.8, 1.0).Should().Be(AutomatedAlignmentCompletionDecision.VerifyFreshThreePoint);
+            guard.EvaluateFreshVerification(1.1, 1.0).Should().Be(AutomatedAlignmentCompletionDecision.AbortAfterFreshVerificationFailures);
+        }
+
+        [TestCase(double.NaN, 1.0)]
+        [TestCase(double.PositiveInfinity, 1.0)]
+        [TestCase(-0.1, 1.0)]
+        [TestCase(0.5, 0.0)]
+        [TestCase(0.5, double.NaN)]
+        public void AutomatedAlignmentCompletionGuard_InvalidInputsFailClosed(double totalErrorMinutes, double toleranceMinutes) {
+            var guard = new AutomatedAlignmentCompletionGuard();
+
+            guard.Evaluate(totalErrorMinutes, toleranceMinutes)
+                .Should().Be(AutomatedAlignmentCompletionDecision.ContinueCorrection);
         }
         [Test]
         public void AutomatedAdjustmentController_LearnsReversedAzimuthAxisAndConverges() {

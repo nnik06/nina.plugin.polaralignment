@@ -924,7 +924,9 @@ namespace NINA.Plugins.PolarAlignment {
                         ResetEarlyXEngagementEvidence();
                         preferredXAcquisitionDirection = commandDirection;
                         learnedXAcquisitionDirection = commandDirection;
-                        UpdateRememberedXAzimuthResponse(beforeAzimuthError, afterAzimuthError, pendingPlan.Plan.XMagnitude);
+                        if (improvement > MinimumEarlyXEngagementImprovementDegrees) {
+                            UpdateRememberedXAzimuthResponse(beforeAzimuthError, afterAzimuthError, pendingPlan.Plan.XMagnitude);
+                        }
                         xAcquisitionConfirmed = true;
                         rejectedXProbeCount = 0;
                         rejectedWorseningXDirectionMask = 0;
@@ -975,7 +977,9 @@ namespace NINA.Plugins.PolarAlignment {
             if (improvement > MinimumSampleResponseDegrees || acceptedZeroCrossing) {
                 preferredXAcquisitionDirection = commandDirection;
                 learnedXAcquisitionDirection = commandDirection;
-                UpdateRememberedXAzimuthResponse(beforeAzimuthError, afterAzimuthError, pendingPlan.Plan.XMagnitude);
+                if (improvement > MinimumSampleResponseDegrees) {
+                    UpdateRememberedXAzimuthResponse(beforeAzimuthError, afterAzimuthError, pendingPlan.Plan.XMagnitude);
+                }
                 xAcquisitionConfirmed = true;
                 rejectedXProbeCount = 0;
                 rejectedWorseningXDirectionMask = 0;

@@ -647,7 +647,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                 Logger.Info($"TPPA correction-loop calculated error: Az: {TPAPAVM.PolarErrorDetermination.CurrentMountAxisAzimuthError}, Alt: {TPAPAVM.PolarErrorDetermination.CurrentMountAxisAltitudeError}, Tot: {TPAPAVM.PolarErrorDetermination.CurrentMountAxisTotalError}");
 
                                 var totalErrorMinutes = Math.Abs(TPAPAVM.PolarErrorDetermination.CurrentMountAxisTotalError.ArcMinutes);
-                                var completionDecision = completionGuard.Evaluate(totalErrorMinutes <= AlignmentTolerance);
+                                var completionDecision = completionGuard.Evaluate(totalErrorMinutes, AlignmentTolerance);
                                 if (completionDecision == AutomatedAlignmentCompletionDecision.VerifyFreshThreePoint) {
                                     Logger.Info("Two stationary correction-frame solves are below tolerance. Starting an independent fresh three-point completion verification before finishing.");
                                     progress?.Report(new ApplicationStatus() { Status = "Running fresh three-point completion verification" });
@@ -657,7 +657,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                                                                                                        localCTS.Token);
                                     TPAPAVM.PolarErrorDetermination = verificationDetermination;
                                     var verifiedTotalErrorMinutes = Math.Abs(verificationDetermination.InitialMountAxisTotalError.ArcMinutes);
-                                    var freshDecision = completionGuard.EvaluateFreshVerification(verifiedTotalErrorMinutes <= AlignmentTolerance);
+                                    var freshDecision = completionGuard.EvaluateFreshVerification(verifiedTotalErrorMinutes, AlignmentTolerance);
 
                                     Logger.Info($"TPPA completion-verification fresh 3-point calculated error: Az: {verificationDetermination.InitialMountAxisAzimuthError}, Alt: {verificationDetermination.InitialMountAxisAltitudeError}, Tot: {verificationDetermination.InitialMountAxisTotalError}");
                                     if (freshDecision == AutomatedAlignmentCompletionDecision.AbortAfterFreshVerificationFailures) {
