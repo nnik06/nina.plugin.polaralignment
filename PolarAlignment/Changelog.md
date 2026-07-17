@@ -5,6 +5,8 @@
 - Kept the continuous correction estimate display-only for UPAS automation so projection drift cannot train or steer the actuator response model.
 - Added a fail-closed twelve-move limit for fresh-measured UPAS correction attempts.
 - Hardened fixed-tripod diagnostics against stale fresh-result log markers and duplicate measurement rows.
+- Preserved the original fresh-measurement failure when returning to the correction field also fails.
+- Retried transient NINA sequence reload failures in the passive diagnostic supervisor.
 
 ## Version 2.2.6.5
 - Added reproducibility context to passive same-solves diagnostics: observation time, latitude, target-pole altitudes and separation, and atmospheric parameters.
