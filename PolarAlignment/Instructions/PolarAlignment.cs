@@ -635,6 +635,34 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     do {
                         await WaitIfPaused(localCTS.Token, progress);
 
+                        if (TPAPAVM.AutomatedAdjustmentRequiresFreshMeasurementFeedback
+                            && Math.Abs(TPAPAVM.PolarErrorDetermination.InitialMountAxisTotalError.ArcMinutes) <= AlignmentTolerance) {
+                            Logger.Info("Fresh UPAS measurement is below tolerance. Requiring one consecutive independent fresh three-point confirmation without moving.");
+                            progress?.Report(new ApplicationStatus() { Status = "Confirming fresh three-point UPAS result" });
+                            var confirmationDetermination = await MeasureFreshThreePointCompletionVerification(TPAPAVM,
+                                                                                                                progress,
+                                                                                                                localCTS.Token);
+                            TPAPAVM.PolarErrorDetermination = confirmationDetermination;
+                            TPAPAVM.UpdateAutomatedAdjustmentFromFreshDetermination();
+                            var confirmedTotalErrorMinutes = Math.Abs(confirmationDetermination.InitialMountAxisTotalError.ArcMinutes);
+                            Logger.Info($"TPPA fresh UPAS completion confirmation: Az: {confirmationDetermination.InitialMountAxisAzimuthError}, " +
+                                        $"Alt: {confirmationDetermination.InitialMountAxisAltitudeError}, Tot: {confirmationDetermination.InitialMountAxisTotalError}");
+                            if (confirmedTotalErrorMinutes <= AlignmentTolerance) {
+                                Logger.Info($"Two consecutive fresh three-point UPAS measurements are below alignment tolerance ({AlignmentTolerance}'). Automatically finishing polar alignment.");
+                                Notification.ShowInformation(
+                                    $"Two consecutive fresh three-point UPAS measurements are below alignment tolerance.{Environment.NewLine}" +
+                                    $"Tolerance: {AlignmentTolerance}'{Environment.NewLine}" +
+                                    $"Altitude Error: {Math.Round(confirmationDetermination.InitialMountAxisAltitudeError.ArcMinutes, 2)}'{Environment.NewLine}" +
+                                    $"Azimuth Error: {Math.Round(confirmationDetermination.InitialMountAxisAzimuthError.ArcMinutes, 2)}'{Environment.NewLine}" +
+                                    $"Total Error: {Math.Round(confirmedTotalErrorMinutes, 2)}'{Environment.NewLine}" +
+                                    "Automatically finishing polar alignment.",
+                                    TimeSpan.FromMinutes(1));
+                                localCTS.Cancel();
+                                continue;
+                            }
+                            Logger.Warning($"Fresh UPAS completion confirmation was above tolerance ({AlignmentTolerance}'). Continuing from the confirmed fresh measurement without moving first.");
+                        }
+
                         var continuousSolve = await Solve(TPAPAVM, 0, progress, localCTS.Token);
                         if (continuousSolve.Success) {
                             var estimateStable = await TPAPAVM.UpdateDetails(continuousSolve, progress, localCTS.Token);
@@ -652,7 +680,9 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                 Logger.Info($"TPPA correction-loop calculated error: Az: {TPAPAVM.PolarErrorDetermination.CurrentMountAxisAzimuthError}, Alt: {TPAPAVM.PolarErrorDetermination.CurrentMountAxisAltitudeError}, Tot: {TPAPAVM.PolarErrorDetermination.CurrentMountAxisTotalError}");
 
                                 var totalErrorMinutes = Math.Abs(TPAPAVM.PolarErrorDetermination.CurrentMountAxisTotalError.ArcMinutes);
-                                var completionDecision = completionGuard.Evaluate(totalErrorMinutes, AlignmentTolerance);
+                                var completionDecision = TPAPAVM.AutomatedAdjustmentRequiresFreshMeasurementFeedback
+                                    ? AutomatedAlignmentCompletionDecision.ContinueCorrection
+                                    : completionGuard.Evaluate(totalErrorMinutes, AlignmentTolerance);
                                 if (completionDecision == AutomatedAlignmentCompletionDecision.VerifyFreshThreePoint) {
                                     Logger.Info("Two stationary correction-frame solves are below tolerance. Starting an independent fresh three-point completion verification before finishing.");
                                     progress?.Report(new ApplicationStatus() { Status = "Running fresh three-point completion verification" });

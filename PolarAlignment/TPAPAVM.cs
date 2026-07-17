@@ -61,7 +61,8 @@ namespace NINA.Plugins.PolarAlignment {
 
         public bool AutomatedAdjustmentRequiresCompletionValidation => automatedAdjustmentController.RequiresCompletionValidation;
         public bool AutomatedAdjustmentRequiresFreshMeasurementFeedback =>
-            ActiveAlignmentSystemVM is NINA.Plugins.PolarAlignment.Avalon.UniversalPolarAlignmentVM;
+            ActiveAlignmentSystemVM is NINA.Plugins.PolarAlignment.Avalon.UniversalPolarAlignmentVM
+            && ActiveAlignmentSystemVM.DoAutomatedAdjustments;
 
         public void RebaseAutomatedAdjustmentToFreshDetermination() {
             if (PolarErrorDetermination == null) {
