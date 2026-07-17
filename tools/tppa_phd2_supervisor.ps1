@@ -412,39 +412,22 @@ function Load-NinaSequence {
     $sequenceName = [IO.Path]::GetFileNameWithoutExtension($SequencePath)
     Log "Loading NINA sequence '$sequenceName' from $SequencePath"
     $loadPath = "/sequence/load?sequenceName=$([uri]::EscapeDataString($sequenceName))"
-    $loadResponse = Invoke-Nina -Base $Base -Path $loadPath -Method "GET" -TimeoutSec 30
-    Assert-ApiSuccess -Response $loadResponse -Operation "NINA sequence load"
-    Log "NINA sequence load response: $($loadResponse.Response)"
-}
-
-function Wait-NinaSequenceIdle {
-    param([string]$Base, [int]$TimeoutSeconds = 45)
-    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
-    $consecutiveIdleReads = 0
-    while ((Get-Date) -lt $deadline) {
+    for ($attempt = 1; $attempt -le 5; $attempt++) {
         try {
-            $state = Invoke-Nina -Base $Base -Path "/sequence/state" -TimeoutSec 5
-            $statuses = @(Get-NinaSequenceStatuses -Node $state.Response)
-            if ($statuses.Count -gt 0 -and -not ($statuses -contains "RUNNING")) {
-                $consecutiveIdleReads += 1
-                if ($consecutiveIdleReads -ge 2) { return $true }
-            } else {
-                $consecutiveIdleReads = 0
-            }
+            $loadResponse = Invoke-Nina -Base $Base -Path $loadPath -Method "GET" -TimeoutSec 30
+            Assert-ApiSuccess -Response $loadResponse -Operation "NINA sequence load"
+            Log "NINA sequence load response: $($loadResponse.Response)"
+            return
         } catch {
-            $consecutiveIdleReads = 0
-            Log "Waiting for NINA sequence state to settle: $($_.Exception.Message)"
+            if ($attempt -ge 5) { throw }
+            Log "NINA sequence load attempt ${attempt}/5 failed while the previous cancellation settled: $($_.Exception.Message)"
+            Start-Sleep -Seconds 2
         }
-        Start-Sleep -Seconds 2
     }
-    return $false
 }
 
 function Start-NinaSequence {
     param([string]$Base)
-    if (-not (Wait-NinaSequenceIdle -Base $Base)) {
-        throw "NINA sequence state did not become idle before the next start."
-    }
     if ($SequencePath) {
         Load-NinaSequence -Base $Base
     } else {
