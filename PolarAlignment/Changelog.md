@@ -1,5 +1,9 @@
 # Changelog
 
+## Version 2.2.6.7
+- Conservatively charged failed UPAS X commands to the azimuth travel budget and discarded stale seating/engagement state without learning from the failed move.
+- Added fixed-window PHD2 DEC drift consistency diagnostics and withheld TPPA comparison slopes from curved or nonstationary captures.
+
 ## Version 2.2.6.6
 - Changed Avalon UPAS automation to learn and plan only from independent fresh three-point measurements taken before and after each actuator move.
 - Kept the continuous correction estimate display-only for UPAS automation so projection drift cannot train or steer the actuator response model.

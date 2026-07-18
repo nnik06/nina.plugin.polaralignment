@@ -5,11 +5,23 @@ param(
     [double]$PixelScaleArcsecPerPixel = 0,
     [double]$MinimumStableDriftMinutes = 10,
     [double]$DriftWarmupSeconds = 60,
+    [ValidateRange(0.25, 1440.0)]
+    [double]$DriftWindowMinutes = 2.0,
+    [ValidateRange(3, 1000)]
+    [int]$MinimumConsistentDriftWindows = 3,
     [string]$OutputPath = ""
 )
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = "Stop"
+
+$MinimumDriftWindowSamples = 3
+$MinimumDriftWindowTimeSpanFraction = 0.75
+$MaterialWindowSlopeFloorUnitsPerMin = 0.02
+$WindowSlopeRangeFloorUnitsPerMin = 0.1
+$WindowSlopeRangeMeanFraction = 0.75
+$WindowSlopeStdDevFloorUnitsPerMin = 0.05
+$WindowSlopeStdDevMeanFraction = 0.35
 
 function Get-LatestNinaLogPath {
     $logDir = Join-Path $env:LOCALAPPDATA "NINA\Logs"
@@ -88,6 +100,42 @@ function Get-SampleStandardDeviation {
     return [Math]::Sqrt($sumSquares / ($Values.Count - 1))
 }
 
+function Get-FixedWindowSlopesPerMinute {
+    param(
+        [double[]]$Minutes,
+        [double[]]$Values,
+        [double]$WindowStartMinutes,
+        [double]$WindowMinutes,
+        [int]$MinimumSamples,
+        [double]$MinimumTimeSpanFraction
+    )
+    $results = New-Object System.Collections.Generic.List[double]
+    $n = [Math]::Min($Minutes.Count, $Values.Count)
+    if ($n -lt $MinimumSamples -or $WindowMinutes -le 0) { return $results.ToArray() }
+
+    $lastMinute = ($Minutes | Measure-Object -Maximum).Maximum
+    $candidateWindowCount = [int][Math]::Ceiling(($lastMinute - $WindowStartMinutes) / $WindowMinutes)
+    for ($windowIndex = 0; $windowIndex -lt $candidateWindowCount; $windowIndex++) {
+        $windowStart = $WindowStartMinutes + $windowIndex * $WindowMinutes
+        $windowEnd = $windowStart + $WindowMinutes
+        $windowTimes = New-Object System.Collections.Generic.List[double]
+        $windowValues = New-Object System.Collections.Generic.List[double]
+        for ($i = 0; $i -lt $n; $i++) {
+            if ($Minutes[$i] -lt $windowStart -or $Minutes[$i] -ge $windowEnd) { continue }
+            [void]$windowTimes.Add($Minutes[$i])
+            [void]$windowValues.Add($Values[$i])
+        }
+
+        if ($windowTimes.Count -lt $MinimumSamples) { continue }
+        $sampledTimeSpan = ($windowTimes | Measure-Object -Maximum).Maximum - ($windowTimes | Measure-Object -Minimum).Minimum
+        if ($sampledTimeSpan -lt $WindowMinutes * $MinimumTimeSpanFraction) { continue }
+        $slope = Get-LinearSlopePerMinute -Minutes $windowTimes.ToArray() -Values $windowValues.ToArray()
+        if ($null -ne $slope) { [void]$results.Add([double]$slope) }
+    }
+
+    return $results.ToArray()
+}
+
 function Read-TppaStabilityMeasurements {
     param([string]$Path)
     if (-not (Test-Path -LiteralPath $Path)) { return @() }
@@ -152,8 +200,27 @@ function Analyze-GuideCsv {
             RaSlopeArcsecPerMin = $null
             DecSlopeFirstHalfUnitsPerMin = $null
             DecSlopeSecondHalfUnitsPerMin = $null
+            DecSlopeWindowSeconds = $DriftWindowMinutes * 60.0
+            DecSlopeWindowCount = 0
+            DecSlopeWindowMeanUnitsPerMin = $null
+            DecSlopeWindowMinUnitsPerMin = $null
+            DecSlopeWindowMaxUnitsPerMin = $null
+            DecSlopeWindowRangeUnitsPerMin = $null
+            DecSlopeWindowStdDevUnitsPerMin = $null
+            WindowSlopeCount = 0
+            DecWindowSlopeMinUnitsPerMin = $null
+            DecWindowSlopeMaxUnitsPerMin = $null
+            DecWindowSlopeRangeUnitsPerMin = $null
+            DecWindowSlopeStdDevUnitsPerMin = $null
+            DecWindowSlopeMinArcsecPerMin = $null
+            DecWindowSlopeMaxArcsecPerMin = $null
+            DecWindowSlopeRangeArcsecPerMin = $null
+            DecWindowSlopeStdDevArcsecPerMin = $null
             DriftStable = $false
             StabilityReason = "Too few guide steps"
+            ComparisonEligible = $false
+            ComparisonSlopeUnitsPerMin = $null
+            ComparisonSlopeArcsecPerMin = $null
             Note = "Too few guide steps"
         }
     }
@@ -196,26 +263,37 @@ function Analyze-GuideCsv {
     }
     $firstDecSlope = Get-LinearSlopePerMinute -Minutes $firstTimes.ToArray() -Values $firstDec.ToArray()
     $secondDecSlope = Get-LinearSlopePerMinute -Minutes $secondTimes.ToArray() -Values $secondDec.ToArray()
-    $driftStable = $true
-    $stabilityReason = "DEC drift is consistent across both halves"
+    $windowSlopes = @(Get-FixedWindowSlopesPerMinute -Minutes $times.ToArray() -Values $dec.ToArray() -WindowStartMinutes ($DriftWarmupSeconds / 60.0) -WindowMinutes $DriftWindowMinutes -MinimumSamples $MinimumDriftWindowSamples -MinimumTimeSpanFraction $MinimumDriftWindowTimeSpanFraction)
+    $windowSlopeCount = $windowSlopes.Count
+    $windowSlopeMean = if ($windowSlopeCount -gt 0) { ($windowSlopes | Measure-Object -Average).Average } else { $null }
+    $windowSlopeMin = if ($windowSlopeCount -gt 0) { ($windowSlopes | Measure-Object -Minimum).Minimum } else { $null }
+    $windowSlopeMax = if ($windowSlopeCount -gt 0) { ($windowSlopes | Measure-Object -Maximum).Maximum } else { $null }
+    $windowSlopeRange = if ($windowSlopeCount -gt 0) { $windowSlopeMax - $windowSlopeMin } else { $null }
+    $windowSlopeStdDev = if ($windowSlopeCount -gt 1) { Get-SampleStandardDeviation -Values ([double[]]$windowSlopes) } else { $null }
+    $driftStable = $false
+    $stabilityReason = "DEC drift stability has not been established"
     if ($duration -lt $MinimumStableDriftMinutes) {
-        $driftStable = $false
         $stabilityReason = "Capture is shorter than the $MinimumStableDriftMinutes minute stability minimum"
-    } elseif ($null -eq $firstDecSlope -or $null -eq $secondDecSlope) {
-        $driftStable = $false
-        $stabilityReason = "Insufficient post-warmup samples for split-window validation"
+    } elseif ($windowSlopeCount -lt $MinimumConsistentDriftWindows) {
+        $stabilityReason = "Only $windowSlopeCount valid $([Math]::Round($DriftWindowMinutes, 2))-minute DEC slope windows were available after warmup; at least $MinimumConsistentDriftWindows are required (each needs $MinimumDriftWindowSamples samples spanning at least $([Math]::Round($MinimumDriftWindowTimeSpanFraction * 100.0))% of the window)"
     } else {
-        $oppositeSign = [Math]::Sign($firstDecSlope) -ne [Math]::Sign($secondDecSlope)
-        $materialSlope = [Math]::Abs($firstDecSlope) -gt 0.02 -or [Math]::Abs($secondDecSlope) -gt 0.02
-        $allowedDifference = [Math]::Max(0.1, [Math]::Abs($decSlope) * 0.75)
-        if ($oppositeSign -and $materialSlope) {
-            $driftStable = $false
-            $stabilityReason = "DEC drift changes sign between capture halves"
-        } elseif ([Math]::Abs($firstDecSlope - $secondDecSlope) -gt $allowedDifference) {
-            $driftStable = $false
-            $stabilityReason = "DEC drift slopes disagree materially between capture halves"
+        $hasMaterialPositiveSlope = @($windowSlopes | Where-Object { $_ -gt $MaterialWindowSlopeFloorUnitsPerMin }).Count -gt 0
+        $hasMaterialNegativeSlope = @($windowSlopes | Where-Object { $_ -lt -$MaterialWindowSlopeFloorUnitsPerMin }).Count -gt 0
+        $allowedRange = [Math]::Max($WindowSlopeRangeFloorUnitsPerMin, [Math]::Abs($windowSlopeMean) * $WindowSlopeRangeMeanFraction)
+        $allowedStdDev = [Math]::Max($WindowSlopeStdDevFloorUnitsPerMin, [Math]::Abs($windowSlopeMean) * $WindowSlopeStdDevMeanFraction)
+        if ($hasMaterialPositiveSlope -and $hasMaterialNegativeSlope) {
+            $stabilityReason = "Fixed-window DEC drift slopes have both signs above the $MaterialWindowSlopeFloorUnitsPerMin units/min material-sign floor"
+        } elseif ($windowSlopeRange -gt $allowedRange) {
+            $stabilityReason = "Fixed-window DEC drift slope range $([Math]::Round($windowSlopeRange, 5)) exceeds the consistency limit $([Math]::Round($allowedRange, 5))"
+        } elseif ($windowSlopeStdDev -gt $allowedStdDev) {
+            $stabilityReason = "Fixed-window DEC drift slope standard deviation $([Math]::Round($windowSlopeStdDev, 5)) exceeds the consistency limit $([Math]::Round($allowedStdDev, 5))"
+        } else {
+            $driftStable = $true
+            $stabilityReason = "$windowSlopeCount valid $([Math]::Round($DriftWindowMinutes, 2))-minute DEC slope windows satisfy the sign, range, and sample standard-deviation limits"
         }
     }
+    $comparisonEligible = $driftStable -and $null -ne $decSlope
+    $comparisonSlope = if ($comparisonEligible) { $decSlope } else { $null }
 
     [pscustomobject]@{
         File = [IO.Path]::GetFileName($Path)
@@ -230,8 +308,27 @@ function Analyze-GuideCsv {
         RaSlopeArcsecPerMin = if ($scale -and $null -ne $raSlope) { $raSlope * $scale } else { $null }
         DecSlopeFirstHalfUnitsPerMin = $firstDecSlope
         DecSlopeSecondHalfUnitsPerMin = $secondDecSlope
+        DecSlopeWindowSeconds = $DriftWindowMinutes * 60.0
+        DecSlopeWindowCount = $windowSlopeCount
+        DecSlopeWindowMeanUnitsPerMin = $windowSlopeMean
+        DecSlopeWindowMinUnitsPerMin = $windowSlopeMin
+        DecSlopeWindowMaxUnitsPerMin = $windowSlopeMax
+        DecSlopeWindowRangeUnitsPerMin = $windowSlopeRange
+        DecSlopeWindowStdDevUnitsPerMin = $windowSlopeStdDev
+        WindowSlopeCount = $windowSlopeCount
+        DecWindowSlopeMinUnitsPerMin = $windowSlopeMin
+        DecWindowSlopeMaxUnitsPerMin = $windowSlopeMax
+        DecWindowSlopeRangeUnitsPerMin = $windowSlopeRange
+        DecWindowSlopeStdDevUnitsPerMin = $windowSlopeStdDev
+        DecWindowSlopeMinArcsecPerMin = if ($scale -and $null -ne $windowSlopeMin) { $windowSlopeMin * $scale } else { $null }
+        DecWindowSlopeMaxArcsecPerMin = if ($scale -and $null -ne $windowSlopeMax) { $windowSlopeMax * $scale } else { $null }
+        DecWindowSlopeRangeArcsecPerMin = if ($scale -and $null -ne $windowSlopeRange) { $windowSlopeRange * $scale } else { $null }
+        DecWindowSlopeStdDevArcsecPerMin = if ($scale -and $null -ne $windowSlopeStdDev) { $windowSlopeStdDev * $scale } else { $null }
         DriftStable = $driftStable
         StabilityReason = $stabilityReason
+        ComparisonEligible = $comparisonEligible
+        ComparisonSlopeUnitsPerMin = $comparisonSlope
+        ComparisonSlopeArcsecPerMin = if ($scale -and $null -ne $comparisonSlope) { $comparisonSlope * $scale } else { $null }
         Note = if ($PixelScaleArcsecPerPixel -gt 0) { "Converted using supplied pixel scale" } else { "PHD2 socket distance units; pass -PixelScaleArcsecPerPixel to convert if these are pixels" }
     }
 }
@@ -301,7 +398,7 @@ $csvOut = Join-Path $RunDir "phd2-drift-summary.csv"
 if ($segments.Count -gt 0) {
     $segments | Export-Csv -LiteralPath $csvOut -NoTypeInformation -Encoding UTF8
 } else {
-    "File,Label,StartUtc,EndUtc,Rows,DurationMin,DecSlopeUnitsPerMin,RaSlopeUnitsPerMin,DecSlopeArcsecPerMin,RaSlopeArcsecPerMin,DecSlopeFirstHalfUnitsPerMin,DecSlopeSecondHalfUnitsPerMin,DriftStable,StabilityReason,Note" |
+    "File,Label,StartUtc,EndUtc,Rows,DurationMin,DecSlopeUnitsPerMin,RaSlopeUnitsPerMin,DecSlopeArcsecPerMin,RaSlopeArcsecPerMin,DecSlopeFirstHalfUnitsPerMin,DecSlopeSecondHalfUnitsPerMin,DecSlopeWindowSeconds,DecSlopeWindowCount,DecSlopeWindowMeanUnitsPerMin,DecSlopeWindowMinUnitsPerMin,DecSlopeWindowMaxUnitsPerMin,DecSlopeWindowRangeUnitsPerMin,DecSlopeWindowStdDevUnitsPerMin,WindowSlopeCount,DecWindowSlopeMinUnitsPerMin,DecWindowSlopeMaxUnitsPerMin,DecWindowSlopeRangeUnitsPerMin,DecWindowSlopeStdDevUnitsPerMin,DecWindowSlopeMinArcsecPerMin,DecWindowSlopeMaxArcsecPerMin,DecWindowSlopeRangeArcsecPerMin,DecWindowSlopeStdDevArcsecPerMin,DriftStable,StabilityReason,ComparisonEligible,ComparisonSlopeUnitsPerMin,ComparisonSlopeArcsecPerMin,Note" |
         Set-Content -LiteralPath $csvOut -Encoding UTF8
 }
 
@@ -319,16 +416,39 @@ if ($NinaLogPath) {
 [void]$lines.Add("")
 [void]$lines.Add("## PHD2 Drift Segments")
 [void]$lines.Add("")
-[void]$lines.Add("| Segment | Rows | Duration min | DEC slope | RA slope | Stable | Note |")
+[void]$lines.Add("An unstable capture must not be compared numerically with TPPA. The whole-capture OLS fields remain in the CSV for diagnostics, but only captures marked comparison-eligible have a comparison slope below.")
+[void]$lines.Add("")
+[void]$lines.Add("| Segment | Rows | Duration min | DEC comparison slope | RA slope | Comparison eligible | Stability reason |")
 [void]$lines.Add("| --- | ---: | ---: | ---: | ---: | --- | --- |")
 foreach ($s in $segments) {
-    $decText = if ($null -ne $s.DecSlopeArcsecPerMin) { "{0:F3} arcsec/min" -f $s.DecSlopeArcsecPerMin } elseif ($null -ne $s.DecSlopeUnitsPerMin) { "{0:F5} units/min" -f $s.DecSlopeUnitsPerMin } else { "n/a" }
+    $decText = if ($null -ne $s.ComparisonSlopeArcsecPerMin) { "{0:F3} arcsec/min" -f $s.ComparisonSlopeArcsecPerMin } elseif ($null -ne $s.ComparisonSlopeUnitsPerMin) { "{0:F5} units/min" -f $s.ComparisonSlopeUnitsPerMin } else { "ineligible" }
     $raText = if ($null -ne $s.RaSlopeArcsecPerMin) { "{0:F3} arcsec/min" -f $s.RaSlopeArcsecPerMin } elseif ($null -ne $s.RaSlopeUnitsPerMin) { "{0:F5} units/min" -f $s.RaSlopeUnitsPerMin } else { "n/a" }
-    $stableText = if ($s.DriftStable) { "yes" } else { "no" }
-    [void]$lines.Add("| $($s.Label) | $($s.Rows) | $('{0:F2}' -f $s.DurationMin) | $decText | $raText | $stableText | $($s.StabilityReason) |")
+    $eligibleText = if ($s.ComparisonEligible) { "yes" } else { "no" }
+    [void]$lines.Add("| $($s.Label) | $($s.Rows) | $('{0:F2}' -f $s.DurationMin) | $decText | $raText | $eligibleText | $($s.StabilityReason) |")
 }
 if ($segments.Count -eq 0) {
-    [void]$lines.Add("| none | 0 | 0.00 | n/a | n/a | No PHD2 guide-step CSV files found in the run folder |")
+    [void]$lines.Add("| none | 0 | 0.00 | n/a | n/a | no | No PHD2 guide-step CSV files found in the run folder |")
+}
+
+[void]$lines.Add("")
+[void]$lines.Add("### Post-warmup fixed-window DEC slopes")
+[void]$lines.Add("")
+[void]$lines.Add("| Segment | Window | WindowSlopeCount | Min units/min | Max units/min | Range units/min | Sample SD units/min | Min arcsec/min | Max arcsec/min | Range arcsec/min | Sample SD arcsec/min |")
+[void]$lines.Add("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
+foreach ($s in $segments) {
+    $windowMinutesText = "{0:F2} min" -f ($s.DecSlopeWindowSeconds / 60.0)
+    $windowMinText = if ($null -ne $s.DecWindowSlopeMinUnitsPerMin) { "{0:F5}" -f $s.DecWindowSlopeMinUnitsPerMin } else { "n/a" }
+    $windowMaxText = if ($null -ne $s.DecWindowSlopeMaxUnitsPerMin) { "{0:F5}" -f $s.DecWindowSlopeMaxUnitsPerMin } else { "n/a" }
+    $windowRangeText = if ($null -ne $s.DecWindowSlopeRangeUnitsPerMin) { "{0:F5}" -f $s.DecWindowSlopeRangeUnitsPerMin } else { "n/a" }
+    $windowSdText = if ($null -ne $s.DecWindowSlopeStdDevUnitsPerMin) { "{0:F5}" -f $s.DecWindowSlopeStdDevUnitsPerMin } else { "n/a" }
+    $windowMinArcsecText = if ($null -ne $s.DecWindowSlopeMinArcsecPerMin) { "{0:F3}" -f $s.DecWindowSlopeMinArcsecPerMin } else { "n/a" }
+    $windowMaxArcsecText = if ($null -ne $s.DecWindowSlopeMaxArcsecPerMin) { "{0:F3}" -f $s.DecWindowSlopeMaxArcsecPerMin } else { "n/a" }
+    $windowRangeArcsecText = if ($null -ne $s.DecWindowSlopeRangeArcsecPerMin) { "{0:F3}" -f $s.DecWindowSlopeRangeArcsecPerMin } else { "n/a" }
+    $windowSdArcsecText = if ($null -ne $s.DecWindowSlopeStdDevArcsecPerMin) { "{0:F3}" -f $s.DecWindowSlopeStdDevArcsecPerMin } else { "n/a" }
+    [void]$lines.Add("| $($s.Label) | $windowMinutesText | $($s.WindowSlopeCount) | $windowMinText | $windowMaxText | $windowRangeText | $windowSdText | $windowMinArcsecText | $windowMaxArcsecText | $windowRangeArcsecText | $windowSdArcsecText |")
+}
+if ($segments.Count -eq 0) {
+    [void]$lines.Add("| none | $('{0:F2}' -f $DriftWindowMinutes) min | 0 | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a |")
 }
 
 [void]$lines.Add("")
@@ -367,8 +487,11 @@ if (@($tppaErrors).Count -eq 0) {
 [void]$lines.Add("## Interpretation Notes")
 [void]$lines.Add("")
 [void]$lines.Add("- For Guiding Assistant style captures with guide output disabled, the raw DEC slope is the useful sanity check.")
-[void]$lines.Add("- A DEC slope is considered usable only when the split-window slopes remain consistent.")
-[void]$lines.Add("- Captures shorter than the configured stability minimum or with a DEC slope sign change are marked inconclusive.")
+[void]$lines.Add("- The legacy whole-segment DEC slope remains in the CSV, but it is exposed as a TPPA comparison slope only when enough fixed post-warmup windows are mutually consistent.")
+[void]$lines.Add("- A valid window contains at least $MinimumDriftWindowSamples samples spanning at least $([Math]::Round($MinimumDriftWindowTimeSpanFraction * 100.0))% of its configured $DriftWindowMinutes minute duration; at least $MinimumConsistentDriftWindows valid windows are required.")
+[void]$lines.Add("- Sign disagreement is material only when slopes exceed both +$MaterialWindowSlopeFloorUnitsPerMin and -$MaterialWindowSlopeFloorUnitsPerMin units/min, so insignificant near-zero sign flips do not fail stability.")
+[void]$lines.Add("- Window slope range must be at most max($WindowSlopeRangeFloorUnitsPerMin units/min, $([Math]::Round($WindowSlopeRangeMeanFraction * 100.0))% of the absolute window-slope mean); sample SD must be at most max($WindowSlopeStdDevFloorUnitsPerMin units/min, $([Math]::Round($WindowSlopeStdDevMeanFraction * 100.0))% of that mean).")
+[void]$lines.Add("- An unstable capture must not be compared numerically with TPPA.")
 [void]$lines.Add("- If the socket distances are pixels, pass `-PixelScaleArcsecPerPixel` to convert slopes to arcsec/min.")
 [void]$lines.Add("- This report does not close the UPAS backlash loop; it verifies whether TPPA's reported errors agree with independent PHD2 drift behavior.")
 

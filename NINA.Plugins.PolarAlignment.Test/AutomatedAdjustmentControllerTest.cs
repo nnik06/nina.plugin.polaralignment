@@ -201,7 +201,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
             firstPlan.IsProbe.Should().BeTrue();
             firstPlan.XMagnitude.Should().NotBe(0);
 
-            controller.NoteFailedExecution();
+            controller.NoteFailedExecution(firstPlan);
             controller.UpdateObservation(0.5, -0.3);
 
             controller.SampleCount.Should().Be(0);
@@ -210,6 +210,43 @@ namespace NINA.Plugins.PolarAlignment.Test {
             secondPlan.HasMovement.Should().BeTrue();
             secondPlan.IsProbe.Should().BeTrue();
             secondPlan.XMagnitude.Should().NotBe(0);
+        }
+
+        [Test]
+        public void AutomatedAdjustmentController_ChargesFullAttemptedXTravelAfterFailedMove() {
+            var controller = new AutomatedAdjustmentController(useUpasEngagementController: true) {
+                AzimuthTravelGuardEnabled = true,
+                AzimuthTravelGuardConfirmed = true,
+                AzimuthTravelLimitDegrees = 1.0,
+                AzimuthDegreesPerXUnit = 0.025,
+            };
+            controller.UpdateObservation(30.0 / 60.0, 0);
+
+            var plan = controller.CreatePlan();
+            plan.XMagnitude.Should().Be(8.0);
+
+            controller.NoteFailedExecution(plan);
+
+            controller.AzimuthTravelUsedDegrees.Should().BeApproximately(0.2, 0.0001);
+        }
+
+        [Test]
+        public void AutomatedAdjustmentController_DoesNotContinueStaleXEngagementAfterFailedMove() {
+            var controller = new AutomatedAdjustmentController(useUpasEngagementController: true);
+            controller.UpdateObservation(30.0 / 60.0, 0);
+
+            var firstPlan = controller.CreatePlan();
+            controller.NoteSuccessfulExecution(firstPlan);
+            controller.UpdateObservation(31.0 / 60.0, 0);
+
+            var engagementPlan = controller.CreatePlan();
+            engagementPlan.Reason.Should().Contain("Continuing UPAS azimuth engagement run");
+
+            controller.NoteFailedExecution(engagementPlan);
+
+            var nextPlan = controller.CreatePlan();
+            nextPlan.HasMovement.Should().BeTrue();
+            nextPlan.Reason.Should().Be("Probing azimuth response (attempt 1)");
         }
 
         [Test]

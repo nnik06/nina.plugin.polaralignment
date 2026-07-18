@@ -368,7 +368,7 @@ namespace NINA.Plugins.PolarAlignment {
 
             if (Math.Abs(plan.XMagnitude) > 0) {
                 if (!await activeSystem.TryNudgeXForAutomation((float)plan.XMagnitude, token)) {
-                    automatedAdjustmentController.NoteFailedExecution();
+                    automatedAdjustmentController.NoteFailedExecution(plan);
                     return false;
                 }
                 executedX = plan.XMagnitude;
@@ -385,7 +385,7 @@ namespace NINA.Plugins.PolarAlignment {
                         return true;
                     }
 
-                    automatedAdjustmentController.NoteFailedExecution();
+                    automatedAdjustmentController.NoteFailedExecution(plan);
                     return false;
                 }
                 executedY = plan.YMagnitude;

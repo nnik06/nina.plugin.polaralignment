@@ -425,11 +425,19 @@ namespace NINA.Plugins.PolarAlignment {
         }
 
         /// <summary>
-        /// Records that the last commanded move failed. Failed moves must not contribute
-        /// to the learned actuator model.
+        /// Records that the attempted move failed. Failed moves must not contribute to the
+        /// learned actuator model. A failed UPAS X command is conservatively treated as having
+        /// consumed its full travel allowance because the actual actuator position is unknown.
         /// </summary>
-        public void NoteFailedExecution() {
+        public void NoteFailedExecution(AutomatedAdjustmentPlan attemptedPlan) {
             pendingPlan = null;
+
+            if (attemptedPlan == null || Math.Abs(attemptedPlan.XMagnitude) <= 0) {
+                return;
+            }
+
+            NoteAzimuthTravelUsed(attemptedPlan.XMagnitude, "failed automated correction (conservative)");
+            InvalidateXSeatingAndEngagementState(preserveLearnedDirection: true);
         }
 
         private void AddSample(ResponseSample sample) {
@@ -513,8 +521,12 @@ namespace NINA.Plugins.PolarAlignment {
         }
 
         private void ResetAcquisitionState(bool preserveLearnedDirection) {
-            rejectedXProbeCount = 0;
             rejectedYProbeCount = 0;
+            InvalidateXSeatingAndEngagementState(preserveLearnedDirection);
+        }
+
+        private void InvalidateXSeatingAndEngagementState(bool preserveLearnedDirection) {
+            rejectedXProbeCount = 0;
             lastExecutedXDirection = null;
             pendingXReversalDirection = null;
             if (!preserveLearnedDirection) {
