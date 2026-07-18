@@ -52,7 +52,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
             await act.Should().ThrowAsync<OperationCanceledException>();
         }
 
-        private static Instructions.PolarAlignment CreatePolarAlignment(IImagingMediator imagingMediator, IPlateSolverFactory plateSolverFactory) {
+        internal static Instructions.PolarAlignment CreatePolarAlignment(IImagingMediator imagingMediator, IPlateSolverFactory plateSolverFactory) {
             var astrometrySettings = Stub.For<IAstrometrySettings>(handlers => {
                 handlers[nameof(IAstrometrySettings.Latitude)] = _ => 1d;
                 handlers[nameof(IAstrometrySettings.Longitude)] = _ => 1d;

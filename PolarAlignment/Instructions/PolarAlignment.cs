@@ -77,6 +77,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
         private bool eastDirection;
         private bool manualMode;
         private bool startFromCurrentPosition;
+        private bool verificationOnly;
         private const double MinimumPositiveAlignmentTolerance = 0.5;
         private double alignmentTolerance;
         private IList<string> issues = new List<string>();
@@ -193,6 +194,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 Offset = Offset,
                 ManualMode = ManualMode,
                 StartFromCurrentPosition = StartFromCurrentPosition,
+                VerificationOnly = VerificationOnly,
                 AlignmentTolerance = AlignmentTolerance,
                 Coordinates = this.Coordinates == null
                     ? null
@@ -259,6 +261,15 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             get => startFromCurrentPosition;
             set {
                 startFromCurrentPosition = value;
+                RaisePropertyChanged();
+            }
+        }
+
+        [JsonProperty]
+        public bool VerificationOnly {
+            get => verificationOnly;
+            set {
+                verificationOnly = value;
                 RaisePropertyChanged();
             }
         }
@@ -412,12 +423,13 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
         /// <param name="token">When a cancel signal is triggered from outside, this token can be used to register to it or check if it is cancelled</param>
         /// <returns></returns>
         public override async Task Execute(IProgress<ApplicationStatus> externalProgress, CancellationToken token) {
+            var executionPolicy = PolarAlignmentExecutionPolicy.Create(VerificationOnly);
             try {
                 using (var localCTS = CancellationTokenSource.CreateLinkedTokenSource(token)) {
                     Guid correlatedGuid = Guid.NewGuid();
                     pauseTS = new PauseTokenSource();
                     try {
-                        TPAPAVM?.Dispose();
+                        TPAPAVM?.Dispose(executionPolicy.DisconnectActuatorOnDispose);
                     } catch { }
 
                     TPAPAVM = new TPAPAVM(profileService, weatherDataMediator);
@@ -448,6 +460,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     Logger.Info($"""
                         Starting polar alignment:
                             Manual mode: {ManualMode}
+                            Verification only: {VerificationOnly}
                             Measure point distance: {TargetDistance}
                             Mount move rate: {MoveRate}
                             Timeout factor: {Properties.Settings.Default.MoveTimeoutFactor}
@@ -471,6 +484,11 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                             Selected System: {Properties.Settings.Default.SelectedPolarAlignmentSystem}
                             Automated adjustments: {Properties.Settings.Default.DoAutomatedAdjustments}
                         """);
+
+                    if (executionPolicy.RunSingleFreshVerification) {
+                        await ExecuteVerificationOnly(TPAPAVM, correlatedGuid, progress, localCTS.Token);
+                        return;
+                    }
 
                     TPAPAVM.ActivateFirstStep();
 
@@ -496,7 +514,9 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         await domeMediator.WaitForDomeSynchronization(token);
                     }
 
-                    await TPAPAVM.PrepareUpasBeforeInitialMeasurement(progress, localCTS.Token);
+                    if (executionPolicy.AllowActuatorPreparation) {
+                        await TPAPAVM.PrepareUpasBeforeInitialMeasurement(progress, localCTS.Token);
+                    }
 
                     var solve1 = await Solve(TPAPAVM, 5.0, progress, localCTS.Token);
                     var refractionParameter = RefractionParameters.GetRefractionParameters(weatherDataMediator.GetInfo());
@@ -579,7 +599,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                                                                           decSpread.ArcSeconds),
                                                        localCTS.Token);
                     TPAPAVM.PolarErrorDetermination = determination;
-                    if (TPAPAVM.AutomatedAdjustmentRequiresFreshMeasurementFeedback) {
+                    if (executionPolicy.AllowActuatorConfiguration && TPAPAVM.AutomatedAdjustmentRequiresFreshMeasurementFeedback) {
                         TPAPAVM.RebaseAutomatedAdjustmentToFreshDetermination();
                     }
 
@@ -617,7 +637,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
 
                     TPAPAVM.ActivateFourthStep();
 
-                    if (TPAPAVM.ActiveAlignmentSystemVM != null) {
+                    if (executionPolicy.AllowActuatorConnection && TPAPAVM.ActiveAlignmentSystemVM != null) {
                         await TPAPAVM.ActiveAlignmentSystemVM.Connect();
                         if (TPAPAVM.ActiveAlignmentSystemVM.DoAutomatedAdjustments && !TPAPAVM.ActiveAlignmentSystemVM.Connected) {
                             throw new SequenceEntityFailedException("Unable to connect to Polar Alignment system. Cancelling polar alignment routine as automated adjustments are impossible.");
@@ -753,7 +773,8 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                     throw new InvalidOperationException($"UPAS automated alignment stopped after {MaximumFreshFeedbackMoves} fresh-measured moves without converging.");
                                 }
 
-                                var moved = await TPAPAVM.MoveCloser(progress, localCTS.Token);
+                                var moved = executionPolicy.AllowActuatorMovement
+                                    && await TPAPAVM.MoveCloser(progress, localCTS.Token);
                                 if (moved && TPAPAVM.AutomatedAdjustmentRequiresFreshMeasurementFeedback) {
                                     freshFeedbackMoveCount++;
                                     Logger.Info("UPAS move completed. Measuring an independent fresh three-point response before allowing another automated move.");
@@ -791,7 +812,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     await windowService?.Close();
                 } catch { }
                 try {
-                    TPAPAVM?.Dispose();
+                    TPAPAVM?.Dispose(executionPolicy.DisconnectActuatorOnDispose);
                 } catch (Exception) { }
                 IsPaused = false;
                 externalProgress?.Report(GetStatus(string.Empty));
@@ -921,6 +942,173 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             private set {
                 cameraInfo = value;
                 RaisePropertyChanged();
+            }
+        }
+
+        private async Task ExecuteVerificationOnly(TPAPAVM context,
+                                                   Guid correlatedGuid,
+                                                   IProgress<ApplicationStatus> progress,
+                                                   CancellationToken token) {
+            if (!telescopeMediator.GetInfo().Connected) {
+                throw new InvalidOperationException("Verification-only mode requires a connected telescope so both measurements can use the same automated arc and A can be restored.");
+            }
+
+            var originalPointing = telescopeMediator.GetCurrentPosition();
+            Coordinates cleanupPointing = originalPointing;
+            PolarErrorDetermination initialDetermination = null;
+            PolarErrorDetermination verificationDetermination = null;
+            context.ActivateFirstVerificationStep();
+
+            await VerificationOnlyCleanupRunner.Run(
+                async operationToken => {
+                    if (!StartFromCurrentPosition) {
+                        Logger.Info($"Slewing to verification-only initial position {Coordinates.Coordinates}");
+                        SetTrackingSidereal(true);
+                        await telescopeMediator.SlewToCoordinatesAsync(Coordinates.Coordinates, operationToken);
+                    } else {
+                        Logger.Info($"Starting verification-only measurement from current position {telescopeMediator.GetCurrentPosition()}");
+                    }
+
+                    if (domeMediator.GetInfo().Connected) {
+                        await domeMediator.WaitForDomeSynchronization(operationToken);
+                    }
+
+                    cleanupPointing = telescopeMediator.GetCurrentPosition();
+                    Logger.Info($"TPPA verification-only captured A/correction pointing {cleanupPointing} before solve A.");
+
+                    var runResult = await VerificationOnlyArcRunner.Run<Coordinates, PolarErrorDetermination>(
+                        cleanupPointing,
+                        async arcToken => {
+                            progress?.Report(new ApplicationStatus() { Status = "Running verification-only initial three-point measurement" });
+                            var determination = await MeasureVerificationOnlyArc(context, progress, arcToken);
+                            context.PolarErrorDetermination = determination;
+                            return determination;
+                        },
+                        async arcToken => {
+                            progress?.Report(new ApplicationStatus() { Status = "Running verification-only repeat three-point measurement" });
+                            var determination = await MeasureVerificationOnlyArc(context, progress, arcToken);
+                            context.PolarErrorDetermination = determination;
+                            return determination;
+                        },
+                        async (arcStart, arcToken) => {
+                            progress?.Report(new ApplicationStatus() { Status = "Returning to A for verification-only repeat" });
+                            SetTrackingSidereal(true);
+                            await telescopeMediator.SlewToCoordinatesAsync(arcStart, arcToken);
+                            if (domeMediator.GetInfo().Connected) {
+                                await domeMediator.WaitForDomeSynchronization(arcToken);
+                            }
+                            context.ActivateFirstVerificationStep();
+                        },
+                        operationToken);
+
+                    initialDetermination = runResult.Initial;
+                    verificationDetermination = runResult.Verification;
+                    Logger.Info($"TPPA verification-only captured A pointing {runResult.Plan.ArcStart}; both determinations started there and used {runResult.Plan.TotalSolveCount} total solves.");
+
+                    var azimuthDeltaDegrees = verificationDetermination.InitialMountAxisAzimuthError.Degree
+                        - initialDetermination.InitialMountAxisAzimuthError.Degree;
+                    var altitudeDeltaDegrees = verificationDetermination.InitialMountAxisAltitudeError.Degree
+                        - initialDetermination.InitialMountAxisAltitudeError.Degree;
+                    var totalDeltaDegrees = verificationDetermination.InitialMountAxisTotalError.Degree
+                        - initialDetermination.InitialMountAxisTotalError.Degree;
+
+                    Logger.Info($"TPPA verification-only initial result: Az: {initialDetermination.InitialMountAxisAzimuthError}, Alt: {initialDetermination.InitialMountAxisAltitudeError}, Tot: {initialDetermination.InitialMountAxisTotalError}");
+                    Logger.Info($"TPPA verification-only verification result: Az: {verificationDetermination.InitialMountAxisAzimuthError}, Alt: {verificationDetermination.InitialMountAxisAltitudeError}, Tot: {verificationDetermination.InitialMountAxisTotalError}");
+                    Logger.Info($"TPPA verification-only repeat-minus-initial delta: Az: {Angle.ByDegree(azimuthDeltaDegrees)}, Alt: {Angle.ByDegree(altitudeDeltaDegrees)}, Tot: {Angle.ByDegree(totalDeltaDegrees)}");
+
+                    await messageBroker.Publish(new PolarAlignmentVerificationMessage(correlatedGuid,
+                                                                                       initialDetermination.InitialMountAxisAltitudeError.Degree,
+                                                                                       initialDetermination.InitialMountAxisAzimuthError.Degree,
+                                                                                       initialDetermination.InitialMountAxisTotalError.Degree,
+                                                                                       verificationDetermination.InitialMountAxisAltitudeError.Degree,
+                                                                                       verificationDetermination.InitialMountAxisAzimuthError.Degree,
+                                                                                       verificationDetermination.InitialMountAxisTotalError.Degree,
+                                                                                       altitudeDeltaDegrees,
+                                                                                       azimuthDeltaDegrees,
+                                                                                       totalDeltaDegrees));
+                },
+                async cleanupToken => {
+                    Logger.Info($"Restoring the verification-only A/correction pointing {cleanupPointing}.");
+                    progress?.Report(new ApplicationStatus() { Status = "Restoring A/correction pointing" });
+                    SetTrackingSidereal(true);
+                    await telescopeMediator.SlewToCoordinatesAsync(cleanupPointing, cleanupToken);
+                    if (domeMediator.GetInfo().Connected) {
+                        await domeMediator.WaitForDomeSynchronization(cleanupToken);
+                    }
+                },
+                token,
+                TimeSpan.FromSeconds(30),
+                cleanupFailure => Logger.Error("Verification-only pointing restoration also failed; preserving the original measurement failure.", cleanupFailure));
+
+            var initialAzimuthMinutes = initialDetermination.InitialMountAxisAzimuthError.ArcMinutes;
+            var initialAltitudeMinutes = initialDetermination.InitialMountAxisAltitudeError.ArcMinutes;
+            var initialTotalMinutes = initialDetermination.InitialMountAxisTotalError.ArcMinutes;
+            var verificationAzimuthMinutes = verificationDetermination.InitialMountAxisAzimuthError.ArcMinutes;
+            var verificationAltitudeMinutes = verificationDetermination.InitialMountAxisAltitudeError.ArcMinutes;
+            var verificationTotalMinutes = verificationDetermination.InitialMountAxisTotalError.ArcMinutes;
+            Notification.ShowInformation(
+                $"Verification-only measurements complete.{Environment.NewLine}" +
+                $"Initial: Az {initialAzimuthMinutes:F2}', Alt {initialAltitudeMinutes:F2}', Total {initialTotalMinutes:F2}'{Environment.NewLine}" +
+                $"Verification: Az {verificationAzimuthMinutes:F2}', Alt {verificationAltitudeMinutes:F2}', Total {verificationTotalMinutes:F2}'{Environment.NewLine}" +
+                $"Delta: Az {verificationAzimuthMinutes - initialAzimuthMinutes:+0.00;-0.00;0.00}', " +
+                $"Alt {verificationAltitudeMinutes - initialAltitudeMinutes:+0.00;-0.00;0.00}', " +
+                $"Total {verificationTotalMinutes - initialTotalMinutes:+0.00;-0.00;0.00}'",
+                TimeSpan.FromMinutes(1));
+            progress?.Report(GetStatus("Verification-only measurements complete"));
+        }
+
+        private async Task<PolarErrorDetermination> MeasureVerificationOnlyArc(TPAPAVM context,
+                                                                                IProgress<ApplicationStatus> progress,
+                                                                                CancellationToken token) {
+            var refractionParameter = RefractionParameters.GetRefractionParameters(weatherDataMediator.GetInfo());
+            var solves = new PlateSolveResult[3];
+            var positions = new Position[3];
+            var mountConnected = new bool[3];
+            var mountDeclinations = new double[3];
+
+            solves[0] = await Solve(context, 5.0, progress, token);
+            RecordVerificationOnlyPoint(0);
+
+            context.ActivateSecondStep();
+            solves[1] = await AutomatedNextPoint(progress, token);
+            RecordVerificationOnlyPoint(1);
+
+            context.ActivateThirdStep();
+            solves[2] = await AutomatedNextPoint(progress, token);
+            RecordVerificationOnlyPoint(2);
+
+            var decSpread = Angle.Zero;
+            if (mountConnected.All(connected => connected)) {
+                decSpread = Angle.ByDegree(mountDeclinations.Max() - mountDeclinations.Min());
+            }
+
+            var determination = await Task.Run(() => new PolarErrorDetermination(solves[2],
+                                                                                  positions[0],
+                                                                                  positions[1],
+                                                                                  positions[2],
+                                                                                  Latitude,
+                                                                                  Longitude,
+                                                                                  Elevation,
+                                                                                  refractionParameter,
+                                                                                  Properties.Settings.Default.RefractionAdjustment,
+                                                                                  decSpread.ArcSeconds),
+                                               token);
+            return determination;
+
+            void RecordVerificationOnlyPoint(int index) {
+                var mountInfo = telescopeMediator.GetInfo();
+                mountConnected[index] = mountInfo.Connected;
+                mountDeclinations[index] = mountInfo.Declination;
+                positions[index] = new Position(solves[index].Coordinates,
+                                                solves[index].PositionAngle,
+                                                Latitude,
+                                                Longitude,
+                                                Elevation,
+                                                refractionParameter);
+                var mountInfoSuffix = mountInfo.Connected
+                    ? $" - Mount RA: {mountInfo.RightAscensionString}; Mount Dec: {mountInfo.DeclinationString}"
+                    : string.Empty;
+                Logger.Info($"Verification-only measurement point {index + 1} {solves[index].Coordinates} - Vector: {positions[index].Vector} - Position Angle: {positions[index].PositionAngle}{mountInfoSuffix}");
             }
         }
 
@@ -1200,6 +1388,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
 
         public bool Validate() {
             var i = new List<string>();
+            i.AddRange(PolarAlignmentExecutionPolicy.GetValidationIssues(VerificationOnly, ManualMode));
 
             //Location
             if (profileService.ActiveProfile.AstrometrySettings.Latitude == 0 && profileService.ActiveProfile.AstrometrySettings.Longitude == 0) {
@@ -1240,7 +1429,8 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 i.Add("Telescope is parked. Please unpark the telescope first!");
             }
 
-            if (PolarAlignmentPlugin.ActiveAlignmentSystemVM != null && PolarAlignmentPlugin.ActiveAlignmentSystemVM?.DoAutomatedAdjustments == true && AlignmentTolerance == 0) {
+            var executionPolicy = PolarAlignmentExecutionPolicy.Create(VerificationOnly);
+            if (executionPolicy.AllowActuatorMovement && PolarAlignmentPlugin.ActiveAlignmentSystemVM != null && PolarAlignmentPlugin.ActiveAlignmentSystemVM?.DoAutomatedAdjustments == true && AlignmentTolerance == 0) {
                 i.Add("Automated adjustments are enabled, but polar alignment tolerance is set to zero. Please set an alignment tolerance!");
             }
 
@@ -1371,6 +1561,47 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
         public object Content { get; } = status;
     }
     
+    public class PolarAlignmentVerificationMessage(Guid correlatedGuid,
+                                                    double initialAltitudeError,
+                                                    double initialAzimuthError,
+                                                    double initialTotalError,
+                                                    double verificationAltitudeError,
+                                                    double verificationAzimuthError,
+                                                    double verificationTotalError,
+                                                    double altitudeDelta,
+                                                    double azimuthDelta,
+                                                    double totalDelta) : IMessage {
+        public Guid SenderId => Guid.Parse(PolarAlignmentPlugin.PluginId);
+
+        public string Sender => nameof(PolarAlignmentPlugin);
+
+        public DateTimeOffset SentAt => DateTime.UtcNow;
+
+        public Guid MessageId => Guid.NewGuid();
+
+        public DateTimeOffset? Expiration => null;
+
+        public Guid? CorrelationId => correlatedGuid;
+
+        public int Version => 1;
+
+        public IDictionary<string, object> CustomHeaders => new Dictionary<string, object>();
+
+        public string Topic => $"{nameof(PolarAlignmentPlugin)}_{nameof(PolarAlignment)}_Verification";
+
+        public object Content { get; } = new {
+            InitialAzimuthError = initialAzimuthError,
+            InitialAltitudeError = initialAltitudeError,
+            InitialTotalError = initialTotalError,
+            VerificationAzimuthError = verificationAzimuthError,
+            VerificationAltitudeError = verificationAltitudeError,
+            VerificationTotalError = verificationTotalError,
+            AzimuthDelta = azimuthDelta,
+            AltitudeDelta = altitudeDelta,
+            TotalDelta = totalDelta
+        };
+    }
+
     public class PolarAlignmentErrorMessage(Guid correlatedGuid, double altitudeError, double azimuthError, double totalError) : IMessage {
 
         public Guid SenderId => Guid.Parse(PolarAlignmentPlugin.PluginId);

@@ -94,6 +94,17 @@ namespace NINA.Plugins.PolarAlignment {
             Steps[0].Active = true;
             Steps[0].Relevant = true;
         }
+
+        internal void ActivateFirstVerificationStep() {
+            for (var i = 0; i < 3; i++) {
+                Steps[i].Active = false;
+                Steps[i].Completed = false;
+                Steps[i].Relevant = false;
+            }
+
+            Steps[0].Active = true;
+            Steps[0].Relevant = true;
+        }
         public void ActivateSecondStep() {
             Steps[0].Active = false;
             Steps[0].Completed = true;
@@ -742,12 +753,18 @@ namespace NINA.Plugins.PolarAlignment {
         }
 
         public void Dispose() {
+            Dispose(disconnectActiveAlignmentSystem: true);
+        }
+
+        internal void Dispose(bool disconnectActiveAlignmentSystem) {
             try {
                 logger?.Dispose();
             } catch { }
-            try {
-                ActiveAlignmentSystemVM?.Disconnect();
-            } catch { }
+            if (disconnectActiveAlignmentSystem) {
+                try {
+                    ActiveAlignmentSystemVM?.Disconnect();
+                } catch { }
+            }
         }
 
         private PolarErrorDetermination polarErrorDetermination;

@@ -1,6 +1,7 @@
 # Changelog
 
 ## Version 2.2.6.7
+- Added an automated-mount-only per-instruction verification mode that performs exactly two independent determinations over the same three-point arc, publishes their values and delta, restores A even after cancellation or failure (falling back to the pre-run pointing if A was not captured), and avoids polar-alignment actuator configuration, connection, movement, and disconnect side effects.
 - Conservatively charged failed UPAS X commands to the azimuth travel budget and discarded stale seating/engagement state without learning from the failed move.
 - Added fixed-window PHD2 DEC drift consistency diagnostics and withheld TPPA comparison slopes from curved or nonstationary captures.
 
