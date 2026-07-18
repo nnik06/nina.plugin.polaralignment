@@ -297,13 +297,13 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             }
         }
 
-        private async Task<PlateSolveResult> AutomatedNextPoint(IProgress<ApplicationStatus> progress, CancellationToken token) {
+        private async Task<PlateSolveResult> AutomatedNextPoint(IProgress<ApplicationStatus> progress, CancellationToken token, bool? eastDirection = null) {
             PlateSolveResult solve;
             var totalDistance = (double)TargetDistance;
             var previousMountRADegrees = telescopeMediator.GetCurrentPosition().RADegrees;
 
             await WaitIfPaused(token, progress);
-            await MoveToNextPoint(totalDistance, MoveRate, progress, token);
+            await MoveToNextPoint(totalDistance, MoveRate, progress, token, eastDirection);
 
             if (domeMediator.GetInfo().Connected) {
                 await domeMediator.WaitForDomeSynchronization(token);
@@ -940,8 +940,12 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 var mountInfoSuffix0 = mountInfo0.Connected ? $" - Mount RA: {mountInfo0.RightAscensionString}; Mount Dec: {mountInfo0.DeclinationString}" : string.Empty;
                 Logger.Info($"Completion verification first measurement point {solves[0].Coordinates} - Vector: {positions[0].Vector} - Position Angle: {positions[0].PositionAngle}{mountInfoSuffix0}");
 
+                // Re-measure the same mount arc in reverse. Continuing beyond the original
+                // third point samples a different part of the mount rotation and lets cone
+                // error or flexure masquerade as a changed polar-axis solution.
+                var verificationEastDirection = !EastDirection;
                 solves[1] = !ManualMode
-                    ? await AutomatedNextPoint(progress, token)
+                    ? await AutomatedNextPoint(progress, token, verificationEastDirection)
                     : await ManualNextPoint(solves[0], progress, token);
                 var mountInfo1 = telescopeMediator.GetInfo();
                 mountConnected[1] = mountInfo1.Connected;
@@ -951,7 +955,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 Logger.Info($"Completion verification second measurement point {solves[1].Coordinates} - Vector: {positions[1].Vector} - Position Angle: {positions[1].PositionAngle}{mountInfoSuffix1}");
 
                 if (!ManualMode) {
-                    solves[2] = await AutomatedNextPoint(progress, token);
+                    solves[2] = await AutomatedNextPoint(progress, token, verificationEastDirection);
                 } else {
                     solves[2] = await ManualNextPoint(solves[1], progress, token);
                     await CoreUtil.Wait(TimeSpan.FromSeconds(10), token, progress, "Waiting for things to settle. Make sure the scope is tracking and don't move any further!");
@@ -1096,7 +1100,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             return 180 - Math.Abs(Math.Abs(raDegrees1 - raDegrees2) - 180);
         }
 
-        private async Task MoveToNextPoint(double moveDistance, double rate, IProgress<ApplicationStatus> progress, CancellationToken token) {
+        private async Task MoveToNextPoint(double moveDistance, double rate, IProgress<ApplicationStatus> progress, CancellationToken token, bool? eastDirection = null) {
             try {
                 var startPosition = telescopeMediator.GetCurrentPosition();
                 var currentPosition = telescopeMediator.GetCurrentPosition();
@@ -1112,8 +1116,9 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     adjustedRate = foundRate.Item2;
                 }
 
-                Logger.Info($"Moving axis by {adjustedRate} into direction {(EastDirection ? "East" : "West")} until distance {moveDistance}° is traveled");
-                telescopeMediator.MoveAxis(Core.Enum.TelescopeAxes.Primary, EastDirection ? adjustedRate : -adjustedRate);
+                var moveEast = eastDirection ?? EastDirection;
+                Logger.Info($"Moving axis by {adjustedRate} into direction {(moveEast ? "East" : "West")} until distance {moveDistance}° is traveled");
+                telescopeMediator.MoveAxis(Core.Enum.TelescopeAxes.Primary, moveEast ? adjustedRate : -adjustedRate);
 
                 //Move Rate is expectedly degree/s - Add a failsafe timer at 2x
                 var timeToDestination = TimeSpan.FromSeconds(moveDistance / adjustedRate * Properties.Settings.Default.MoveTimeoutFactor);
