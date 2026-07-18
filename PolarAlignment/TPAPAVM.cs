@@ -189,8 +189,10 @@ namespace NINA.Plugins.PolarAlignment {
                     PolarErrorDetermination.CurrentMountAxisAzimuthError = Angle.ByDegree(estimate.AzimuthErrorDegrees);
                     PolarErrorDetermination.CurrentMountAxisAltitudeError = Angle.ByDegree(estimate.AltitudeErrorDegrees);
                     PolarErrorDetermination.CurrentMountAxisTotalError = Angle.ByDegree(Accord.Math.Tools.Hypotenuse(estimate.AzimuthErrorDegrees, estimate.AltitudeErrorDegrees));
-                    automatedAdjustmentController.UpdateObservation(estimate.AzimuthErrorDegrees, estimate.AltitudeErrorDegrees);
-                    PersistUpasAzimuthResponseMemory();
+                    if (AutomatedAdjustmentFeedbackPolicy.AllowsContinuousFeedback(AutomatedAdjustmentRequiresFreshMeasurementFeedback)) {
+                        automatedAdjustmentController.UpdateObservation(estimate.AzimuthErrorDegrees, estimate.AltitudeErrorDegrees);
+                        PersistUpasAzimuthResponseMemory();
+                    }
                     lastContinuousEstimateStable = true;
                 } else {
                     Logger.Warning($"Continuous polar error estimate was unstable. Condition number: {estimate.ConditionNumber}; residual: {estimate.ResidualArcSeconds}\"");
@@ -338,7 +340,9 @@ namespace NINA.Plugins.PolarAlignment {
             ConfigureAutomatedAdjustmentControllerForActiveSystem();
             var useContinuousErrorEstimator = UseContinuousErrorEstimator;
 
-            if (useContinuousErrorEstimator && !lastContinuousEstimateStable) {
+            if (useContinuousErrorEstimator
+                && !lastContinuousEstimateStable
+                && AutomatedAdjustmentFeedbackPolicy.AllowsContinuousFeedback(AutomatedAdjustmentRequiresFreshMeasurementFeedback)) {
                 progress?.Report(new ApplicationStatus() { Status = "Skipping automated adjustment because the continuous error estimate is unstable." });
                 return false;
             }

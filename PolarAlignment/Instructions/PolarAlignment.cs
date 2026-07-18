@@ -667,7 +667,11 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         if (continuousSolve.Success) {
                             var estimateStable = await TPAPAVM.UpdateDetails(continuousSolve, progress, localCTS.Token);
 
-                            if (estimateStable) {
+                            var freshFeedbackControl = TPAPAVM.AutomatedAdjustmentRequiresFreshMeasurementFeedback;
+                            if (estimateStable || freshFeedbackControl) {
+                                if (!estimateStable && freshFeedbackControl) {
+                                    Logger.Warning("Continuous polar error estimate was unstable. UPAS correction will proceed only from the last independent fresh three-point measurement.");
+                                }
                                 await messageBroker.Publish(
                                     new PolarAlignmentErrorMessage(
                                         correlatedGuid,

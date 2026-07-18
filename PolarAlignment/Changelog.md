@@ -3,6 +3,7 @@
 ## Version 2.2.6.6
 - Changed Avalon UPAS automation to learn and plan only from independent fresh three-point measurements taken before and after each actuator move.
 - Kept the continuous correction estimate display-only for UPAS automation so projection drift cannot train or steer the actuator response model.
+- Prevented continuous-estimator instability from suppressing a UPAS move planned from the last valid fresh measurement.
 - Required two consecutive independent fresh three-point results for automated UPAS completion, bypassing overlay-based completion gating.
 - Added a fail-closed twelve-move limit for fresh-measured UPAS correction attempts.
 - Hardened fixed-tripod diagnostics against stale fresh-result log markers and duplicate measurement rows.
