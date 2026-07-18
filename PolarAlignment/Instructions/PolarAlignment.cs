@@ -634,7 +634,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     var sw = Stopwatch.StartNew();
                     var completionGuard = new AutomatedAlignmentCompletionGuard();
                     var freshFeedbackMoveCount = 0;
-                    const int MaximumFreshFeedbackMoves = 12;
+                    const int MaximumFreshFeedbackMoves = 18;
                     do {
                         await WaitIfPaused(localCTS.Token, progress);
 

@@ -676,7 +676,9 @@ namespace NINA.Plugins.PolarAlignment {
             }
 
             preferredXAcquisitionDirection = committedXDirection.Value;
-            plan = new AutomatedAdjustmentPlan(committedXDirection.Value * GetBaseXProbeMagnitude(),
+            var remainingClearance = XAcquisitionClearanceMagnitude - committedXTravelSinceReversal;
+            var engagementMagnitude = Math.Min(GetBaseXProbeMagnitude(), remainingClearance);
+            plan = new AutomatedAdjustmentPlan(committedXDirection.Value * engagementMagnitude,
                                                0,
                                                true,
                                                $"Continuing UPAS azimuth engagement run: X travel {Math.Round(committedXTravelSinceReversal, 3)}/{XAcquisitionClearanceMagnitude}");

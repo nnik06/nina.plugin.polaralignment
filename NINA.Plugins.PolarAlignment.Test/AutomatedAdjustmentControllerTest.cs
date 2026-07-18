@@ -783,6 +783,33 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public void AutomatedAdjustmentController_DoesNotOvershootRemainingEngagementClearance() {
+            var controller = new AutomatedAdjustmentController(useUpasEngagementController: true);
+            controller.UpdateObservation(-3.0 / 60.0, 0);
+
+            var firstMove = controller.CreatePlan();
+            firstMove.XMagnitude.Should().Be(4.0);
+            controller.NoteSuccessfulExecution(firstMove);
+            controller.UpdateObservation(-3.3 / 60.0, 0);
+
+            var secondMove = controller.CreatePlan();
+            secondMove.XMagnitude.Should().Be(8.0);
+            controller.NoteSuccessfulExecution(secondMove);
+            controller.UpdateObservation(-3.3 / 60.0, 0);
+
+            var thirdMove = controller.CreatePlan();
+            thirdMove.XMagnitude.Should().Be(8.0);
+            controller.NoteSuccessfulExecution(thirdMove);
+            controller.UpdateObservation(-3.3 / 60.0, 0);
+
+            var finalClearanceMove = controller.CreatePlan();
+
+            finalClearanceMove.XMagnitude.Should().Be(4.0);
+            finalClearanceMove.YMagnitude.Should().Be(0);
+            finalClearanceMove.Reason.Should().Contain("20/24");
+        }
+
+        [Test]
         public void AutomatedAdjustmentController_LimitsNearTargetXComponentOfCombinedMove() {
             var controller = new AutomatedAdjustmentController(useUpasEngagementController: true);
             controller.UpdateObservation(10.0, 10.0);
