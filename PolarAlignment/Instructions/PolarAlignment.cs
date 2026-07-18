@@ -297,13 +297,13 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             }
         }
 
-        private async Task<PlateSolveResult> AutomatedNextPoint(IProgress<ApplicationStatus> progress, CancellationToken token, bool? eastDirection = null) {
+        private async Task<PlateSolveResult> AutomatedNextPoint(IProgress<ApplicationStatus> progress, CancellationToken token) {
             PlateSolveResult solve;
             var totalDistance = (double)TargetDistance;
             var previousMountRADegrees = telescopeMediator.GetCurrentPosition().RADegrees;
 
             await WaitIfPaused(token, progress);
-            await MoveToNextPoint(totalDistance, MoveRate, progress, token, eastDirection);
+            await MoveToNextPoint(totalDistance, MoveRate, progress, token);
 
             if (domeMediator.GetInfo().Connected) {
                 await domeMediator.WaitForDomeSynchronization(token);
@@ -511,6 +511,9 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         point1MountInfoString = $" - Mount RA: {point1MountInfo.RightAscensionString}; Mount Dec: {point1MountInfo.DeclinationString}";
                     }
                     Logger.Info($"First measurement point {solve1.Coordinates} - Vector: {position1.Vector} - Position Angle: {position1.PositionAngle}{point1MountInfoString}");
+                    var automatedVerificationStartPointing = !ManualMode && point1MountInfo.Connected
+                        ? telescopeMediator.GetCurrentPosition()
+                        : null;
 
                     TPAPAVM.ActivateSecondStep();
 
@@ -640,6 +643,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                             Logger.Info("Fresh UPAS measurement is below tolerance. Requiring one consecutive independent fresh three-point confirmation without moving.");
                             progress?.Report(new ApplicationStatus() { Status = "Confirming fresh three-point UPAS result" });
                             var confirmationDetermination = await MeasureFreshThreePointCompletionVerification(TPAPAVM,
+                                                                                                                automatedVerificationStartPointing,
                                                                                                                 progress,
                                                                                                                 localCTS.Token);
                             TPAPAVM.PolarErrorDetermination = confirmationDetermination;
@@ -692,6 +696,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                     progress?.Report(new ApplicationStatus() { Status = "Running fresh three-point completion verification" });
 
                                     var verificationDetermination = await MeasureFreshThreePointCompletionVerification(TPAPAVM,
+                                                                                                                       automatedVerificationStartPointing,
                                                                                                                        progress,
                                                                                                                        localCTS.Token);
                                     TPAPAVM.PolarErrorDetermination = verificationDetermination;
@@ -755,6 +760,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                     progress?.Report(new ApplicationStatus() { Status = "Measuring fresh three-point UPAS response" });
 
                                     var feedbackDetermination = await MeasureFreshThreePointCompletionVerification(TPAPAVM,
+                                                                                                                    automatedVerificationStartPointing,
                                                                                                                     progress,
                                                                                                                     localCTS.Token);
                                     TPAPAVM.PolarErrorDetermination = feedbackDetermination;
@@ -919,6 +925,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
         }
 
         private async Task<PolarErrorDetermination> MeasureFreshThreePointCompletionVerification(TPAPAVM context,
+                                                                                                  Coordinates automatedVerificationStartPointing,
                                                                                                   IProgress<ApplicationStatus> progress,
                                                                                                   CancellationToken token) {
             var correctionPointing = telescopeMediator.GetCurrentPosition();
@@ -932,6 +939,16 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             Exception measurementFailure = null;
 
             try {
+                if (!ManualMode && automatedVerificationStartPointing != null) {
+                    Logger.Info($"Slewing to the original first measurement pointing {automatedVerificationStartPointing} so verification repeats the same mount arc and direction.");
+                    progress?.Report(new ApplicationStatus() { Status = "Returning to first three-point measurement position" });
+                    SetTrackingSidereal(true);
+                    await telescopeMediator.SlewToCoordinatesAsync(automatedVerificationStartPointing, token);
+                    if (domeMediator.GetInfo().Connected) {
+                        await domeMediator.WaitForDomeSynchronization(token);
+                    }
+                }
+
                 solves[0] = await Solve(context, 5.0, progress, token);
                 var mountInfo0 = telescopeMediator.GetInfo();
                 mountConnected[0] = mountInfo0.Connected;
@@ -940,12 +957,8 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 var mountInfoSuffix0 = mountInfo0.Connected ? $" - Mount RA: {mountInfo0.RightAscensionString}; Mount Dec: {mountInfo0.DeclinationString}" : string.Empty;
                 Logger.Info($"Completion verification first measurement point {solves[0].Coordinates} - Vector: {positions[0].Vector} - Position Angle: {positions[0].PositionAngle}{mountInfoSuffix0}");
 
-                // Re-measure the same mount arc in reverse. Continuing beyond the original
-                // third point samples a different part of the mount rotation and lets cone
-                // error or flexure masquerade as a changed polar-axis solution.
-                var verificationEastDirection = !EastDirection;
                 solves[1] = !ManualMode
-                    ? await AutomatedNextPoint(progress, token, verificationEastDirection)
+                    ? await AutomatedNextPoint(progress, token)
                     : await ManualNextPoint(solves[0], progress, token);
                 var mountInfo1 = telescopeMediator.GetInfo();
                 mountConnected[1] = mountInfo1.Connected;
@@ -955,7 +968,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 Logger.Info($"Completion verification second measurement point {solves[1].Coordinates} - Vector: {positions[1].Vector} - Position Angle: {positions[1].PositionAngle}{mountInfoSuffix1}");
 
                 if (!ManualMode) {
-                    solves[2] = await AutomatedNextPoint(progress, token, verificationEastDirection);
+                    solves[2] = await AutomatedNextPoint(progress, token);
                 } else {
                     solves[2] = await ManualNextPoint(solves[1], progress, token);
                     await CoreUtil.Wait(TimeSpan.FromSeconds(10), token, progress, "Waiting for things to settle. Make sure the scope is tracking and don't move any further!");
@@ -1100,7 +1113,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             return 180 - Math.Abs(Math.Abs(raDegrees1 - raDegrees2) - 180);
         }
 
-        private async Task MoveToNextPoint(double moveDistance, double rate, IProgress<ApplicationStatus> progress, CancellationToken token, bool? eastDirection = null) {
+        private async Task MoveToNextPoint(double moveDistance, double rate, IProgress<ApplicationStatus> progress, CancellationToken token) {
             try {
                 var startPosition = telescopeMediator.GetCurrentPosition();
                 var currentPosition = telescopeMediator.GetCurrentPosition();
@@ -1116,9 +1129,8 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     adjustedRate = foundRate.Item2;
                 }
 
-                var moveEast = eastDirection ?? EastDirection;
-                Logger.Info($"Moving axis by {adjustedRate} into direction {(moveEast ? "East" : "West")} until distance {moveDistance}° is traveled");
-                telescopeMediator.MoveAxis(Core.Enum.TelescopeAxes.Primary, moveEast ? adjustedRate : -adjustedRate);
+                Logger.Info($"Moving axis by {adjustedRate} into direction {(EastDirection ? "East" : "West")} until distance {moveDistance}° is traveled");
+                telescopeMediator.MoveAxis(Core.Enum.TelescopeAxes.Primary, EastDirection ? adjustedRate : -adjustedRate);
 
                 //Move Rate is expectedly degree/s - Add a failsafe timer at 2x
                 var timeToDestination = TimeSpan.FromSeconds(moveDistance / adjustedRate * Properties.Settings.Default.MoveTimeoutFactor);
