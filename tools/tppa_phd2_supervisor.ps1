@@ -345,14 +345,21 @@ function Capture-Phd2Drift {
         if ($preState -eq "Stopped") {
             Invoke-Phd2 -Conn $conn -Method "loop" -TimeoutSec 10 -Jsonl $jsonl | Out-Null
             Log "PHD2 looping started for passive drift capture"
-            Start-Sleep -Seconds 3
-            $star = Invoke-Phd2 -Conn $conn -Method "find_star" -TimeoutSec 15 -Jsonl $jsonl
-            if (-not ($star.PSObject.Properties.Name -contains "result") -or @($star.result).Count -lt 2) {
-                throw "PHD2 could not find a guide star for passive drift capture."
+            Start-Sleep -Seconds 5
+            $existingLock = Invoke-Phd2 -Conn $conn -Method "get_lock_position" -TimeoutSec 10 -Jsonl $jsonl
+            if (($existingLock.PSObject.Properties.Name -contains "result") -and @($existingLock.result).Count -ge 2) {
+                $lockPosition = @([double]$existingLock.result[0], [double]$existingLock.result[1])
+                Log ("PHD2 retained guide-star lock at x={0:N1}, y={1:N1}" -f $lockPosition[0], $lockPosition[1])
+            } else {
+                Start-Sleep -Seconds 5
+                $star = Invoke-Phd2 -Conn $conn -Method "find_star" -TimeoutSec 15 -Jsonl $jsonl
+                if (-not ($star.PSObject.Properties.Name -contains "result") -or @($star.result).Count -lt 2) {
+                    throw "PHD2 could not find a guide star for passive drift capture."
+                }
+                $lockPosition = @([double]$star.result[0], [double]$star.result[1])
+                Invoke-Phd2 -Conn $conn -Method "set_lock_position" -Params @($lockPosition[0], $lockPosition[1], $true) -TimeoutSec 10 -Jsonl $jsonl | Out-Null
+                Log ("PHD2 guide star selected at x={0:N1}, y={1:N1}" -f $lockPosition[0], $lockPosition[1])
             }
-            $lockPosition = @([double]$star.result[0], [double]$star.result[1], $true)
-            Invoke-Phd2 -Conn $conn -Method "set_lock_position" -Params $lockPosition -TimeoutSec 10 -Jsonl $jsonl | Out-Null
-            Log ("PHD2 guide star selected at x={0:N1}, y={1:N1}" -f $lockPosition[0], $lockPosition[1])
         }
 
         $guideParams = @{ settle = @{ pixels = 99.0; time = 0; timeout = 10 }; recalibrate = $false }
