@@ -127,6 +127,23 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public async Task SuccessfulMeasurementCanReportCleanupFailureWithoutDiscardingResult() {
+            var cleanupFailure = new InvalidOperationException("cleanup failed");
+            Exception? loggedCleanupFailure = null;
+
+            Func<Task> act = () => VerificationOnlyCleanupRunner.Run(
+                _ => Task.CompletedTask,
+                _ => Task.FromException(cleanupFailure),
+                CancellationToken.None,
+                TimeSpan.FromSeconds(1),
+                ex => loggedCleanupFailure = ex,
+                throwOnCleanupFailure: false);
+
+            await act.Should().NotThrowAsync();
+            loggedCleanupFailure.Should().BeSameAs(cleanupFailure);
+        }
+
+        [Test]
         public async Task CleanupFailureDoesNotReplaceOriginalMeasurementFailure() {
             var measurementFailure = new InvalidOperationException("measurement failed");
             var cleanupFailure = new InvalidOperationException("cleanup failed");

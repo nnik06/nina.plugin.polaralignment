@@ -18,6 +18,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 toleranceMinutes: 0.5);
 
             result.IsRepeatable.Should().BeTrue();
+            result.VectorDeltaMinutes.Should().BeApproximately(Math.Sqrt(0.35 * 0.35 + 0.25 * 0.25), 1e-9);
             result.ThresholdMinutes.Should().Be(0.5);
         }
 
@@ -41,6 +42,36 @@ namespace NINA.Plugins.PolarAlignment.Test {
 
             result.IsRepeatable.Should().BeTrue();
             result.ThresholdMinutes.Should().Be(2.0);
+        }
+
+        [Test]
+        public void FreshPolarAlignmentAgreementPolicy_CenteredReciprocityRemovesLinearDrift() {
+            var result = FreshPolarAlignmentAgreementPolicy.EvaluateCenteredReciprocity(
+                firstForwardAzimuthMinutes: 1.0,
+                firstForwardAltitudeMinutes: -2.0,
+                reciprocalAzimuthMinutes: 2.0,
+                reciprocalAltitudeMinutes: -1.0,
+                repeatedForwardAzimuthMinutes: 3.0,
+                repeatedForwardAltitudeMinutes: 0.0,
+                toleranceMinutes: 0.5);
+
+            result.IsRepeatable.Should().BeTrue();
+            result.VectorDeltaMinutes.Should().BeApproximately(0, 1e-9);
+        }
+
+        [Test]
+        public void FreshPolarAlignmentAgreementPolicy_CenteredReciprocityDetectsDirectionBias() {
+            var result = FreshPolarAlignmentAgreementPolicy.EvaluateCenteredReciprocity(
+                firstForwardAzimuthMinutes: 1.0,
+                firstForwardAltitudeMinutes: -2.0,
+                reciprocalAzimuthMinutes: 3.0,
+                reciprocalAltitudeMinutes: -1.0,
+                repeatedForwardAzimuthMinutes: 3.0,
+                repeatedForwardAltitudeMinutes: 0.0,
+                toleranceMinutes: 0.5);
+
+            result.IsRepeatable.Should().BeFalse();
+            result.AzimuthDeltaMinutes.Should().BeApproximately(1.0, 1e-9);
         }
 
         [Test]

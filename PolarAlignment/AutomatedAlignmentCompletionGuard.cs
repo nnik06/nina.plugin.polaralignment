@@ -6,6 +6,7 @@ namespace NINA.Plugins.PolarAlignment {
         double AzimuthDeltaMinutes,
         double AltitudeDeltaMinutes,
         double TotalDeltaMinutes,
+        double VectorDeltaMinutes,
         double ThresholdMinutes,
         string Reason);
 
@@ -28,21 +29,39 @@ namespace NINA.Plugins.PolarAlignment {
                 secondAzimuthMinutes, secondAltitudeMinutes, secondTotalMinutes
             };
             if (Array.Exists(values, value => !double.IsFinite(value))) {
-                return new FreshPolarAlignmentAgreement(false, double.NaN, double.NaN, double.NaN,
+                return new FreshPolarAlignmentAgreement(false, double.NaN, double.NaN, double.NaN, double.NaN,
                     thresholdMinutes, "one or more measurements were not finite");
             }
 
             var azimuthDeltaMinutes = secondAzimuthMinutes - firstAzimuthMinutes;
             var altitudeDeltaMinutes = secondAltitudeMinutes - firstAltitudeMinutes;
             var totalDeltaMinutes = secondTotalMinutes - firstTotalMinutes;
-            var isRepeatable = Math.Abs(azimuthDeltaMinutes) <= thresholdMinutes
-                && Math.Abs(altitudeDeltaMinutes) <= thresholdMinutes
-                && Math.Abs(totalDeltaMinutes) <= thresholdMinutes;
+            var vectorDeltaMinutes = Math.Sqrt(azimuthDeltaMinutes * azimuthDeltaMinutes
+                + altitudeDeltaMinutes * altitudeDeltaMinutes);
+            var isRepeatable = vectorDeltaMinutes <= thresholdMinutes;
             var reason = isRepeatable
-                ? "signed azimuth, altitude, and total deltas are within the repeatability threshold"
-                : "one or more signed-component deltas exceed the repeatability threshold";
+                ? "signed azimuth/altitude vector delta is within the repeatability threshold"
+                : "signed azimuth/altitude vector delta exceeds the repeatability threshold";
             return new FreshPolarAlignmentAgreement(isRepeatable, azimuthDeltaMinutes, altitudeDeltaMinutes,
-                totalDeltaMinutes, thresholdMinutes, reason);
+                totalDeltaMinutes, vectorDeltaMinutes, thresholdMinutes, reason);
+        }
+
+        public static FreshPolarAlignmentAgreement EvaluateCenteredReciprocity(
+            double firstForwardAzimuthMinutes,
+            double firstForwardAltitudeMinutes,
+            double reciprocalAzimuthMinutes,
+            double reciprocalAltitudeMinutes,
+            double repeatedForwardAzimuthMinutes,
+            double repeatedForwardAltitudeMinutes,
+            double toleranceMinutes) {
+            var centeredForwardAzimuth = (firstForwardAzimuthMinutes + repeatedForwardAzimuthMinutes) / 2.0;
+            var centeredForwardAltitude = (firstForwardAltitudeMinutes + repeatedForwardAltitudeMinutes) / 2.0;
+            var centeredForwardTotal = Math.Sqrt(centeredForwardAzimuth * centeredForwardAzimuth
+                + centeredForwardAltitude * centeredForwardAltitude);
+            var reciprocalTotal = Math.Sqrt(reciprocalAzimuthMinutes * reciprocalAzimuthMinutes
+                + reciprocalAltitudeMinutes * reciprocalAltitudeMinutes);
+            return Evaluate(centeredForwardAzimuth, centeredForwardAltitude, centeredForwardTotal,
+                reciprocalAzimuthMinutes, reciprocalAltitudeMinutes, reciprocalTotal, toleranceMinutes);
         }
     }
     internal enum AutomatedAlignmentCompletionDecision {

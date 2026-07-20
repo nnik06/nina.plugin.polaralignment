@@ -107,7 +107,8 @@ namespace NINA.Plugins.PolarAlignment {
                                      Func<CancellationToken, Task> cleanup,
                                      CancellationToken operationToken,
                                      TimeSpan cleanupTimeout,
-                                     Action<Exception> cleanupFailureLogger = null) {
+                                     Action<Exception> cleanupFailureLogger = null,
+                                     bool throwOnCleanupFailure = true) {
             ExceptionDispatchInfo operationFailure = null;
             try {
                 await operation(operationToken);
@@ -131,8 +132,10 @@ namespace NINA.Plugins.PolarAlignment {
                 operationFailure.Throw();
             }
 
-            if (cleanupFailure != null) {
+            if (cleanupFailure != null && throwOnCleanupFailure) {
                 ExceptionDispatchInfo.Capture(cleanupFailure).Throw();
+            } else if (cleanupFailure != null) {
+                cleanupFailureLogger?.Invoke(cleanupFailure);
             }
         }
     }
