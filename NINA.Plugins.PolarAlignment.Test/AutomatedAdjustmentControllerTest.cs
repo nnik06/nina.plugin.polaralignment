@@ -11,6 +11,49 @@ namespace NINA.Plugins.PolarAlignment.Test {
     /// </summary>
     public class AutomatedAdjustmentControllerTest {
         [Test]
+        public void FreshPolarAlignmentAgreementPolicy_AcceptsSignedVectorWithinToleranceScaledLimit() {
+            var result = FreshPolarAlignmentAgreementPolicy.Evaluate(
+                0.20, -0.30, 0.36,
+                0.55, -0.05, 0.55,
+                toleranceMinutes: 0.5);
+
+            result.IsRepeatable.Should().BeTrue();
+            result.ThresholdMinutes.Should().Be(0.5);
+        }
+
+        [Test]
+        public void FreshPolarAlignmentAgreementPolicy_RejectsDifferentSignedVectorDespiteBothTotalsBeingSmall() {
+            var result = FreshPolarAlignmentAgreementPolicy.Evaluate(
+                -0.60, 0.10, 0.61,
+                0.60, 0.10, 0.61,
+                toleranceMinutes: 1.0);
+
+            result.IsRepeatable.Should().BeFalse();
+            result.AzimuthDeltaMinutes.Should().BeApproximately(1.20, 1e-9);
+        }
+
+        [Test]
+        public void FreshPolarAlignmentAgreementPolicy_UsesSelectedToleranceAboveMinimumFloor() {
+            var result = FreshPolarAlignmentAgreementPolicy.Evaluate(
+                1.0, -1.0, 1.41,
+                2.5, -1.0, 2.69,
+                toleranceMinutes: 2.0);
+
+            result.IsRepeatable.Should().BeTrue();
+            result.ThresholdMinutes.Should().Be(2.0);
+        }
+
+        [Test]
+        public void FreshPolarAlignmentAgreementPolicy_InvalidMeasurementFailsClosed() {
+            var result = FreshPolarAlignmentAgreementPolicy.Evaluate(
+                double.NaN, 0, 0,
+                0, 0, 0,
+                toleranceMinutes: 1.0);
+
+            result.IsRepeatable.Should().BeFalse();
+            result.Reason.Should().Contain("not finite");
+        }
+        [Test]
         public void AutomatedAdjustmentController_WorseningZeroCrossingDoesNotReplaceTrustedGain() {
             // Golden trace from the 2026-07-17 02:36 UPAS field run. The former controller
             // replaced the trusted gain with the weak acquisition response, commanded X=2.566,

@@ -1,4 +1,50 @@
+using System;
+
 namespace NINA.Plugins.PolarAlignment {
+    internal readonly record struct FreshPolarAlignmentAgreement(
+        bool IsRepeatable,
+        double AzimuthDeltaMinutes,
+        double AltitudeDeltaMinutes,
+        double TotalDeltaMinutes,
+        double ThresholdMinutes,
+        string Reason);
+
+    internal static class FreshPolarAlignmentAgreementPolicy {
+        private const double MinimumThresholdMinutes = 0.5;
+
+        public static FreshPolarAlignmentAgreement Evaluate(
+            double firstAzimuthMinutes,
+            double firstAltitudeMinutes,
+            double firstTotalMinutes,
+            double secondAzimuthMinutes,
+            double secondAltitudeMinutes,
+            double secondTotalMinutes,
+            double toleranceMinutes) {
+            var thresholdMinutes = double.IsFinite(toleranceMinutes) && toleranceMinutes > 0
+                ? Math.Max(MinimumThresholdMinutes, toleranceMinutes)
+                : MinimumThresholdMinutes;
+            var values = new[] {
+                firstAzimuthMinutes, firstAltitudeMinutes, firstTotalMinutes,
+                secondAzimuthMinutes, secondAltitudeMinutes, secondTotalMinutes
+            };
+            if (Array.Exists(values, value => !double.IsFinite(value))) {
+                return new FreshPolarAlignmentAgreement(false, double.NaN, double.NaN, double.NaN,
+                    thresholdMinutes, "one or more measurements were not finite");
+            }
+
+            var azimuthDeltaMinutes = secondAzimuthMinutes - firstAzimuthMinutes;
+            var altitudeDeltaMinutes = secondAltitudeMinutes - firstAltitudeMinutes;
+            var totalDeltaMinutes = secondTotalMinutes - firstTotalMinutes;
+            var isRepeatable = Math.Abs(azimuthDeltaMinutes) <= thresholdMinutes
+                && Math.Abs(altitudeDeltaMinutes) <= thresholdMinutes
+                && Math.Abs(totalDeltaMinutes) <= thresholdMinutes;
+            var reason = isRepeatable
+                ? "signed azimuth, altitude, and total deltas are within the repeatability threshold"
+                : "one or more signed-component deltas exceed the repeatability threshold";
+            return new FreshPolarAlignmentAgreement(isRepeatable, azimuthDeltaMinutes, altitudeDeltaMinutes,
+                totalDeltaMinutes, thresholdMinutes, reason);
+        }
+    }
     internal enum AutomatedAlignmentCompletionDecision {
         ContinueCorrection,
         ValidateWithoutMoving,

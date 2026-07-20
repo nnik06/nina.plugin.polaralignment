@@ -661,6 +661,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         if (TPAPAVM.AutomatedAdjustmentRequiresFreshMeasurementFeedback
                             && Math.Abs(TPAPAVM.PolarErrorDetermination.InitialMountAxisTotalError.ArcMinutes) <= AlignmentTolerance) {
                             Logger.Info("Fresh UPAS measurement is below tolerance. Requiring one consecutive independent fresh three-point confirmation without moving.");
+                            var completionCandidate = TPAPAVM.PolarErrorDetermination;
                             progress?.Report(new ApplicationStatus() { Status = "Confirming fresh three-point UPAS result" });
                             var confirmationDetermination = await MeasureFreshThreePointCompletionVerification(TPAPAVM,
                                                                                                                 automatedVerificationStartPointing,
@@ -669,9 +670,22 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                             TPAPAVM.PolarErrorDetermination = confirmationDetermination;
                             TPAPAVM.UpdateAutomatedAdjustmentFromFreshDetermination();
                             var confirmedTotalErrorMinutes = Math.Abs(confirmationDetermination.InitialMountAxisTotalError.ArcMinutes);
+                            var completionAgreement = FreshPolarAlignmentAgreementPolicy.Evaluate(
+                                completionCandidate.InitialMountAxisAzimuthError.ArcMinutes,
+                                completionCandidate.InitialMountAxisAltitudeError.ArcMinutes,
+                                completionCandidate.InitialMountAxisTotalError.ArcMinutes,
+                                confirmationDetermination.InitialMountAxisAzimuthError.ArcMinutes,
+                                confirmationDetermination.InitialMountAxisAltitudeError.ArcMinutes,
+                                confirmationDetermination.InitialMountAxisTotalError.ArcMinutes,
+                                AlignmentTolerance);
                             Logger.Info($"TPPA fresh UPAS completion confirmation: Az: {confirmationDetermination.InitialMountAxisAzimuthError}, " +
-                                        $"Alt: {confirmationDetermination.InitialMountAxisAltitudeError}, Tot: {confirmationDetermination.InitialMountAxisTotalError}");
-                            if (confirmedTotalErrorMinutes <= AlignmentTolerance) {
+                                        $"Alt: {confirmationDetermination.InitialMountAxisAltitudeError}, Tot: {confirmationDetermination.InitialMountAxisTotalError}. " +
+                                        $"Repeatability: {(completionAgreement.IsRepeatable ? "PASS" : "FAIL")}; " +
+                                        $"dAz={completionAgreement.AzimuthDeltaMinutes:+0.00;-0.00;0.00}', " +
+                                        $"dAlt={completionAgreement.AltitudeDeltaMinutes:+0.00;-0.00;0.00}', " +
+                                        $"dTot={completionAgreement.TotalDeltaMinutes:+0.00;-0.00;0.00}', " +
+                                        $"threshold={completionAgreement.ThresholdMinutes:F2}'.");
+                            if (confirmedTotalErrorMinutes <= AlignmentTolerance && completionAgreement.IsRepeatable) {
                                 Logger.Info($"Two consecutive fresh three-point UPAS measurements are below alignment tolerance ({AlignmentTolerance}'). Automatically finishing polar alignment.");
                                 Notification.ShowInformation(
                                     $"Two consecutive fresh three-point UPAS measurements are below alignment tolerance.{Environment.NewLine}" +
@@ -683,6 +697,15 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                     TimeSpan.FromMinutes(1));
                                 localCTS.Cancel();
                                 continue;
+                            }
+                            if (confirmedTotalErrorMinutes <= AlignmentTolerance && !completionAgreement.IsRepeatable) {
+                                throw new InvalidOperationException(
+                                    $"Two fresh three-point UPAS measurements were individually below the selected {AlignmentTolerance}' tolerance, " +
+                                    $"but their signed error vectors were not repeatable ({completionAgreement.Reason}; " +
+                                    $"dAz={completionAgreement.AzimuthDeltaMinutes:+0.00;-0.00;0.00}', " +
+                                    $"dAlt={completionAgreement.AltitudeDeltaMinutes:+0.00;-0.00;0.00}', " +
+                                    $"dTot={completionAgreement.TotalDeltaMinutes:+0.00;-0.00;0.00}', " +
+                                    $"limit={completionAgreement.ThresholdMinutes:F2}'). Automated alignment was stopped without another UPAS move.");
                             }
                             Logger.Warning($"Fresh UPAS completion confirmation was above tolerance ({AlignmentTolerance}'). Continuing from the confirmed fresh measurement without moving first.");
                         }
@@ -1046,15 +1069,31 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             var verificationAzimuthMinutes = verificationDetermination.InitialMountAxisAzimuthError.ArcMinutes;
             var verificationAltitudeMinutes = verificationDetermination.InitialMountAxisAltitudeError.ArcMinutes;
             var verificationTotalMinutes = verificationDetermination.InitialMountAxisTotalError.ArcMinutes;
-            Notification.ShowInformation(
-                $"Verification-only measurements complete.{Environment.NewLine}" +
+            var verificationAgreement = FreshPolarAlignmentAgreementPolicy.Evaluate(
+                initialAzimuthMinutes,
+                initialAltitudeMinutes,
+                initialTotalMinutes,
+                verificationAzimuthMinutes,
+                verificationAltitudeMinutes,
+                verificationTotalMinutes,
+                AlignmentTolerance);
+            Logger.Info($"TPPA verification-only repeatability verdict: {(verificationAgreement.IsRepeatable ? "PASS" : "FAIL")}; " +
+                        $"threshold={verificationAgreement.ThresholdMinutes:F2}'; {verificationAgreement.Reason}.");
+            var verificationSummary =
+                $"Verification-only measurements complete. Repeatability: {(verificationAgreement.IsRepeatable ? "PASS" : "FAIL")}.{Environment.NewLine}" +
                 $"Initial: Az {initialAzimuthMinutes:F2}', Alt {initialAltitudeMinutes:F2}', Total {initialTotalMinutes:F2}'{Environment.NewLine}" +
                 $"Verification: Az {verificationAzimuthMinutes:F2}', Alt {verificationAltitudeMinutes:F2}', Total {verificationTotalMinutes:F2}'{Environment.NewLine}" +
                 $"Delta: Az {verificationAzimuthMinutes - initialAzimuthMinutes:+0.00;-0.00;0.00}', " +
                 $"Alt {verificationAltitudeMinutes - initialAltitudeMinutes:+0.00;-0.00;0.00}', " +
-                $"Total {verificationTotalMinutes - initialTotalMinutes:+0.00;-0.00;0.00}'",
-                TimeSpan.FromMinutes(1));
-            progress?.Report(GetStatus("Verification-only measurements complete"));
+                $"Total {verificationTotalMinutes - initialTotalMinutes:+0.00;-0.00;0.00}'{Environment.NewLine}" +
+                $"Repeatability limit: {verificationAgreement.ThresholdMinutes:F2}'. " +
+                "This checks internal consistency, not absolute polar-alignment accuracy.";
+            if (verificationAgreement.IsRepeatable) {
+                Notification.ShowInformation(verificationSummary, TimeSpan.FromMinutes(1));
+            } else {
+                Notification.ShowWarning(verificationSummary, TimeSpan.FromMinutes(1));
+            }
+            progress?.Report(GetStatus($"Verification-only measurements complete: {(verificationAgreement.IsRepeatable ? "repeatable" : "not repeatable")}"));
         }
 
         private async Task<PolarErrorDetermination> MeasureVerificationOnlyArc(TPAPAVM context,
