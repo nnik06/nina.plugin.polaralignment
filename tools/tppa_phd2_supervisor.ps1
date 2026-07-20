@@ -342,6 +342,19 @@ function Capture-Phd2Drift {
         Invoke-Phd2 -Conn $conn -Method "set_guide_output_enabled" -Params @($false) -Jsonl $jsonl | Out-Null
         Log "PHD2 guide outputs disabled"
 
+        if ($preState -eq "Stopped") {
+            Invoke-Phd2 -Conn $conn -Method "loop" -TimeoutSec 10 -Jsonl $jsonl | Out-Null
+            Log "PHD2 looping started for passive drift capture"
+            Start-Sleep -Seconds 3
+            $star = Invoke-Phd2 -Conn $conn -Method "find_star" -TimeoutSec 15 -Jsonl $jsonl
+            if (-not ($star.PSObject.Properties.Name -contains "result") -or @($star.result).Count -lt 2) {
+                throw "PHD2 could not find a guide star for passive drift capture."
+            }
+            $lockPosition = @([double]$star.result[0], [double]$star.result[1], $true)
+            Invoke-Phd2 -Conn $conn -Method "set_lock_position" -Params $lockPosition -TimeoutSec 10 -Jsonl $jsonl | Out-Null
+            Log ("PHD2 guide star selected at x={0:N1}, y={1:N1}" -f $lockPosition[0], $lockPosition[1])
+        }
+
         $guideParams = @{ settle = @{ pixels = 99.0; time = 0; timeout = 10 }; recalibrate = $false }
         Invoke-Phd2 -Conn $conn -Method "guide" -Params $guideParams -TimeoutSec 15 -Jsonl $jsonl | Out-Null
         Log "PHD2 guide command accepted"
@@ -392,7 +405,7 @@ function Capture-Phd2Drift {
                 } elseif ($obj.Event -eq "AppState") { Log "PHD2 state changed to: $($obj.State)" }
             } catch {}
         }
-        if ($steps -eq 0) { Log "ERROR: PHD2 drift capture ended with zero GuideStep rows." }
+        if ($steps -eq 0) { throw "PHD2 drift capture ended with zero GuideStep rows." }
         Log "PHD2 drift capture finished. GuideStep rows: $steps"
     } finally {
         try { Invoke-Phd2 -Conn $conn -Method "set_guide_output_enabled" -Params @($originalGuideOutput) -TimeoutSec 5 -Jsonl $jsonl | Out-Null; Log "PHD2 guide-output restored to $originalGuideOutput" }
