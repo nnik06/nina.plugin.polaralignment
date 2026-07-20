@@ -119,6 +119,16 @@ try {
     Assert-True ($reportText.Contains("An unstable capture must not be compared numerically with TPPA.")) "report should contain the explicit comparison warning"
     Assert-True ($reportText.Contains("75%")) "report should disclose the window time-span threshold"
 
+    $verificationLog = Join-Path $TestRoot "verification.log"
+    [IO.File]::WriteAllLines($verificationLog, @(
+        "2026-01-01T04:00:00.000|INFO|TPPA verification-only initial result: Az: -00 deg 10 min 32 sec, Alt: 00 deg 08 min 09 sec, Tot: 00 deg 13 min 19 sec",
+        "2026-01-01T04:02:00.000|INFO|TPPA verification-only verification result: Az: -00 deg 11 min 25 sec, Alt: 00 deg 08 min 34 sec, Tot: 00 deg 14 min 17 sec"
+    ), [Text.UTF8Encoding]::new($false))
+    $verificationReport = Join-Path $TestRoot "verification-report.md"
+    & $AnalyzerPath -RunDir $TestRoot -NinaLogPath $verificationLog -OutputPath $verificationReport -PixelScaleArcsecPerPixel 2.0
+    $verificationText = [IO.File]::ReadAllText($verificationReport)
+    Assert-True ($verificationText.Contains("verification-only initial result")) "report should include the VerificationOnly initial result"
+    Assert-True ($verificationText.Contains("verification-only verification result")) "report should include the VerificationOnly repeat result"
     $validationFailed = $false
     try {
         & $AnalyzerPath -RunDir $TestRoot -NinaLogPath (Join-Path $TestRoot "missing.log") -OutputPath (Join-Path $TestRoot "invalid.md") -DriftWindowMinutes 0.1

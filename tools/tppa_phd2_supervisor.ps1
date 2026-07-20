@@ -28,6 +28,11 @@ param(
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = "Stop"
+
+$script:SupervisorMutex = [Threading.Mutex]::new($false, "Local\NinaTppaPhd2Supervisor")
+if (-not $script:SupervisorMutex.WaitOne(0)) {
+    throw "Another TPPA/PHD2 supervisor process is already running. Refusing an overlapping launch."
+}
 $script:RpcId = 1000
 $script:RunLog = $null
 $script:LastSequenceStartLocal = $null
@@ -291,6 +296,10 @@ function ConvertTo-CsvCell {
 
 function Capture-Phd2Drift {
     param([string]$OutDir, [double]$Minutes, [string]$Label)
+    if ($Minutes -lt 1.0) {
+        throw "PHD2 drift capture duration must be at least 1 minute; requested $Minutes minute(s)."
+    }
+
     $jsonl = Join-Path $OutDir "$Label-phd2-events.jsonl"
     $csv = Join-Path $OutDir "$Label-phd2-guidesteps.csv"
     "timestamp_utc,elapsed_s,frame,ra_raw_px,dec_raw_px,ra_guide_px,dec_guide_px,ra_ms,dec_ms,snr,hfd,star_mass,event_json" | Set-Content -LiteralPath $csv -Encoding UTF8

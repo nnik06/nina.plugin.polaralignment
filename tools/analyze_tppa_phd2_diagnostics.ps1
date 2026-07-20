@@ -337,19 +337,25 @@ function Read-TppaErrors {
     param([string]$Path)
     if (-not (Test-Path -LiteralPath $Path)) { return @() }
     $results = New-Object System.Collections.Generic.List[object]
-    $pattern = '^(?<ts>\d{4}-\d{2}-\d{2}T?\s?\d{2}:\d{2}:\d{2}\.\d+).*TPPA (?<kind>(?:completion-verification )?fresh 3-point|correction-loop) calculated error: Az: (?<az>.*?), Alt: (?<alt>.*?), Tot: (?<tot>.*)$'
+    $standardPattern = '^(?<ts>\d{4}-\d{2}-\d{2}T?\s?\d{2}:\d{2}:\d{2}\.\d+).*TPPA (?<kind>(?:completion-verification )?fresh 3-point|correction-loop) calculated error: Az: (?<az>.*?), Alt: (?<alt>.*?), Tot: (?<tot>.*)$'
+    $verificationPattern = '^(?<ts>\d{4}-\d{2}-\d{2}T?\s?\d{2}:\d{2}:\d{2}\.\d+).*TPPA verification-only (?<kind>initial result|verification result): Az: (?<az>.*?), Alt: (?<alt>.*?), Tot: (?<tot>.*)$'
 
     $stream = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
     $reader = [IO.StreamReader]::new($stream)
     try {
         while (-not $reader.EndOfStream) {
             $line = $reader.ReadLine()
-            $m = [regex]::Match($line, $pattern)
+            $m = [regex]::Match($line, $standardPattern)
+            $kindPrefix = ""
+            if (-not $m.Success) {
+                $m = [regex]::Match($line, $verificationPattern)
+                $kindPrefix = "verification-only "
+            }
             if (-not $m.Success) { continue }
             $stamp = Try-ParseDateTime $m.Groups["ts"].Value
             [void]$results.Add([pscustomobject]@{
                 Time = $stamp
-                Kind = $m.Groups["kind"].Value
+                Kind = $kindPrefix + $m.Groups["kind"].Value
                 AzText = $m.Groups["az"].Value
                 AltText = $m.Groups["alt"].Value
                 TotalText = $m.Groups["tot"].Value
