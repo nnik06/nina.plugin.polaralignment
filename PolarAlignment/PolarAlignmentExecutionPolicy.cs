@@ -71,28 +71,31 @@ namespace NINA.Plugins.PolarAlignment {
 
         public TPoint ArcStart { get; }
         public TPoint RestorePointing => ArcStart;
-        public int DeterminationCount => 2;
+        public int DeterminationCount => 3;
         public int SolvesPerDetermination => 3;
         public int TotalSolveCount => DeterminationCount * SolvesPerDetermination;
         public bool RequiresCorrectionFieldSolve => false;
-        public IReadOnlyList<TPoint> DeterminationStarts => new[] { ArcStart, ArcStart };
+        public bool ReciprocalStartsAtInitialArcEnd => true;
+        public IReadOnlyList<TPoint> ForwardDeterminationStarts => new[] { ArcStart, ArcStart };
     }
 
     /// <summary>
-    /// Executes exactly two three-point determinations from the same captured arc start.
+    /// Executes a forward arc, its reciprocal from the endpoint, and a repeated forward arc.
     /// </summary>
     internal static class VerificationOnlyArcRunner {
-        public static async Task<(TDetermination Initial, TDetermination Verification, VerificationOnlyArcPlan<TPoint> Plan)> Run<TPoint, TDetermination>(
+        public static async Task<(TDetermination Initial, TDetermination Reciprocal, TDetermination Verification, VerificationOnlyArcPlan<TPoint> Plan)> Run<TPoint, TDetermination>(
             TPoint arcStart,
             Func<CancellationToken, Task<TDetermination>> captureInitial,
+            Func<CancellationToken, Task<TDetermination>> captureReciprocal,
             Func<CancellationToken, Task<TDetermination>> captureVerification,
             Func<TPoint, CancellationToken, Task> returnToArcStart,
             CancellationToken token) {
             var initial = await captureInitial(token);
             var plan = new VerificationOnlyArcPlan<TPoint>(arcStart);
-            await returnToArcStart(plan.DeterminationStarts[1], token);
+            var reciprocal = await captureReciprocal(token);
+            await returnToArcStart(plan.ForwardDeterminationStarts[1], token);
             var verification = await captureVerification(token);
-            return (initial, verification, plan);
+            return (initial, reciprocal, verification, plan);
         }
     }
 

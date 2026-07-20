@@ -4,6 +4,10 @@
 
 Use PHD2 Polar Drift Alignment (PDA) as an independent polar-region check after TPPA. TPPA same-arc repeats measure internal repeatability; they do not establish absolute accuracy because both repeats share the same plate-solving geometry and systematic errors.
 
+## TPPA internal qualification
+
+Before PDA, run Verification Only. The enhanced diagnostic measures a forward arc, the same arc in reciprocal order, and a repeated forward arc (nine solves total). Require both the forward-repeat repeatability verdict and the forward-reciprocal reciprocity verdict to pass. Reciprocity detects direction-dependent TPPA arc bias, but it remains an internal check and does not replace PDA as the independent method.
+
 ## Preconditions
 
 - Complete TPPA and leave the UPAS stationary.

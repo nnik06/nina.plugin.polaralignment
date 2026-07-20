@@ -46,35 +46,29 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
-        public async Task ArcRunnerUsesCapturedAForBothDeterminationsAndExactlySixSolves() {
+        public async Task ArcRunnerUsesReciprocalEndpointAndCapturedAForRepeatWithExactlyNineSolves() {
             const string a = "A";
             var solveCount = 0;
-            var returnedPointings = new List<string>();
+            var operations = new List<string>();
 
             var result = await VerificationOnlyArcRunner.Run<string, string>(
                 a,
-                _ => {
-                    solveCount += 3;
-                    return Task.FromResult("initial");
-                },
-                _ => {
-                    solveCount += 3;
-                    return Task.FromResult("verification");
-                },
-                (pointing, _) => {
-                    returnedPointings.Add(pointing);
-                    return Task.CompletedTask;
-                },
+                _ => { solveCount += 3; operations.Add("forward"); return Task.FromResult("initial"); },
+                _ => { solveCount += 3; operations.Add("reciprocal"); return Task.FromResult("reciprocal"); },
+                _ => { solveCount += 3; operations.Add("repeat"); return Task.FromResult("verification"); },
+                (pointing, _) => { operations.Add($"return:{pointing}"); return Task.CompletedTask; },
                 CancellationToken.None);
 
             result.Initial.Should().Be("initial");
+            result.Reciprocal.Should().Be("reciprocal");
             result.Verification.Should().Be("verification");
-            result.Plan.DeterminationStarts.Should().Equal(a, a);
+            result.Plan.ForwardDeterminationStarts.Should().Equal(a, a);
+            result.Plan.ReciprocalStartsAtInitialArcEnd.Should().BeTrue();
             result.Plan.RestorePointing.Should().Be(a);
-            result.Plan.TotalSolveCount.Should().Be(6);
+            result.Plan.TotalSolveCount.Should().Be(9);
             result.Plan.RequiresCorrectionFieldSolve.Should().BeFalse();
-            solveCount.Should().Be(6);
-            returnedPointings.Should().Equal(a);
+            solveCount.Should().Be(9);
+            operations.Should().Equal("forward", "reciprocal", "return:A", "repeat");
         }
 
         [Test]

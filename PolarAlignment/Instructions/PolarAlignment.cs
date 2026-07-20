@@ -979,7 +979,9 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             var originalPointing = telescopeMediator.GetCurrentPosition();
             Coordinates cleanupPointing = originalPointing;
             PolarErrorDetermination initialDetermination = null;
+            PolarErrorDetermination reciprocalDetermination = null;
             PolarErrorDetermination verificationDetermination = null;
+            var originalEastDirection = EastDirection;
             context.ActivateFirstVerificationStep();
 
             await VerificationOnlyCleanupRunner.Run(
@@ -1008,6 +1010,18 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                             return determination;
                         },
                         async arcToken => {
+                            progress?.Report(new ApplicationStatus() { Status = "Running verification-only reciprocal three-point measurement" });
+                            EastDirection = !originalEastDirection;
+                            context.ActivateFirstVerificationStep();
+                            try {
+                                var determination = await MeasureVerificationOnlyArc(context, progress, arcToken);
+                                context.PolarErrorDetermination = determination;
+                                return determination;
+                            } finally {
+                                EastDirection = originalEastDirection;
+                            }
+                        },
+                        async arcToken => {
                             progress?.Report(new ApplicationStatus() { Status = "Running verification-only repeat three-point measurement" });
                             var determination = await MeasureVerificationOnlyArc(context, progress, arcToken);
                             context.PolarErrorDetermination = determination;
@@ -1025,8 +1039,9 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         operationToken);
 
                     initialDetermination = runResult.Initial;
+                    reciprocalDetermination = runResult.Reciprocal;
                     verificationDetermination = runResult.Verification;
-                    Logger.Info($"TPPA verification-only captured A pointing {runResult.Plan.ArcStart}; both determinations started there and used {runResult.Plan.TotalSolveCount} total solves.");
+                    Logger.Info($"TPPA verification-only captured A pointing {runResult.Plan.ArcStart}; forward, reciprocal, and repeated-forward determinations used {runResult.Plan.TotalSolveCount} total solves.");
 
                     var azimuthDeltaDegrees = verificationDetermination.InitialMountAxisAzimuthError.Degree
                         - initialDetermination.InitialMountAxisAzimuthError.Degree;
@@ -1036,13 +1051,17 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         - initialDetermination.InitialMountAxisTotalError.Degree;
 
                     Logger.Info($"TPPA verification-only initial result: Az: {initialDetermination.InitialMountAxisAzimuthError}, Alt: {initialDetermination.InitialMountAxisAltitudeError}, Tot: {initialDetermination.InitialMountAxisTotalError}");
-                    Logger.Info($"TPPA verification-only verification result: Az: {verificationDetermination.InitialMountAxisAzimuthError}, Alt: {verificationDetermination.InitialMountAxisAltitudeError}, Tot: {verificationDetermination.InitialMountAxisTotalError}");
+                    Logger.Info($"TPPA verification-only reciprocal result: Az: {reciprocalDetermination.InitialMountAxisAzimuthError}, Alt: {reciprocalDetermination.InitialMountAxisAltitudeError}, Tot: {reciprocalDetermination.InitialMountAxisTotalError}");
+                    Logger.Info($"TPPA verification-only repeated-forward result: Az: {verificationDetermination.InitialMountAxisAzimuthError}, Alt: {verificationDetermination.InitialMountAxisAltitudeError}, Tot: {verificationDetermination.InitialMountAxisTotalError}");
                     Logger.Info($"TPPA verification-only repeat-minus-initial delta: Az: {Angle.ByDegree(azimuthDeltaDegrees)}, Alt: {Angle.ByDegree(altitudeDeltaDegrees)}, Tot: {Angle.ByDegree(totalDeltaDegrees)}");
 
                     await messageBroker.Publish(new PolarAlignmentVerificationMessage(correlatedGuid,
                                                                                        initialDetermination.InitialMountAxisAltitudeError.Degree,
                                                                                        initialDetermination.InitialMountAxisAzimuthError.Degree,
                                                                                        initialDetermination.InitialMountAxisTotalError.Degree,
+                                                                                       reciprocalDetermination.InitialMountAxisAltitudeError.Degree,
+                                                                                       reciprocalDetermination.InitialMountAxisAzimuthError.Degree,
+                                                                                       reciprocalDetermination.InitialMountAxisTotalError.Degree,
                                                                                        verificationDetermination.InitialMountAxisAltitudeError.Degree,
                                                                                        verificationDetermination.InitialMountAxisAzimuthError.Degree,
                                                                                        verificationDetermination.InitialMountAxisTotalError.Degree,
@@ -1066,6 +1085,9 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             var initialAzimuthMinutes = initialDetermination.InitialMountAxisAzimuthError.ArcMinutes;
             var initialAltitudeMinutes = initialDetermination.InitialMountAxisAltitudeError.ArcMinutes;
             var initialTotalMinutes = initialDetermination.InitialMountAxisTotalError.ArcMinutes;
+            var reciprocalAzimuthMinutes = reciprocalDetermination.InitialMountAxisAzimuthError.ArcMinutes;
+            var reciprocalAltitudeMinutes = reciprocalDetermination.InitialMountAxisAltitudeError.ArcMinutes;
+            var reciprocalTotalMinutes = reciprocalDetermination.InitialMountAxisTotalError.ArcMinutes;
             var verificationAzimuthMinutes = verificationDetermination.InitialMountAxisAzimuthError.ArcMinutes;
             var verificationAltitudeMinutes = verificationDetermination.InitialMountAxisAltitudeError.ArcMinutes;
             var verificationTotalMinutes = verificationDetermination.InitialMountAxisTotalError.ArcMinutes;
@@ -1077,23 +1099,39 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 verificationAltitudeMinutes,
                 verificationTotalMinutes,
                 AlignmentTolerance);
+            var reciprocalAgreement = FreshPolarAlignmentAgreementPolicy.Evaluate(
+                initialAzimuthMinutes,
+                initialAltitudeMinutes,
+                initialTotalMinutes,
+                reciprocalAzimuthMinutes,
+                reciprocalAltitudeMinutes,
+                reciprocalTotalMinutes,
+                AlignmentTolerance);
+            var diagnosticPassed = verificationAgreement.IsRepeatable && reciprocalAgreement.IsRepeatable;
             Logger.Info($"TPPA verification-only repeatability verdict: {(verificationAgreement.IsRepeatable ? "PASS" : "FAIL")}; " +
                         $"threshold={verificationAgreement.ThresholdMinutes:F2}'; {verificationAgreement.Reason}.");
+            Logger.Info($"TPPA verification-only reciprocity verdict: {(reciprocalAgreement.IsRepeatable ? "PASS" : "FAIL")}; " +
+                        $"dAz={reciprocalAgreement.AzimuthDeltaMinutes:+0.00;-0.00;0.00}', " +
+                        $"dAlt={reciprocalAgreement.AltitudeDeltaMinutes:+0.00;-0.00;0.00}', " +
+                        $"dTot={reciprocalAgreement.TotalDeltaMinutes:+0.00;-0.00;0.00}', " +
+                        $"threshold={reciprocalAgreement.ThresholdMinutes:F2}'.");
             var verificationSummary =
-                $"Verification-only measurements complete. Repeatability: {(verificationAgreement.IsRepeatable ? "PASS" : "FAIL")}.{Environment.NewLine}" +
+                $"Verification-only measurements complete. Overall: {(diagnosticPassed ? "PASS" : "FAIL")}.{Environment.NewLine}" +
+                $"Repeatability: {(verificationAgreement.IsRepeatable ? "PASS" : "FAIL")}; reciprocity: {(reciprocalAgreement.IsRepeatable ? "PASS" : "FAIL")}.{Environment.NewLine}" +
                 $"Initial: Az {initialAzimuthMinutes:F2}', Alt {initialAltitudeMinutes:F2}', Total {initialTotalMinutes:F2}'{Environment.NewLine}" +
-                $"Verification: Az {verificationAzimuthMinutes:F2}', Alt {verificationAltitudeMinutes:F2}', Total {verificationTotalMinutes:F2}'{Environment.NewLine}" +
+                $"Reciprocal: Az {reciprocalAzimuthMinutes:F2}', Alt {reciprocalAltitudeMinutes:F2}', Total {reciprocalTotalMinutes:F2}'{Environment.NewLine}" +
+                $"Repeated forward: Az {verificationAzimuthMinutes:F2}', Alt {verificationAltitudeMinutes:F2}', Total {verificationTotalMinutes:F2}'{Environment.NewLine}" +
                 $"Delta: Az {verificationAzimuthMinutes - initialAzimuthMinutes:+0.00;-0.00;0.00}', " +
                 $"Alt {verificationAltitudeMinutes - initialAltitudeMinutes:+0.00;-0.00;0.00}', " +
                 $"Total {verificationTotalMinutes - initialTotalMinutes:+0.00;-0.00;0.00}'{Environment.NewLine}" +
                 $"Repeatability limit: {verificationAgreement.ThresholdMinutes:F2}'. " +
                 "This checks internal consistency, not absolute polar-alignment accuracy.";
-            if (verificationAgreement.IsRepeatable) {
+            if (diagnosticPassed) {
                 Notification.ShowInformation(verificationSummary, TimeSpan.FromMinutes(1));
             } else {
                 Notification.ShowWarning(verificationSummary, TimeSpan.FromMinutes(1));
             }
-            progress?.Report(GetStatus($"Verification-only measurements complete: {(verificationAgreement.IsRepeatable ? "repeatable" : "not repeatable")}"));
+            progress?.Report(GetStatus($"Verification-only measurements complete: {(diagnosticPassed ? "passed" : "failed")}"));
         }
 
         private async Task<PolarErrorDetermination> MeasureVerificationOnlyArc(TPAPAVM context,
@@ -1604,6 +1642,9 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                                     double initialAltitudeError,
                                                     double initialAzimuthError,
                                                     double initialTotalError,
+                                                    double reciprocalAltitudeError,
+                                                    double reciprocalAzimuthError,
+                                                    double reciprocalTotalError,
                                                     double verificationAltitudeError,
                                                     double verificationAzimuthError,
                                                     double verificationTotalError,
@@ -1632,6 +1673,9 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             InitialAzimuthError = initialAzimuthError,
             InitialAltitudeError = initialAltitudeError,
             InitialTotalError = initialTotalError,
+            ReciprocalAzimuthError = reciprocalAzimuthError,
+            ReciprocalAltitudeError = reciprocalAltitudeError,
+            ReciprocalTotalError = reciprocalTotalError,
             VerificationAzimuthError = verificationAzimuthError,
             VerificationAltitudeError = verificationAltitudeError,
             VerificationTotalError = verificationTotalError,
