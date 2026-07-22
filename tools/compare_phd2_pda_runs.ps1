@@ -1,5 +1,5 @@
 param(
-    [Parameter(Mandatory)] [ValidateCount(2, 20)] [string[]]$ResultPaths,
+    [Parameter(Mandatory)] [ValidateCount(3, 20)] [string[]]$ResultPaths,
     [ValidateRange(0.0, 60.0)] [double]$MagnitudeFloorArcMinutes = 0.5,
     [ValidateRange(0.0, 1.0)] [double]$MagnitudeFraction = 0.15,
     [ValidateRange(0.0, 180.0)] [double]$DirectionLimitDegrees = 7.5,

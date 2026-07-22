@@ -8,7 +8,7 @@ namespace NINA.Plugins.PolarAlignment {
         double MaximumMagnitudeDifferenceFloorArcMinutes,
         double MaximumMagnitudeDifferenceFraction,
         double MaximumDirectionDifferenceDegrees) {
-        public static PolarDriftRepeatabilityPolicy FieldDefault => new(2, 0.5, 0.15, 7.5);
+        public static PolarDriftRepeatabilityPolicy FieldDefault => new(3, 0.5, 0.15, 7.5);
     }
 
     internal readonly record struct PolarDriftRepeatabilityResult(
@@ -25,7 +25,7 @@ namespace NINA.Plugins.PolarAlignment {
             PolarDriftRepeatabilityPolicy? policy = null) {
             var activePolicy = policy ?? PolarDriftRepeatabilityPolicy.FieldDefault;
             if (estimates is null || estimates.Count < activePolicy.MinimumStableEstimates) {
-                return Invalid(estimates?.Count ?? 0, "at least two independent stable captures are required");
+                return Invalid(estimates?.Count ?? 0, $"at least {activePolicy.MinimumStableEstimates} independent stable captures are required");
             }
             if (estimates.Any(estimate => !estimate.IsStable)) {
                 return Invalid(estimates.Count, "at least one capture failed its within-capture stability gate");

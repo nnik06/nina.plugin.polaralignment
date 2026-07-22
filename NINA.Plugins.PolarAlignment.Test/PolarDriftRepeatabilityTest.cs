@@ -5,7 +5,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
         [Test]
         public void TonightCapturesFailRepeatabilityGate() {
             var result = PolarDriftRepeatabilityEvaluator.Evaluate(new[] {
-                StableEstimate(7.797, -40.39), StableEstimate(6.550, -25.98)
+                StableEstimate(7.797, -40.39), StableEstimate(6.550, -25.98), StableEstimate(7.2, -33.0)
             });
 
             result.IsRepeatable.Should().BeFalse();
@@ -17,7 +17,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
         [Test]
         public void CloseIndependentCapturesPass() {
             var result = PolarDriftRepeatabilityEvaluator.Evaluate(new[] {
-                StableEstimate(8.30, 47.5), StableEstimate(8.36, 43.0)
+                StableEstimate(8.30, 47.5), StableEstimate(8.36, 43.0), StableEstimate(8.33, 45.0)
             });
 
             result.IsRepeatable.Should().BeTrue();
@@ -26,7 +26,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
         [Test]
         public void DirectionComparisonHandlesWraparound() {
             var result = PolarDriftRepeatabilityEvaluator.Evaluate(new[] {
-                StableEstimate(8.0, 179.0), StableEstimate(8.1, -179.0)
+                StableEstimate(8.0, 179.0), StableEstimate(8.1, -179.0), StableEstimate(8.05, 180.0)
             });
 
             result.IsRepeatable.Should().BeTrue();
@@ -36,7 +36,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
         [Test]
         public void DirectionOnlyMismatchFailsClosed() {
             var result = PolarDriftRepeatabilityEvaluator.Evaluate(new[] {
-                StableEstimate(8.0, 10.0), StableEstimate(8.1, 20.0)
+                StableEstimate(8.0, 10.0), StableEstimate(8.1, 20.0), StableEstimate(8.05, 15.0)
             });
 
             result.IsRepeatable.Should().BeFalse();
@@ -50,13 +50,13 @@ namespace NINA.Plugins.PolarAlignment.Test {
             });
 
             result.IsRepeatable.Should().BeFalse();
-            result.Reason.Should().Contain("at least two");
+            result.Reason.Should().Contain("at least 3");
         }
 
         [Test]
         public void NonFiniteCaptureFailsClosed() {
             var result = PolarDriftRepeatabilityEvaluator.Evaluate(new[] {
-                StableEstimate(8.0, 10.0), StableEstimate(double.NaN, 10.0)
+                StableEstimate(8.0, 10.0), StableEstimate(double.NaN, 10.0), StableEstimate(8.1, 10.0)
             });
 
             result.IsRepeatable.Should().BeFalse();
@@ -66,7 +66,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
         [Test]
         public void UnstableCaptureFailsClosed() {
             var result = PolarDriftRepeatabilityEvaluator.Evaluate(new[] {
-                StableEstimate(8.0, 20.0), StableEstimate(8.0, 20.0) with { IsStable = false }
+                StableEstimate(8.0, 20.0), StableEstimate(8.0, 20.0) with { IsStable = false }, StableEstimate(8.0, 20.0)
             });
 
             result.IsRepeatable.Should().BeFalse();

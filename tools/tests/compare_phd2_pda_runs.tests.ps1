@@ -8,16 +8,18 @@ function Write-Result([string]$Path, [double]$Magnitude, [double]$Direction, [bo
 }
 try {
     [void][IO.Directory]::CreateDirectory($root)
-    $a = Join-Path $root "a.json"; $b = Join-Path $root "b.json"; $out = Join-Path $root "out.json"
+    $a = Join-Path $root "a.json"; $b = Join-Path $root "b.json"; $c = Join-Path $root "c.json"; $out = Join-Path $root "out.json"
     Write-Result $a 7.797 -40.39
     Write-Result $b 6.550 -25.98
-    & $script -ResultPaths $a,$b -OutputPath $out *> $null
+    Write-Result $c 7.2 -33.0
+    & $script -ResultPaths $a,$b,$c -OutputPath $out *> $null
     if ($LASTEXITCODE -ne 2) { throw "Expected field disagreement to exit 2" }
     $failed = Get-Content -LiteralPath $out -Raw | ConvertFrom-Json
     if ($failed.Repeatable -or $failed.CorrectionAuthorized) { throw "Field disagreement must fail closed" }
     Write-Result $a 8.0 179.0
     Write-Result $b 8.1 -179.0
-    & $script -ResultPaths $a,$b -OutputPath $out *> $null
+    Write-Result $c 8.05 180.0
+    & $script -ResultPaths $a,$b,$c -OutputPath $out *> $null
     if ($LASTEXITCODE -ne 0) { throw "Expected repeatable pair to exit 0" }
     $passed = Get-Content -LiteralPath $out -Raw | ConvertFrom-Json
     if (-not $passed.Repeatable -or $passed.CorrectionAuthorized) { throw "Repeatability must pass without authorizing correction" }
