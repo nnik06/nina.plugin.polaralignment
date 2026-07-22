@@ -12,16 +12,17 @@ try {
     $result = & $solver -FirstSummaryPath (Join-Path $temp 'one.csv') -FirstAzimuthDegrees 270.0 `
         -FirstAltitudeDegrees 45.23 -SecondSummaryPath (Join-Path $temp 'two.csv') `
         -SecondAzimuthDegrees 299.93 -SecondAltitudeDegrees 29.90 `
-        -TppaAzimuthErrorArcMinutes -31 -TppaAltitudeErrorArcMinutes -9.66 | ConvertFrom-Json
+        -LatitudeDegrees 25 -TppaAzimuthErrorArcMinutes -31 -TppaAltitudeErrorArcMinutes -9.66 | ConvertFrom-Json
     if (-not $result.VerificationOnly -or $result.ActuationEligible) { throw 'solver must always remain verification-only' }
     if ([Math]::Abs([double]$result.AzimuthErrorArcMinutes - -24.935) -gt 0.02) { throw 'unexpected azimuth solution' }
     if ([Math]::Abs([double]$result.AltitudeErrorArcMinutes - -14.866) -gt 0.02) { throw 'unexpected altitude solution' }
-    if (-not $result.CrossMethodAgreement -or -not $result.TppaSignsAgree) { throw 'expected bounded cross-method agreement' }
+    if ($result.CrossMethodAgreement -or $result.GeometryQualified) { throw 'the weak, low-altitude field pair must remain unqualified' }
+    if (-not $result.TppaSignsAgree) { throw 'expected matching diagnostic signs' }
 
     [IO.File]::WriteAllLines((Join-Path $temp 'bad.csv'), @($header, 'False,True,5.0'))
     $failedClosed = $false
     try { & $solver -FirstSummaryPath (Join-Path $temp 'bad.csv') -FirstAzimuthDegrees 270 -FirstAltitudeDegrees 45 `
-        -SecondSummaryPath (Join-Path $temp 'two.csv') -SecondAzimuthDegrees 300 -SecondAltitudeDegrees 30 | Out-Null }
+        -SecondSummaryPath (Join-Path $temp 'two.csv') -SecondAzimuthDegrees 300 -SecondAltitudeDegrees 30 -LatitudeDegrees 25 | Out-Null }
     catch { $failedClosed = $true }
     if (-not $failedClosed) { throw 'unstable input must fail closed' }
 } finally {

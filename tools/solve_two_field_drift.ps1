@@ -5,11 +5,14 @@ param(
     [Parameter(Mandatory = $true)] [string]$SecondSummaryPath,
     [Parameter(Mandatory = $true)] [ValidateRange(270.0, 300.0)] [double]$SecondAzimuthDegrees,
     [Parameter(Mandatory = $true)] [ValidateRange(25.0, 55.0)] [double]$SecondAltitudeDegrees,
-    [ValidateRange(-90.0, 90.0)] [double]$LatitudeDegrees = 25.0,
+    [Parameter(Mandatory = $true)] [ValidateRange(-90.0, 90.0)] [double]$LatitudeDegrees,
     [double]$TppaAzimuthErrorArcMinutes = [double]::NaN,
     [double]$TppaAltitudeErrorArcMinutes = [double]::NaN,
-    [ValidateRange(0.001, 1.0)] [double]$MinimumAbsoluteDeterminant = 0.015,
-    [ValidateRange(0.1, 60.0)] [double]$MaximumAxisDifferenceArcMinutes = 8.0
+    [ValidateRange(0.001, 1.0)] [double]$MinimumComputableDeterminant = 0.005,
+    [ValidateRange(0.001, 1.0)] [double]$MinimumQualifiedDeterminant = 0.04,
+    [ValidateRange(1.0, 90.0)] [double]$MinimumQualifiedHourAngleSeparationDegrees = 45.0,
+    [ValidateRange(25.0, 55.0)] [double]$MinimumQualifiedAltitudeDegrees = 40.0,
+    [ValidateRange(0.1, 60.0)] [double]$MaximumAxisDifferenceArcMinutes = 2.0
 )
 
 Set-StrictMode -Version 2.0
@@ -56,10 +59,15 @@ $a12 = -$siderealCoefficient * [Math]::Cos($latitude) * [Math]::Cos($firstHourAn
 $a21 = -$siderealCoefficient * [Math]::Sin($secondHourAngle)
 $a22 = -$siderealCoefficient * [Math]::Cos($latitude) * [Math]::Cos($secondHourAngle)
 $determinant = $a11 * $a22 - $a12 * $a21
-if ([Math]::Abs($determinant) -lt $MinimumAbsoluteDeterminant) {
-    throw ("Two-field drift geometry is ill-conditioned: determinant={0:F6}, minimum={1:F6}." -f
-        $determinant, $MinimumAbsoluteDeterminant)
+if ([Math]::Abs($determinant) -lt $MinimumComputableDeterminant) {
+    throw ("Two-field drift geometry is too ill-conditioned even for diagnostic computation: determinant={0:F6}, minimum={1:F6}." -f
+        $determinant, $MinimumComputableDeterminant)
 }
+$hourAngleSeparation = [Math]::Abs(($secondHourAngle - $firstHourAngle) * 180.0 / [Math]::PI)
+if ($hourAngleSeparation -gt 180.0) { $hourAngleSeparation = 360.0 - $hourAngleSeparation }
+$geometryQualified = [Math]::Abs($determinant) -ge $MinimumQualifiedDeterminant -and
+    $hourAngleSeparation -ge $MinimumQualifiedHourAngleSeparationDegrees -and
+    [Math]::Min($FirstAltitudeDegrees, $SecondAltitudeDegrees) -ge $MinimumQualifiedAltitudeDegrees
 
 $altitudeError = ($firstDrift * $a22 - $a12 * $secondDrift) / $determinant
 $azimuthError = ($a11 * $secondDrift - $firstDrift * $a21) / $determinant
@@ -71,7 +79,7 @@ $signsAgree = if ($hasTppa) {
     [Math]::Sign($azimuthError) -eq [Math]::Sign($TppaAzimuthErrorArcMinutes) -and
     [Math]::Sign($altitudeError) -eq [Math]::Sign($TppaAltitudeErrorArcMinutes)
 } else { $false }
-$crossMethodAgreement = $hasTppa -and $signsAgree -and
+$crossMethodAgreement = $geometryQualified -and $hasTppa -and $signsAgree -and
     $azimuthDifference -le $MaximumAxisDifferenceArcMinutes -and
     $altitudeDifference -le $MaximumAxisDifferenceArcMinutes
 
@@ -81,6 +89,8 @@ $crossMethodAgreement = $hasTppa -and $signsAgree -and
     FirstHourAngleDegrees = $firstHourAngle * 180.0 / [Math]::PI
     SecondHourAngleDegrees = $secondHourAngle * 180.0 / [Math]::PI
     Determinant = $determinant
+    HourAngleSeparationDegrees = $hourAngleSeparation
+    GeometryQualified = $geometryQualified
     AzimuthErrorArcMinutes = $azimuthError
     AltitudeErrorArcMinutes = $altitudeError
     TotalErrorArcMinutes = $totalError
@@ -89,5 +99,5 @@ $crossMethodAgreement = $hasTppa -and $signsAgree -and
     AzimuthDifferenceArcMinutes = $azimuthDifference
     AltitudeDifferenceArcMinutes = $altitudeDifference
     CrossMethodAgreement = $crossMethodAgreement
-    Reason = 'Two-field drift remains verification-only; it cannot command UPAS.'
+    Reason = if ($geometryQualified) { 'Geometry passes the numeric verification floor, but two-field drift remains verification-only and cannot command UPAS.' } else { 'Geometry is diagnostic-only because conditioning, hour-angle separation, or altitude floor failed; UPAS actuation is forbidden.' }
 } | ConvertTo-Json -Depth 4
