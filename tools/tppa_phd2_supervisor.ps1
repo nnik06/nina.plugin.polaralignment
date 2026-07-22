@@ -6,6 +6,19 @@ param(
     [string]$Phd2Host = "127.0.0.1",
     [int]$Phd2Port = 4400,
     [double]$DriftMinutes = 12,
+    [ValidateRange(1, 5)] [int]$Phd2CaptureAttempts = 3,
+    [ValidateRange(0, 600)] [int]$Phd2RetryDelaySeconds = 90,
+    [ValidateRange(0, 60000)] [int]$Phd2ExposureMs = 0,
+    [bool]$RequirePdaNearPole = $true,
+    [ValidateRange(1.0, 15.0)] [double]$PdaMaxPoleDistanceDegrees = 6.0,
+    [ValidateRange(-10.0, 90.0)] [double]$PdaMinimumAltitudeDegrees = 25.0,
+    [ValidateRange(-10.0, 90.0)] [double]$PdaMaximumAltitudeDegrees = 55.0,
+    [ValidateRange(0.0, 360.0)] [double]$PdaWesternAzimuthMinimumDegrees = 270.0,
+    [ValidateRange(0.0, 360.0)] [double]$PdaEasternAzimuthMaximumDegrees = 10.0,
+    [ValidateSet(-1, 1)]
+    [int]$PdaHemisphere = 1,
+    [ValidateSet(-1, 1)]
+    [int]$PdaMirror = 1,
     [int]$Cycles = 3,
     [int]$RepeatBursts = 1,
     [datetime]$StopAt = [datetime]::MaxValue,
@@ -226,6 +239,33 @@ function Find-Nina {
     return $null
 }
 
+function Assert-PdaPointing {
+    if (-not $RequirePdaNearPole) { return }
+    $nina = Find-Nina
+    if (-not $nina) { throw "NINA API is required to verify PDA pointing and tracking." }
+    $info = Invoke-Nina -Base $nina -Path "/equipment/mount/info" -TimeoutSec 10
+    if (-not $info.Success -or $null -eq $info.Response) { throw "NINA mount info is unavailable; refusing PDA capture." }
+    $mount = $info.Response
+    if ($PdaMinimumAltitudeDegrees -gt $PdaMaximumAltitudeDegrees) { throw "PDA altitude guard is invalid: minimum exceeds maximum." }
+    $altitude = [double]$mount.Altitude
+    $azimuth = (([double]$mount.Azimuth % 360.0) + 360.0) % 360.0
+    $insideNorthSector = $azimuth -ge $PdaWesternAzimuthMinimumDegrees -or $azimuth -le $PdaEasternAzimuthMaximumDegrees
+    $dec = [double]$mount.Declination
+    $poleDistance = 90.0 - ($PdaHemisphere * $dec)
+    if ($poleDistance -lt 0) { $poleDistance = [Math]::Abs($poleDistance) }
+    if ($poleDistance -gt $PdaMaxPoleDistanceDegrees) {
+        throw ("PHD2 PDA requires a near-pole field. Mount Dec={0:F3} deg is {1:F3} deg from the selected pole; limit={2:F3} deg." -f $dec, $poleDistance, $PdaMaxPoleDistanceDegrees)
+    }
+    if ($altitude -lt $PdaMinimumAltitudeDegrees -or $altitude -gt $PdaMaximumAltitudeDegrees) {
+        throw ("PHD2 PDA altitude {0:F2} deg is outside the guarded range {1:F2}..{2:F2} deg." -f $altitude, $PdaMinimumAltitudeDegrees, $PdaMaximumAltitudeDegrees)
+    }
+    if (-not $insideNorthSector) {
+        throw ("PHD2 PDA azimuth {0:F2} deg is outside the guarded north sector {1:F2}..360/0..{2:F2} deg." -f $azimuth, $PdaWesternAzimuthMinimumDegrees, $PdaEasternAzimuthMaximumDegrees)
+    }
+    if (-not [bool]$mount.TrackingEnabled) { throw "Mount tracking is disabled; refusing PDA capture." }
+    if ([bool]$mount.Slewing) { throw "Mount is still slewing; refusing PDA capture." }
+    Log ("PDA pointing preflight passed. RA={0:F4}h Dec={1:F4}deg Alt={2:F2}deg Az={3:F2}deg poleDistance={4:F3}deg tracking={5}." -f [double]$mount.RightAscension, $dec, $altitude, $azimuth, $poleDistance, [bool]$mount.TrackingEnabled)
+}
 function Connect-Phd2 {
     $client = [Net.Sockets.TcpClient]::new()
     $client.Connect($Phd2Host, $Phd2Port)
@@ -294,6 +334,13 @@ function ConvertTo-CsvCell {
     return $text
 }
 
+function New-Phd2CaptureException {
+    param([string]$Message, [string]$Reason, [bool]$Transient = $false)
+    $exception = [InvalidOperationException]::new($Message)
+    $exception.Data["Phd2Reason"] = $Reason
+    $exception.Data["Phd2Transient"] = $Transient
+    return $exception
+}
 function Capture-Phd2Drift {
     param([string]$OutDir, [double]$Minutes, [string]$Label)
     if ($Minutes -lt 1.0) {
@@ -302,7 +349,7 @@ function Capture-Phd2Drift {
 
     $jsonl = Join-Path $OutDir "$Label-phd2-events.jsonl"
     $csv = Join-Path $OutDir "$Label-phd2-guidesteps.csv"
-    "timestamp_utc,elapsed_s,frame,ra_raw_px,dec_raw_px,ra_guide_px,dec_guide_px,ra_ms,dec_ms,snr,hfd,star_mass,event_json" | Set-Content -LiteralPath $csv -Encoding UTF8
+    "timestamp_utc,elapsed_s,frame,camera_dx_px,camera_dy_px,pixel_scale_arcsec_px,ra_raw_px,dec_raw_px,ra_guide_px,dec_guide_px,ra_ms,dec_ms,snr,hfd,star_mass,event_json" | Set-Content -LiteralPath $csv -Encoding UTF8
 
     Log "Connecting to PHD2 at ${Phd2Host}:${Phd2Port}"
     $conn = Connect-Phd2
@@ -310,6 +357,9 @@ function Capture-Phd2Drift {
     $preState = "Unknown"
     $guideOutputConfirmed = $false
     $stopAtEnd = $true
+    $lockPosition = $null
+    $originalExposureMs = $null
+    $exposureChanged = $false
 
     try {
         $drainUntil = (Get-Date).AddSeconds(2)
@@ -319,6 +369,7 @@ function Capture-Phd2Drift {
         if ($appState.PSObject.Properties.Name -contains "result") { $preState = [string]$appState.result }
         Log "PHD2 initial app state: $preState"
         if ($preState -eq "Calibrating") { throw "PHD2 is currently calibrating; refusing to interrupt it." }
+        if (@("Stopped", "Looping") -notcontains $preState) { throw "PHD2 must be Stopped or Looping before passive drift capture; current state is $preState." }
 
         try { $equip = Invoke-Phd2 -Conn $conn -Method "get_current_equipment" -Jsonl $jsonl; Log ("PHD2 equipment: " + ($equip | ConvertTo-Json -Compress -Depth 8)) }
         catch { Log "PHD2 equipment query failed" }
@@ -333,6 +384,21 @@ function Capture-Phd2Drift {
         try { $calData = Invoke-Phd2 -Conn $conn -Method "get_calibration_data" -Params @("Mount") -Jsonl $jsonl; Log ("PHD2 calibration data: " + ($calData | ConvertTo-Json -Compress -Depth 8)) }
         catch { Log "PHD2 calibration data read failed: $($_.Exception.Message)" }
 
+        $pixelScale = $null
+        try {
+            $pixelScaleResult = Invoke-Phd2 -Conn $conn -Method "get_pixel_scale" -Jsonl $jsonl
+            if ($pixelScaleResult.PSObject.Properties.Name -contains "result") { $pixelScale = [double]$pixelScaleResult.result }
+            if ($null -eq $pixelScale -or $pixelScale -le 0 -or [Math]::Abs($pixelScale - 1.0) -lt 1e-9) { throw "PHD2 pixel scale is missing or unresolved: $pixelScale" }
+            Log ("PHD2 pixel scale: {0:F6} arcsec/px" -f $pixelScale)
+        } catch { throw "PHD2 pixel scale is required for polar-drift estimation: $($_.Exception.Message)" }
+
+        try {
+            $exposureResult = Invoke-Phd2 -Conn $conn -Method "get_exposure" -Jsonl $jsonl
+            if (-not ($exposureResult.PSObject.Properties.Name -contains "result")) { throw "response did not include a result" }
+            $originalExposureMs = [int]$exposureResult.result
+            Log "PHD2 original exposure: ${originalExposureMs}ms"
+        } catch { throw "PHD2 exposure could not be read; refusing to change it: $($_.Exception.Message)" }
+
         try {
             $guideOutput = Invoke-Phd2 -Conn $conn -Method "get_guide_output_enabled" -Jsonl $jsonl
             if ($guideOutput.PSObject.Properties.Name -contains "result") { $originalGuideOutput = [bool]$guideOutput.result; $guideOutputConfirmed = $true }
@@ -341,26 +407,24 @@ function Capture-Phd2Drift {
 
         Invoke-Phd2 -Conn $conn -Method "set_guide_output_enabled" -Params @($false) -Jsonl $jsonl | Out-Null
         Log "PHD2 guide outputs disabled"
+        if ($Phd2ExposureMs -gt 0 -and $Phd2ExposureMs -ne $originalExposureMs) {
+            Invoke-Phd2 -Conn $conn -Method "set_exposure" -Params @{ exposure = $Phd2ExposureMs } -Jsonl $jsonl | Out-Null
+            $exposureChanged = $true
+            Log "PHD2 passive-drift exposure set to ${Phd2ExposureMs}ms"
+        }
 
         if ($preState -eq "Stopped") {
             Invoke-Phd2 -Conn $conn -Method "loop" -TimeoutSec 10 -Jsonl $jsonl | Out-Null
             Log "PHD2 looping started for passive drift capture"
             Start-Sleep -Seconds 5
-            $existingLock = Invoke-Phd2 -Conn $conn -Method "get_lock_position" -TimeoutSec 10 -Jsonl $jsonl
-            if (($existingLock.PSObject.Properties.Name -contains "result") -and @($existingLock.result).Count -ge 2) {
-                $lockPosition = @([double]$existingLock.result[0], [double]$existingLock.result[1])
-                Log ("PHD2 retained guide-star lock at x={0:N1}, y={1:N1}" -f $lockPosition[0], $lockPosition[1])
-            } else {
-                Start-Sleep -Seconds 5
-                $star = Invoke-Phd2 -Conn $conn -Method "find_star" -TimeoutSec 15 -Jsonl $jsonl
-                if (-not ($star.PSObject.Properties.Name -contains "result") -or @($star.result).Count -lt 2) {
-                    throw "PHD2 could not find a guide star for passive drift capture."
-                }
-                $lockPosition = @([double]$star.result[0], [double]$star.result[1])
-                Invoke-Phd2 -Conn $conn -Method "set_lock_position" -Params @($lockPosition[0], $lockPosition[1], $true) -TimeoutSec 10 -Jsonl $jsonl | Out-Null
-                Log ("PHD2 guide star selected at x={0:N1}, y={1:N1}" -f $lockPosition[0], $lockPosition[1])
-            }
         }
+        $star = Invoke-Phd2 -Conn $conn -Method "find_star" -TimeoutSec 15 -Jsonl $jsonl
+        if (-not ($star.PSObject.Properties.Name -contains "result") -or @($star.result).Count -lt 2) {
+            throw (New-Phd2CaptureException -Message "PHD2 could not find a guide star for passive drift capture." -Reason "FindStarFailed" -Transient $true)
+        }
+        $lockPosition = @([double]$star.result[0], [double]$star.result[1])
+        Invoke-Phd2 -Conn $conn -Method "set_lock_position" -Params @($lockPosition[0], $lockPosition[1], $true) -TimeoutSec 10 -Jsonl $jsonl | Out-Null
+        Log ("PHD2 freshly selected guide star at x={0:N1}, y={1:N1}" -f $lockPosition[0], $lockPosition[1])
 
         $guideParams = @{ settle = @{ pixels = 99.0; time = 0; timeout = 10 }; recalibrate = $false }
         Invoke-Phd2 -Conn $conn -Method "guide" -Params $guideParams -TimeoutSec 15 -Jsonl $jsonl | Out-Null
@@ -374,7 +438,11 @@ function Capture-Phd2Drift {
         $end = $start.AddMinutes($Minutes)
         $firstStepDeadline = $start.AddSeconds(30)
         $steps = 0
+        $startupLockPositionAccepted = $false
+        $foreignGuidePulseDetected = $false
+        $invalidatingPhd2Event = $null
         while ((Get-Date) -lt $end) {
+            if (Test-StopWindow) { throw 'PHD2 drift capture reached StopAt before a complete sample was collected.' }
             $line = Read-Phd2Line -Conn $conn -TimeoutMs 1000
             if (-not $line) {
                 if ($steps -eq 0 -and (Get-Date) -gt $firstStepDeadline) { Log "ERROR: no PHD2 GuideStep received within 30 seconds; capture is probably unusable."; break }
@@ -392,6 +460,9 @@ function Capture-Phd2Drift {
                         (Get-Date).ToUniversalTime().ToString("O"),
                         ("{0:F3}" -f $elapsed),
                         (Get-JsonValue -Object $obj -Name "Frame"),
+                        (Get-JsonValue -Object $obj -Name "dx"),
+                        (Get-JsonValue -Object $obj -Name "dy"),
+                        $pixelScale,
                         (Get-JsonValue -Object $obj -Name "RADistanceRaw"),
                         (Get-JsonValue -Object $obj -Name "DECDistanceRaw"),
                         (Get-JsonValue -Object $obj -Name "RADistanceGuide"),
@@ -405,16 +476,52 @@ function Capture-Phd2Drift {
                     )
                     $row = ($cells | ForEach-Object { ConvertTo-CsvCell $_ }) -join ","
                     Add-Content -LiteralPath $csv -Value $row -Encoding UTF8
-                    if (($raDuration -ne "" -and [double]$raDuration -gt 0) -or ($decDuration -ne "" -and [double]$decDuration -gt 0)) {
-                        Log "WARNING: Guiding pulses (RA: ${raDuration}ms, DEC: ${decDuration}ms) detected! Another client (e.g., NINA) may have re-enabled guide output."
+                    try {
+                        if (($raDuration -ne "" -and [double]$raDuration -gt 0) -or ($decDuration -ne "" -and [double]$decDuration -gt 0)) {
+                            $foreignGuidePulseDetected = $true
+                            Log "WARNING: Guiding pulses (RA: ${raDuration}ms, DEC: ${decDuration}ms) detected! Another client (e.g., NINA) may have re-enabled guide output."
+                        }
+                    } catch {
+                        $invalidatingPhd2Event = "MalformedGuidePulse"
+                        Log "WARNING: PHD2 emitted an unparseable guide-pulse duration; polar-drift capture will be rejected."
                     }
+                } elseif ($obj.Event -eq "StartGuiding" -and $steps -eq 0) {
+                    Log "PHD2 emitted the expected startup StartGuiding event before the first passive sample."
+                } elseif ($obj.Event -eq "LockPositionSet" -and $steps -eq 0 -and -not $startupLockPositionAccepted -and $null -ne $lockPosition) {
+                    $lockDx = [double]$obj.X - [double]$lockPosition[0]
+                    $lockDy = [double]$obj.Y - [double]$lockPosition[1]
+                    $lockDistance = [Math]::Sqrt(($lockDx * $lockDx) + ($lockDy * $lockDy))
+                    if ($lockDistance -le 2.0) {
+                        $startupLockPositionAccepted = $true
+                        Log ("PHD2 emitted the expected startup LockPositionSet within {0:F3}px of the selected guide star." -f $lockDistance)
+                    } else {
+                        $invalidatingPhd2Event = "LockPositionSet"
+                        Log ("WARNING: PHD2 startup LockPositionSet moved {0:F3}px from the selected guide star; polar-drift capture will be rejected." -f $lockDistance)
+                    }
+                } elseif (@("StarLost", "GuidingDithered", "LockPositionSet", "LockPositionShiftLimitReached", "LockPositionLost", "GuidingStopped", "StartGuiding") -contains $obj.Event) {
+                    $invalidatingPhd2Event = [string]$obj.Event
+                    Log "WARNING: PHD2 event $invalidatingPhd2Event changed the guide-star/lock state; polar-drift capture will be rejected."
                 } elseif ($obj.Event -eq "Alert") { Log "PHD2 alert: $($obj.Msg)"
                 } elseif ($obj.Event -eq "AppState") { Log "PHD2 state changed to: $($obj.State)" }
             } catch {}
+            if ($foreignGuidePulseDetected -or $null -ne $invalidatingPhd2Event) { break }
         }
-        if ($steps -eq 0) { throw "PHD2 drift capture ended with zero GuideStep rows." }
+        if ($steps -eq 0) { throw (New-Phd2CaptureException -Message "PHD2 drift capture ended with zero GuideStep rows." -Reason "ZeroGuideSteps" -Transient $true) }
+        if ($foreignGuidePulseDetected) { throw "PHD2 drift capture contained guide pulses and is invalid for passive polar-drift estimation." }
+        if ($null -ne $invalidatingPhd2Event) {
+            $eventIsTransient = @("StarLost", "LockPositionLost") -contains $invalidatingPhd2Event
+            throw (New-Phd2CaptureException -Message "PHD2 drift capture contained the invalidating event $invalidatingPhd2Event and is invalid for polar-drift estimation." -Reason $invalidatingPhd2Event -Transient $eventIsTransient)
+        }
         Log "PHD2 drift capture finished. GuideStep rows: $steps"
+        $analyzerPath = Join-Path $PSScriptRoot "analyze_tppa_phd2_diagnostics.ps1"
+        if (-not (Test-Path -LiteralPath $analyzerPath -PathType Leaf)) { throw "PHD2 polar-drift analyzer not found: $analyzerPath" }
+        & $analyzerPath -RunDir $OutDir -PixelScaleArcsecPerPixel $pixelScale -PdaHemisphere $PdaHemisphere -PdaMirror $PdaMirror
+        Log "Read-only PHD2 polar-drift artifacts written to $OutDir"
     } finally {
+        if ($exposureChanged -and $null -ne $originalExposureMs) {
+            try { Invoke-Phd2 -Conn $conn -Method "set_exposure" -Params @{ exposure = $originalExposureMs } -TimeoutSec 5 -Jsonl $jsonl | Out-Null; Log "PHD2 exposure restored to ${originalExposureMs}ms" }
+            catch { Log "WARNING: PHD2 exposure restore failed; manually verify exposure before guiding: $($_.Exception.Message)" }
+        }
         try { Invoke-Phd2 -Conn $conn -Method "set_guide_output_enabled" -Params @($originalGuideOutput) -TimeoutSec 5 -Jsonl $jsonl | Out-Null; Log "PHD2 guide-output restored to $originalGuideOutput" }
         catch { Log "WARNING: PHD2 guide-output restore failed; manually verify guide output before imaging: $($_.Exception.Message)" }
 
@@ -427,6 +534,36 @@ function Capture-Phd2Drift {
     }
 }
 
+function Capture-Phd2DriftWithRetry {
+    param([string]$OutDir, [double]$Minutes, [string]$Label)
+
+    for ($attempt = 1; $attempt -le $Phd2CaptureAttempts; $attempt++) {
+        if (Test-StopWindow) { throw "PHD2 drift capture retry window ended before attempt $attempt/$Phd2CaptureAttempts." }
+        Assert-PdaPointing
+        $attemptLabel = if ($attempt -eq 1) { $Label } else { "$Label-retry-$attempt" }
+        try {
+            Log "PHD2 drift capture attempt $attempt/$Phd2CaptureAttempts started with label '$attemptLabel'."
+            Capture-Phd2Drift -OutDir $OutDir -Minutes $Minutes -Label $attemptLabel
+            if ($attempt -gt 1) { Log "PHD2 drift capture succeeded on attempt $attempt/$Phd2CaptureAttempts." }
+            return
+        } catch {
+            $message = $_.Exception.Message
+            $transient = [bool]$_.Exception.Data["Phd2Transient"]
+            $rejectedCsv = Join-Path $OutDir "$attemptLabel-phd2-guidesteps.csv"
+            if (Test-Path -LiteralPath $rejectedCsv) {
+                Move-Item -LiteralPath $rejectedCsv -Destination ($rejectedCsv + ".rejected") -Force
+                Log "Quarantined rejected PHD2 GuideStep CSV: $rejectedCsv.rejected"
+            }
+            if (-not $transient -or $attempt -ge $Phd2CaptureAttempts) { throw }
+            $remainingSeconds = ($StopAt - (Get-Date)).TotalSeconds
+            $requiredSeconds = ($Minutes * 60.0) + $Phd2RetryDelaySeconds + 30.0
+            if ($StopAt -ne [datetime]::MaxValue -and $remainingSeconds -lt $requiredSeconds) { throw "Transient PHD2 capture failure cannot be retried before StopAt. Last failure: $message" }
+            Log "WARNING: transient PHD2 capture failure on attempt $attempt/$Phd2CaptureAttempts`: $message"
+            Log "Waiting $Phd2RetryDelaySeconds seconds before selecting a fresh star for the next whole-capture attempt."
+            Start-Sleep -Seconds $Phd2RetryDelaySeconds
+        }
+    }
+}
 function Assert-ApiSuccess {
     param([object]$Response, [string]$Operation)
     if ($Response.PSObject.Properties["Success"] -and -not $Response.Success) {
@@ -496,6 +633,27 @@ function Get-NinaSequenceStatuses {
         foreach ($status in (Get-NinaSequenceStatuses -Node $Node.Items)) { [void]$statuses.Add($status) }
     }
     return $statuses
+}
+
+function Wait-NinaSequenceIdle {
+    param([string]$Base, [int]$TimeoutSeconds = 120)
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        if (Test-StopWindow) { return $false }
+        try {
+            $state = Invoke-Nina -Base $Base -Path "/sequence/state" -TimeoutSec 3
+            $statuses = @(Get-NinaSequenceStatuses -Node $state.Response)
+            if ($statuses.Count -gt 0 -and -not ($statuses -contains "RUNNING")) {
+                Log "NINA sequence reached confirmed idle state: $($statuses -join ',')"
+                return $true
+            }
+        } catch {
+            Log "Waiting for NINA sequence idle state: $($_.Exception.Message)"
+        }
+        Start-Sleep -Seconds 2
+    }
+    Log "NINA sequence did not reach a confirmed idle state within $TimeoutSeconds seconds; refusing to reload it."
+    return $false
 }
 
 function Get-LatestNinaLogPath {
@@ -689,7 +847,9 @@ function Wait-NinaFreshDetermination {
         if ($fresh.Count -gt 0) {
             Log "Fresh TPPA determination captured; stopping before continuous correction: $($fresh[0])"
             Stop-NinaSequence -Base $Base
-            Start-Sleep -Seconds 2
+            if (-not (Wait-NinaSequenceIdle -Base $Base)) {
+                throw "NINA did not become idle after stopping the fresh TPPA determination."
+            }
             $postStopLines = @(Get-NinaLogLinesSince -SinceLocal $SinceLocal -Count 6000)
             $postStopMovement = @($postStopLines | Where-Object { $_ -match $movementPattern })
             if ($postStopMovement.Count -gt 0) {
@@ -830,7 +990,7 @@ if ($Mode -eq "Probe") {
     return
 }
 
-if ($Mode -eq "Phd2Drift") { Capture-Phd2Drift -OutDir $runDir -Minutes $DriftMinutes -Label "daylight"; Log "Phd2Drift mode complete"; return }
+if ($Mode -eq "Phd2Drift") { Capture-Phd2DriftWithRetry -OutDir $runDir -Minutes $DriftMinutes -Label "daylight"; Log "Phd2Drift mode complete"; return }
 
 if ($Mode -eq "Stability") {
     $nina = Find-Nina
@@ -899,7 +1059,7 @@ if ($Mode -eq "Stability") {
         }
         if (Test-Port -HostName $Phd2Host -Port $Phd2Port) {
             Log "Stability block ${block}: capturing passive PHD2 drift for $DriftMinutes minutes"
-            Capture-Phd2Drift -OutDir $runDir -Minutes $DriftMinutes -Label ("stability-block-{0:00}" -f $block)
+            Capture-Phd2DriftWithRetry -OutDir $runDir -Minutes $DriftMinutes -Label ("stability-block-{0:00}" -f $block)
         } else {
             Log "WARNING: PHD2 TCP port is closed; continuing TPPA stability measurements without this drift block."
         }
@@ -953,7 +1113,7 @@ if ($Mode -eq "BurstThenDrift") {
         Log "Full cycle ${burst}/${RepeatBursts}: TPPA burst complete; settling for $SettleSeconds seconds before passive PHD2 drift capture"
         Start-Sleep -Seconds $SettleSeconds
         if (Test-StopWindow) { break }
-        Capture-Phd2Drift -OutDir $runDir -Minutes $DriftMinutes -Label ("full-cycle-{0:00}-post-tppa-burst" -f $burst)
+        Capture-Phd2DriftWithRetry -OutDir $runDir -Minutes $DriftMinutes -Label ("full-cycle-{0:00}-post-tppa-burst" -f $burst)
         if ($burst -lt $RepeatBursts) {
             Log "Full cycle ${burst}/${RepeatBursts}: PHD2 capture complete; waiting $TppaInterRunSettleSeconds seconds before next TPPA burst"
             Start-Sleep -Seconds $TppaInterRunSettleSeconds
@@ -983,7 +1143,7 @@ if ($Mode -eq "Cycle") {
         Log "Cycle ${cycle}: TPPA completion marker UTC $doneUtc"
         Log "Cycle ${cycle}: settling for $SettleSeconds seconds"
         Start-Sleep -Seconds $SettleSeconds
-        Capture-Phd2Drift -OutDir $runDir -Minutes $DriftMinutes -Label ("cycle-{0:00}" -f $cycle)
+        Capture-Phd2DriftWithRetry -OutDir $runDir -Minutes $DriftMinutes -Label ("cycle-{0:00}" -f $cycle)
     }
     Log "Cycle mode complete"
 }

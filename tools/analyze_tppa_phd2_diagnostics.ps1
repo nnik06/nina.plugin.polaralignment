@@ -9,6 +9,10 @@ param(
     [double]$DriftWindowMinutes = 2.0,
     [ValidateRange(3, 1000)]
     [int]$MinimumConsistentDriftWindows = 3,
+    [ValidateSet(-1, 1)]
+    [int]$PdaHemisphere = 1,
+    [ValidateSet(-1, 1)]
+    [int]$PdaMirror = 1,
     [string]$OutputPath = ""
 )
 
@@ -22,6 +26,11 @@ $WindowSlopeRangeFloorUnitsPerMin = 0.1
 $WindowSlopeRangeMeanFraction = 0.75
 $WindowSlopeStdDevFloorUnitsPerMin = 0.05
 $WindowSlopeStdDevMeanFraction = 0.35
+$PdaSecondsPerRadian = 24.0 * 3600.0 / (2.0 * [Math]::PI)
+$PdaMinimumDurationSeconds = 600.0
+$PdaMinimumSampleCount = 200
+$PdaMaximumSigmaArcMinutes = 0.25
+$PdaHalfSlopeDifferenceFraction = 0.15
 
 function Get-LatestNinaLogPath {
     $logDir = Join-Path $env:LOCALAPPDATA "NINA\Logs"
@@ -75,6 +84,57 @@ function Get-LinearSlopePerMinute {
     $denom = $used * $sumX2 - $sumX * $sumX
     if ([Math]::Abs($denom) -lt 1e-12) { return $null }
     return ($used * $sumXY - $sumX * $sumY) / $denom
+}
+
+function Get-LinearFitPerMinute {
+    param([double[]]$Minutes, [double[]]$Values)
+    $n = [Math]::Min($Minutes.Count, $Values.Count)
+    if ($n -lt 3) { return $null }
+
+    $validX = New-Object System.Collections.Generic.List[double]
+    $validY = New-Object System.Collections.Generic.List[double]
+    for ($i = 0; $i -lt $n; $i++) {
+        if ([double]::IsNaN($Minutes[$i]) -or [double]::IsNaN($Values[$i])) { continue }
+        [void]$validX.Add($Minutes[$i])
+        [void]$validY.Add($Values[$i])
+    }
+    if ($validX.Count -lt 3) { return $null }
+
+    $meanX = ($validX | Measure-Object -Average).Average
+    $meanY = ($validY | Measure-Object -Average).Average
+    $sxx = 0.0
+    $sxy = 0.0
+    for ($i = 0; $i -lt $validX.Count; $i++) {
+        $dx = $validX[$i] - $meanX
+        $sxx += $dx * $dx
+        $sxy += $dx * ($validY[$i] - $meanY)
+    }
+    if ($sxx -le 0) { return $null }
+
+    $slope = $sxy / $sxx
+    $intercept = $meanY - $slope * $meanX
+    $rss = 0.0
+    for ($i = 0; $i -lt $validX.Count; $i++) {
+        $residual = $validY[$i] - ($intercept + $slope * $validX[$i])
+        $rss += $residual * $residual
+    }
+    $slopeStandardError = [Math]::Sqrt(($rss / ($validX.Count - 2)) / $sxx)
+    return [pscustomobject]@{ Slope = $slope; StandardError = $slopeStandardError; Count = $validX.Count }
+}
+
+function Get-VectorMagnitude {
+    param([double]$X, [double]$Y)
+    $scale = [Math]::Max([Math]::Abs($X), [Math]::Abs($Y))
+    if ($scale -eq 0) { return 0.0 }
+    return $scale * [Math]::Sqrt(($X / $scale) * ($X / $scale) + ($Y / $scale) * ($Y / $scale))
+}
+
+function Normalize-Degrees {
+    param([double]$Degrees)
+    $normalized = $Degrees % 360.0
+    if ($normalized -le -180.0) { $normalized += 360.0 }
+    elseif ($normalized -gt 180.0) { $normalized -= 360.0 }
+    return $normalized
 }
 
 
@@ -176,6 +236,81 @@ function Get-TppaStabilitySummary {
         AzSlopeArcsecPerHour = (Get-LinearSlopePerMinute -Minutes $elapsedMinutes -Values $az) * 60.0; AltSlopeArcsecPerHour = (Get-LinearSlopePerMinute -Minutes $elapsedMinutes -Values $alt) * 60.0; TotalSlopeArcsecPerHour = (Get-LinearSlopePerMinute -Minutes $elapsedMinutes -Values $total) * 60.0
     }
 }
+function Get-PolarDriftEstimate {
+    param([object[]]$Rows)
+
+    $unavailable = { param([string]$Reason) [pscustomobject]@{ Available = $false; Stable = $false; SampleCount = 0; DurationSeconds = 0; ErrorArcMinutes = $null; SigmaArcMinutes = $null; PoleDirectionCameraDegrees = $null; Phd2DisplayAngleDegrees = $null; HalfSlopeDifferenceArcMinutes = $null; Reason = $Reason } }
+    if ($Rows.Count -lt 3) { return & $unavailable "Too few guide steps" }
+    $properties = @($Rows[0].PSObject.Properties.Name)
+    if (-not ($properties -contains "camera_dx_px") -or -not ($properties -contains "camera_dy_px")) { return & $unavailable "Capture predates camera dx/dy recording" }
+
+    $minutes = New-Object System.Collections.Generic.List[double]
+    $x = New-Object System.Collections.Generic.List[double]
+    $y = New-Object System.Collections.Generic.List[double]
+    $pixelScale = if ($PixelScaleArcsecPerPixel -gt 0) { $PixelScaleArcsecPerPixel } else { [double]::NaN }
+    $lastElapsed = [double]::NegativeInfinity
+    foreach ($row in $Rows) {
+        $elapsed = Convert-ToDouble $row.elapsed_s
+        $dx = Convert-ToDouble $row.camera_dx_px
+        $dy = Convert-ToDouble $row.camera_dy_px
+        if ([double]::IsNaN($elapsed) -or [double]::IsNaN($dx) -or [double]::IsNaN($dy) -or $elapsed -le $lastElapsed) { continue }
+        if ([double]::IsNaN($pixelScale) -and $row.PSObject.Properties.Name -contains "pixel_scale_arcsec_px") {
+            $candidateScale = Convert-ToDouble $row.pixel_scale_arcsec_px
+            if (-not [double]::IsNaN($candidateScale) -and $candidateScale -gt 0) { $pixelScale = $candidateScale }
+        }
+        [void]$minutes.Add($elapsed / 60.0)
+        [void]$x.Add($dx)
+        [void]$y.Add($dy)
+        $lastElapsed = $elapsed
+    }
+    if ($minutes.Count -lt 3) { return & $unavailable "Fewer than three valid monotonic camera samples" }
+    if ([double]::IsNaN($pixelScale) -or $pixelScale -le 0) { return & $unavailable "Finite positive pixel scale is required" }
+
+    $xFit = Get-LinearFitPerMinute -Minutes $minutes.ToArray() -Values $x.ToArray()
+    $yFit = Get-LinearFitPerMinute -Minutes $minutes.ToArray() -Values $y.ToArray()
+    if ($null -eq $xFit -or $null -eq $yFit) { return & $unavailable "Camera-space least-squares fit is singular" }
+    $slopeMagnitudePerMinute = Get-VectorMagnitude $xFit.Slope $yFit.Slope
+    $errorArcMinutes = $slopeMagnitudePerMinute * $PdaSecondsPerRadian * $pixelScale / 3600.0
+    if ($slopeMagnitudePerMinute -gt 0) {
+        $sigmaSlope = [Math]::Sqrt([Math]::Pow($xFit.Slope / $slopeMagnitudePerMinute * $xFit.StandardError, 2) + [Math]::Pow($yFit.Slope / $slopeMagnitudePerMinute * $yFit.StandardError, 2))
+    } else {
+        $sigmaSlope = Get-VectorMagnitude $xFit.StandardError $yFit.StandardError
+    }
+    $sigmaArcMinutes = $sigmaSlope * $PdaSecondsPerRadian * $pixelScale / 3600.0
+    $theta = [Math]::Atan2($yFit.Slope, $xFit.Slope) * 180.0 / [Math]::PI
+    $alpha = $theta + $PdaHemisphere * 90.0 * $PdaMirror
+    $poleDirection = Normalize-Degrees $alpha
+    $displayAngle = Normalize-Degrees (-$alpha)
+
+    $midpoint = ($minutes[0] + $minutes[$minutes.Count - 1]) / 2.0
+    $firstT = New-Object System.Collections.Generic.List[double]
+    $firstX = New-Object System.Collections.Generic.List[double]
+    $firstY = New-Object System.Collections.Generic.List[double]
+    $secondT = New-Object System.Collections.Generic.List[double]
+    $secondX = New-Object System.Collections.Generic.List[double]
+    $secondY = New-Object System.Collections.Generic.List[double]
+    for ($i = 0; $i -lt $minutes.Count; $i++) {
+        if ($minutes[$i] -le $midpoint) { [void]$firstT.Add($minutes[$i]); [void]$firstX.Add($x[$i]); [void]$firstY.Add($y[$i]) }
+        else { [void]$secondT.Add($minutes[$i]); [void]$secondX.Add($x[$i]); [void]$secondY.Add($y[$i]) }
+    }
+    $fx = Get-LinearFitPerMinute $firstT.ToArray() $firstX.ToArray()
+    $fy = Get-LinearFitPerMinute $firstT.ToArray() $firstY.ToArray()
+    $sx = Get-LinearFitPerMinute $secondT.ToArray() $secondX.ToArray()
+    $sy = Get-LinearFitPerMinute $secondT.ToArray() $secondY.ToArray()
+    $halfDifference = if ($null -ne $fx -and $null -ne $fy -and $null -ne $sx -and $null -ne $sy) { (Get-VectorMagnitude ($sx.Slope - $fx.Slope) ($sy.Slope - $fy.Slope)) * $PdaSecondsPerRadian * $pixelScale / 3600.0 } else { [double]::PositiveInfinity }
+
+    $durationSeconds = ($minutes[$minutes.Count - 1] - $minutes[0]) * 60.0
+    $limit = [Math]::Max(0.5, $errorArcMinutes * $PdaHalfSlopeDifferenceFraction)
+    $stable = $false
+    if ($durationSeconds -lt $PdaMinimumDurationSeconds) { $reason = "Capture duration $([Math]::Round($durationSeconds, 1))s is below $($PdaMinimumDurationSeconds)s" }
+    elseif ($minutes.Count -lt $PdaMinimumSampleCount) { $reason = "Sample count $($minutes.Count) is below $PdaMinimumSampleCount" }
+    elseif ([double]::IsNaN($sigmaArcMinutes) -or $sigmaArcMinutes -gt $PdaMaximumSigmaArcMinutes) { $reason = "Polar-error uncertainty $([Math]::Round($sigmaArcMinutes, 3)) arcmin exceeds $PdaMaximumSigmaArcMinutes arcmin" }
+    elseif ($halfDifference -gt $limit) { $reason = "Half-window vector disagreement $([Math]::Round($halfDifference, 3)) arcmin exceeds $([Math]::Round($limit, 3)) arcmin" }
+    else { $stable = $true; $reason = "Duration, sample count, uncertainty, and half-window consistency gates passed" }
+
+    return [pscustomobject]@{ Available = $true; Stable = $stable; SampleCount = $minutes.Count; DurationSeconds = $durationSeconds; ErrorArcMinutes = $errorArcMinutes; SigmaArcMinutes = $sigmaArcMinutes; PoleDirectionCameraDegrees = $poleDirection; Phd2DisplayAngleDegrees = $displayAngle; HalfSlopeDifferenceArcMinutes = $halfDifference; Reason = $reason }
+}
+
 function Analyze-GuideCsv {
     param([string]$Path)
     $stream = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
@@ -186,6 +321,7 @@ function Analyze-GuideCsv {
         $reader.Dispose()
         $stream.Dispose()
     }
+    $pda = Get-PolarDriftEstimate -Rows $rows
     if ($rows.Count -lt 3) {
         return [pscustomobject]@{
             File = [IO.Path]::GetFileName($Path)
@@ -221,6 +357,16 @@ function Analyze-GuideCsv {
             ComparisonEligible = $false
             ComparisonSlopeUnitsPerMin = $null
             ComparisonSlopeArcsecPerMin = $null
+            PdaAvailable = $pda.Available
+            PdaStable = $pda.Stable
+            PdaSampleCount = $pda.SampleCount
+            PdaDurationSeconds = $pda.DurationSeconds
+            PdaErrorArcMinutes = $pda.ErrorArcMinutes
+            PdaSigmaArcMinutes = $pda.SigmaArcMinutes
+            PdaPoleDirectionCameraDegrees = $pda.PoleDirectionCameraDegrees
+            PdaDisplayAngleDegrees = $pda.Phd2DisplayAngleDegrees
+            PdaHalfSlopeDifferenceArcMinutes = $pda.HalfSlopeDifferenceArcMinutes
+            PdaReason = $pda.Reason
             Note = "Too few guide steps"
         }
     }
@@ -329,6 +475,16 @@ function Analyze-GuideCsv {
         ComparisonEligible = $comparisonEligible
         ComparisonSlopeUnitsPerMin = $comparisonSlope
         ComparisonSlopeArcsecPerMin = if ($scale -and $null -ne $comparisonSlope) { $comparisonSlope * $scale } else { $null }
+        PdaAvailable = $pda.Available
+        PdaStable = $pda.Stable
+        PdaSampleCount = $pda.SampleCount
+        PdaDurationSeconds = $pda.DurationSeconds
+        PdaErrorArcMinutes = $pda.ErrorArcMinutes
+        PdaSigmaArcMinutes = $pda.SigmaArcMinutes
+        PdaPoleDirectionCameraDegrees = $pda.PoleDirectionCameraDegrees
+        PdaDisplayAngleDegrees = $pda.Phd2DisplayAngleDegrees
+        PdaHalfSlopeDifferenceArcMinutes = $pda.HalfSlopeDifferenceArcMinutes
+        PdaReason = $pda.Reason
         Note = if ($PixelScaleArcsecPerPixel -gt 0) { "Converted using supplied pixel scale" } else { "PHD2 socket distance units; pass -PixelScaleArcsecPerPixel to convert if these are pixels" }
     }
 }
@@ -400,6 +556,9 @@ if ($runTimes.Count -gt 0) {
     $tppaErrors = @($tppaErrors | Where-Object { $null -ne $_.Time -and $_.Time -ge $runStart -and $_.Time -le $runEnd })
 }
 
+$pdaJsonOut = Join-Path $RunDir "phd2-polar-drift-results.json"
+@($segments | Select-Object File, Label, PdaAvailable, PdaStable, PdaSampleCount, PdaDurationSeconds, PdaErrorArcMinutes, PdaSigmaArcMinutes, PdaPoleDirectionCameraDegrees, PdaDisplayAngleDegrees, PdaHalfSlopeDifferenceArcMinutes, PdaReason) | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $pdaJsonOut -Encoding UTF8
+
 $csvOut = Join-Path $RunDir "phd2-drift-summary.csv"
 if ($segments.Count -gt 0) {
     $segments | Export-Csv -LiteralPath $csvOut -NoTypeInformation -Encoding UTF8
@@ -436,6 +595,22 @@ if ($segments.Count -eq 0) {
     [void]$lines.Add("| none | 0 | 0.00 | n/a | n/a | no | No PHD2 guide-step CSV files found in the run folder |")
 }
 
+[void]$lines.Add("")
+[void]$lines.Add("## PHD2 Polar Drift Align estimate")
+[void]$lines.Add("")
+[void]$lines.Add("This is a passive camera-space estimate. It is not an UPAS command and cannot authorize actuator movement.")
+[void]$lines.Add("")
+[void]$lines.Add("| Segment | PA error | Sigma | Camera pole direction | PHD2 display angle | Stable | Reason |")
+[void]$lines.Add("| --- | ---: | ---: | ---: | ---: | --- | --- |")
+foreach ($s in $segments) {
+    $errorText = if ($null -ne $s.PdaErrorArcMinutes) { "{0:F3} arcmin" -f $s.PdaErrorArcMinutes } else { "n/a" }
+    $sigmaText = if ($null -ne $s.PdaSigmaArcMinutes) { "{0:F3} arcmin" -f $s.PdaSigmaArcMinutes } else { "n/a" }
+    $poleText = if ($null -ne $s.PdaPoleDirectionCameraDegrees) { "{0:F2} deg" -f $s.PdaPoleDirectionCameraDegrees } else { "n/a" }
+    $displayText = if ($null -ne $s.PdaDisplayAngleDegrees) { "{0:F2} deg" -f $s.PdaDisplayAngleDegrees } else { "n/a" }
+    $stableText = if ($s.PdaStable) { "yes" } else { "no" }
+    [void]$lines.Add("| $($s.Label) | $errorText | $sigmaText | $poleText | $displayText | $stableText | $($s.PdaReason) |")
+}
+if ($segments.Count -eq 0) { [void]$lines.Add("| none | n/a | n/a | n/a | n/a | no | No PHD2 guide-step CSV files found |") }
 [void]$lines.Add("")
 [void]$lines.Add("### Post-warmup fixed-window DEC slopes")
 [void]$lines.Add("")

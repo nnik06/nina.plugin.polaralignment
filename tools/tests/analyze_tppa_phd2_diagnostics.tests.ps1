@@ -22,14 +22,17 @@ function Write-GuideCsv {
     )
 
     $lines = New-Object System.Collections.Generic.List[string]
-    [void]$lines.Add("timestamp_utc,elapsed_s,ra_raw_px,dec_raw_px")
+    [void]$lines.Add("timestamp_utc,elapsed_s,camera_dx_px,camera_dy_px,pixel_scale_arcsec_px,ra_raw_px,dec_raw_px")
     $startUtc = [datetime]::Parse("2026-01-01T00:00:00Z").ToUniversalTime()
     for ($elapsedSeconds = 0; $elapsedSeconds -le 720; $elapsedSeconds += $StepSeconds) {
         $minutes = $elapsedSeconds / 60.0
         $decValue = & $GetDecValue $minutes
         $timestamp = $startUtc.AddSeconds($elapsedSeconds).ToString("O", [Globalization.CultureInfo]::InvariantCulture)
-        $line = "{0},{1},{2},{3}" -f $timestamp,
+        $line = "{0},{1},{2},{3},{4},{5},{6}" -f $timestamp,
             $elapsedSeconds.ToString([Globalization.CultureInfo]::InvariantCulture),
+            (0.001 * $elapsedSeconds).ToString("R", [Globalization.CultureInfo]::InvariantCulture),
+            (0.0).ToString("R", [Globalization.CultureInfo]::InvariantCulture),
+            (2.0).ToString("R", [Globalization.CultureInfo]::InvariantCulture),
             (0.0).ToString("R", [Globalization.CultureInfo]::InvariantCulture),
             ([double]$decValue).ToString("R", [Globalization.CultureInfo]::InvariantCulture)
         [void]$lines.Add($line)
@@ -39,6 +42,12 @@ function Write-GuideCsv {
 
 try {
     [void][IO.Directory]::CreateDirectory($TestRoot)
+    [IO.File]::WriteAllLines((Join-Path $TestRoot "legacy-phd2-guidesteps.csv"), @(
+        "timestamp_utc,elapsed_s,ra_raw_px,dec_raw_px",
+        "2026-01-01T00:00:00Z,0,0,0",
+        "2026-01-01T00:00:10Z,10,0,0.1",
+        "2026-01-01T00:00:20Z,20,0,0.2"
+    ), [Text.UTF8Encoding]::new($false))
     Write-GuideCsv -Path (Join-Path $TestRoot "linear-phd2-guidesteps.csv") -StepSeconds 10 -GetDecValue {
         param($minutes)
         0.2 * $minutes
@@ -57,6 +66,10 @@ try {
         if ($phase -lt 0) { $phase += 4.0 }
         if ($phase -lt 2.0) { 0.01 * $phase } else { 0.01 * (4.0 - $phase) }
     }
+    Write-GuideCsv -Path (Join-Path $TestRoot "pda-linear-phd2-guidesteps.csv") -StepSeconds 2 -GetDecValue {
+        param($minutes)
+        0.2 * $minutes
+    }
     Write-GuideCsv -Path (Join-Path $TestRoot "under-sampled-phd2-guidesteps.csv") -StepSeconds 60 -GetDecValue {
         param($minutes)
         0.2 * $minutes
@@ -67,7 +80,7 @@ try {
 
     $summaryPath = Join-Path $TestRoot "phd2-drift-summary.csv"
     $rows = @(Import-Csv -LiteralPath $summaryPath)
-    Assert-True ($rows.Count -eq 5) "all five synthetic captures should be analyzed"
+    Assert-True ($rows.Count -eq 7) "all seven synthetic captures should be analyzed"
 
     $requiredFields = @(
         "WindowSlopeCount",
@@ -79,7 +92,12 @@ try {
         "DecWindowSlopeMaxArcsecPerMin",
         "DecWindowSlopeRangeArcsecPerMin",
         "DecWindowSlopeStdDevArcsecPerMin",
-        "ComparisonEligible"
+        "ComparisonEligible",
+        "PdaAvailable",
+        "PdaStable",
+        "PdaErrorArcMinutes",
+        "PdaSigmaArcMinutes",
+        "PdaReason"
     )
     foreach ($field in $requiredFields) {
         Assert-True ($rows[0].PSObject.Properties.Name -contains $field) "summary should contain $field"
@@ -88,9 +106,22 @@ try {
     $linear = $rows | Where-Object { $_.Label -eq "linear" }
     Assert-True ($linear.DriftStable -eq "True") "linear drift should be stable"
     Assert-True ($linear.ComparisonEligible -eq "True") "linear drift should be comparison-eligible"
+    Assert-True ($linear.PdaStable -eq "False") "10-second cadence capture should fail the 200-sample PDA gate"
     Assert-True ([int]$linear.WindowSlopeCount -eq 5) "linear capture should have five valid windows"
     Assert-True ([Math]::Abs((Convert-TestDouble $linear.DecWindowSlopeMinUnitsPerMin) - 0.2) -lt 1e-10) "linear minimum window slope should be 0.2 units/min"
     Assert-True ([Math]::Abs((Convert-TestDouble $linear.DecWindowSlopeMaxArcsecPerMin) - 0.4) -lt 1e-10) "pixel scale should convert window slopes to arcsec/min"
+
+    $legacy = $rows | Where-Object { $_.Label -eq "legacy" }
+    Assert-True ($legacy.PdaAvailable -eq "False") "legacy capture without camera dx/dy must remain unavailable"
+    Assert-True ($legacy.PdaReason -like "*predates camera dx/dy*") "legacy capture should explain why PDA cannot be reconstructed"
+
+    $pdaLinear = $rows | Where-Object { $_.Label -eq "pda-linear" }
+    Assert-True ($pdaLinear.PdaAvailable -eq "True") "camera-space PDA should be available"
+    Assert-True ($pdaLinear.PdaStable -eq "True") "12-minute high-cadence linear PDA trace should be stable"
+    $expectedPdaArcMinutes = 0.001 * (24.0 * 3600.0 / (2.0 * [Math]::PI)) * 2.0 / 60.0
+    Assert-True ([Math]::Abs((Convert-TestDouble $pdaLinear.PdaErrorArcMinutes) - $expectedPdaArcMinutes) -lt 1e-9) "PDA magnitude should match PHD2 equation"
+    Assert-True ([Math]::Abs((Convert-TestDouble $pdaLinear.PdaPoleDirectionCameraDegrees) - 90.0) -lt 1e-9) "PDA camera target direction should match PHD2 alpha"
+    Assert-True ([Math]::Abs((Convert-TestDouble $pdaLinear.PdaDisplayAngleDegrees) + 90.0) -lt 1e-9) "PHD2 display angle should be negative alpha"
 
     $curved = $rows | Where-Object { $_.Label -eq "curved" }
     Assert-True (-not [string]::IsNullOrWhiteSpace($curved.DecSlopeUnitsPerMin)) "curved drift should still retain its global OLS slope"
@@ -118,6 +149,10 @@ try {
     Assert-True ($reportText.Contains("WindowSlopeCount")) "report should print the new window statistics"
     Assert-True ($reportText.Contains("An unstable capture must not be compared numerically with TPPA.")) "report should contain the explicit comparison warning"
     Assert-True ($reportText.Contains("75%")) "report should disclose the window time-span threshold"
+    Assert-True ($reportText.Contains("PHD2 Polar Drift Align estimate")) "report should include the passive PDA section"
+    $pdaJsonPath = Join-Path $TestRoot "phd2-polar-drift-results.json"
+    Assert-True (Test-Path -LiteralPath $pdaJsonPath) "analyzer should write the read-only PDA JSON artifact"
+    Assert-True ([IO.File]::ReadAllText($pdaJsonPath).Contains('"PdaStable": true')) "PDA JSON should include the qualified result"
 
     $verificationLog = Join-Path $TestRoot "verification.log"
     [IO.File]::WriteAllLines($verificationLog, @(
