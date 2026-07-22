@@ -45,6 +45,8 @@ Assert-Contains 'PdaEasternAzimuthMaximumDegrees = 10.0' "the field supervisor m
 Assert-Contains 'if (-not [bool]$mount.TrackingEnabled)' "PDA capture must require tracking"
 Assert-Contains 'if ([bool]$mount.Slewing)' "PDA capture must reject an active slew"
 Assert-Contains 'Assert-PdaPointing' "every whole-capture attempt must rerun the PDA pointing preflight"
+Assert-Contains 'PHD2 calibration data: ' "PHD2 calibration state must be logged before capture"
+Assert-Contains 'PHD2 post-lock calibration data:' "declination-adjusted calibration must be logged after passive capture"
 Assert-Contains 'get_exposure' "diagnostic exposure changes must preserve the original PHD2 exposure"
 Assert-Contains 'set_exposure" -Params @{ exposure = $originalExposureMs }' "diagnostic exposure must be restored in the capture finally block"
 if (([regex]::Matches($text, 'PHD2 exposure restored to')).Count -ne 1) {

@@ -17,6 +17,7 @@ Assert-Contains '[double]$MinimumAzimuthDegrees = 270.0' 'western visibility flo
 Assert-Contains '[double]$MaximumAzimuthDegrees = 300.0' 'regular drift must remain in the tested western sky sector'
 Assert-Contains '[double]$MinimumAltitudeDegrees = 25.0' 'regular drift must respect the balcony altitude floor'
 Assert-Contains '[double]$MaximumAltitudeDegrees = 55.0' 'regular drift must respect the balcony altitude ceiling'
+Assert-Contains '[ValidateRange(0.1, 45.0)] [double]$MaximumAbsoluteDeclinationDegrees = 5.0' 'typed declination ceiling must admit the guarded Az300 Alt30 validation field'
 Assert-Contains '-RequirePdaNearPole $false' 'ordinary drift capture must not apply the PDA near-pole preflight'
 Assert-Contains 'if (-not $?)' 'launcher must map an in-process supervisor failure to a nonzero exit'
 if ($text.Contains('exit $LASTEXITCODE')) { throw 'Assertion failed: launcher must not read unset LASTEXITCODE after an in-process script call' }

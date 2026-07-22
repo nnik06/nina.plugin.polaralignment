@@ -513,6 +513,10 @@ function Capture-Phd2Drift {
             throw (New-Phd2CaptureException -Message "PHD2 drift capture contained the invalidating event $invalidatingPhd2Event and is invalid for polar-drift estimation." -Reason $invalidatingPhd2Event -Transient $eventIsTransient)
         }
         Log "PHD2 drift capture finished. GuideStep rows: $steps"
+        try {
+            $postCaptureCalibration = Invoke-Phd2 -Conn $conn -Method "get_calibration_data" -Params @("Mount") -Jsonl $jsonl
+            Log ("PHD2 post-lock calibration data: " + ($postCaptureCalibration | ConvertTo-Json -Compress -Depth 8))
+        } catch { Log "PHD2 post-lock calibration data read failed: $($_.Exception.Message)" }
         $analyzerPath = Join-Path $PSScriptRoot "analyze_tppa_phd2_diagnostics.ps1"
         if (-not (Test-Path -LiteralPath $analyzerPath -PathType Leaf)) { throw "PHD2 polar-drift analyzer not found: $analyzerPath" }
         & $analyzerPath -RunDir $OutDir -PixelScaleArcsecPerPixel $pixelScale -PdaHemisphere $PdaHemisphere -PdaMirror $PdaMirror

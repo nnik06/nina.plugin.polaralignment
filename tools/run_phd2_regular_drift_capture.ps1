@@ -5,7 +5,7 @@ param(
     [ValidateRange(270.0, 300.0)] [double]$MaximumAzimuthDegrees = 300.0,
     [ValidateRange(25.0, 55.0)] [double]$MinimumAltitudeDegrees = 25.0,
     [ValidateRange(25.0, 55.0)] [double]$MaximumAltitudeDegrees = 55.0,
-    [ValidateRange(0.1, 20.0)] [double]$MaximumAbsoluteDeclinationDegrees = 5.0
+    [ValidateRange(0.1, 45.0)] [double]$MaximumAbsoluteDeclinationDegrees = 5.0
 )
 
 Set-StrictMode -Version 2.0
