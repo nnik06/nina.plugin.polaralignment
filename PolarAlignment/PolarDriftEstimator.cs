@@ -8,13 +8,15 @@ namespace NINA.Plugins.PolarAlignment {
         int MinimumSampleCount,
         double MaximumSigmaArcMinutes,
         double HalfSlopeDifferenceFloorArcMinutes,
-        double HalfSlopeDifferenceFraction) {
+        double HalfSlopeDifferenceFraction,
+        double MaximumHalfDirectionDifferenceDegrees) {
         public static PolarDriftStabilityPolicy FieldDefault => new(
             MinimumDurationSeconds: 600,
             MinimumSampleCount: 200,
             MaximumSigmaArcMinutes: 0.25,
             HalfSlopeDifferenceFloorArcMinutes: 0.5,
-            HalfSlopeDifferenceFraction: 0.15);
+            HalfSlopeDifferenceFraction: 0.15,
+            MaximumHalfDirectionDifferenceDegrees: 5.0);
     }
 
     internal readonly record struct PolarDriftEstimate(
@@ -27,6 +29,7 @@ namespace NINA.Plugins.PolarAlignment {
         double PoleDirectionCameraDegrees,
         double Phd2DisplayAngleDegrees,
         double HalfSlopeDifferenceArcMinutes,
+        double HalfDirectionDifferenceDegrees,
         bool IsStable,
         string Reason);
 
@@ -110,6 +113,12 @@ namespace NINA.Plugins.PolarAlignment {
                     * SecondsPerRadian * pixelScaleArcsecondsPerPixel / 60.0
                 : double.PositiveInfinity;
 
+            var halfDirectionDifferenceDegrees = firstFit.IsValid && secondFit.IsValid
+                ? Math.Abs(NormalizeDegrees(
+                    Math.Atan2(secondFit.YSlope, secondFit.XSlope) * 180.0 / Math.PI
+                    - Math.Atan2(firstFit.YSlope, firstFit.XSlope) * 180.0 / Math.PI))
+                : double.PositiveInfinity;
+
             var consistencyLimit = Math.Max(
                 activePolicy.HalfSlopeDifferenceFloorArcMinutes,
                 errorArcMinutes * activePolicy.HalfSlopeDifferenceFraction);
@@ -123,9 +132,11 @@ namespace NINA.Plugins.PolarAlignment {
                 reason = $"polar-error uncertainty {sigmaArcMinutes:F3}' exceeds {activePolicy.MaximumSigmaArcMinutes:F3}'";
             } else if (halfSlopeDifferenceArcMinutes > consistencyLimit) {
                 reason = $"half-window slope disagreement {halfSlopeDifferenceArcMinutes:F3}' exceeds {consistencyLimit:F3}'";
+            } else if (halfDirectionDifferenceDegrees > activePolicy.MaximumHalfDirectionDifferenceDegrees) {
+                reason = $"half-window direction disagreement {halfDirectionDifferenceDegrees:F2} deg exceeds {activePolicy.MaximumHalfDirectionDifferenceDegrees:F2} deg";
             } else {
                 stable = true;
-                reason = "duration, sample count, uncertainty, and half-window consistency gates passed";
+                reason = "duration, sample count, uncertainty, and half-window magnitude/direction consistency gates passed";
             }
 
             return new PolarDriftEstimate(
@@ -138,6 +149,7 @@ namespace NINA.Plugins.PolarAlignment {
                 poleDirectionDegrees,
                 phd2DisplayAngleDegrees,
                 halfSlopeDifferenceArcMinutes,
+                halfDirectionDifferenceDegrees,
                 stable,
                 reason);
         }
@@ -145,6 +157,7 @@ namespace NINA.Plugins.PolarAlignment {
         private PolarDriftEstimate Invalid(string reason) => new(
             samples.Count,
             samples.Count > 1 ? samples[^1].ElapsedSeconds - samples[0].ElapsedSeconds : 0,
+            double.NaN,
             double.NaN,
             double.NaN,
             double.NaN,

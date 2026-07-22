@@ -78,6 +78,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
             YDriftPixelsPerSecond: 0, PolarErrorArcMinutes: magnitude,
             PolarErrorSigmaArcMinutes: 0.03, PoleDirectionCameraDegrees: -displayAngle,
             Phd2DisplayAngleDegrees: displayAngle, HalfSlopeDifferenceArcMinutes: 0.2,
+            HalfDirectionDifferenceDegrees: 0.2,
             IsStable: true, Reason: "stable");
     }
 }

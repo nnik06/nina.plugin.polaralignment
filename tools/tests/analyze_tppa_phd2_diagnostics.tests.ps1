@@ -97,6 +97,7 @@ try {
         "PdaStable",
         "PdaErrorArcMinutes",
         "PdaSigmaArcMinutes",
+        "PdaHalfDirectionDifferenceDegrees",
         "PdaReason"
     )
     foreach ($field in $requiredFields) {
@@ -122,6 +123,7 @@ try {
     Assert-True ([Math]::Abs((Convert-TestDouble $pdaLinear.PdaErrorArcMinutes) - $expectedPdaArcMinutes) -lt 1e-9) "PDA magnitude should match PHD2 equation"
     Assert-True ([Math]::Abs((Convert-TestDouble $pdaLinear.PdaPoleDirectionCameraDegrees) - 90.0) -lt 1e-9) "PDA camera target direction should match PHD2 alpha"
     Assert-True ([Math]::Abs((Convert-TestDouble $pdaLinear.PdaDisplayAngleDegrees) + 90.0) -lt 1e-9) "PHD2 display angle should be negative alpha"
+    Assert-True ([Math]::Abs((Convert-TestDouble $pdaLinear.PdaHalfDirectionDifferenceDegrees)) -lt 1e-9) "linear trace should have no half-window direction rotation"
 
     $curved = $rows | Where-Object { $_.Label -eq "curved" }
     Assert-True (-not [string]::IsNullOrWhiteSpace($curved.DecSlopeUnitsPerMin)) "curved drift should still retain its global OLS slope"

@@ -8,7 +8,8 @@ namespace NINA.Plugins.PolarAlignment.Test {
             MinimumSampleCount: 20,
             MaximumSigmaArcMinutes: 0.25,
             HalfSlopeDifferenceFloorArcMinutes: 0.5,
-            HalfSlopeDifferenceFraction: 0.35);
+            HalfSlopeDifferenceFraction: 0.35,
+            MaximumHalfDirectionDifferenceDegrees: 5.0);
 
         [Test]
         public void LinearTraceMatchesPHD2PolarDriftEquation() {
@@ -78,6 +79,25 @@ namespace NINA.Plugins.PolarAlignment.Test {
 
             result.IsStable.Should().BeFalse();
             result.Reason.Should().Contain("half-window");
+        }
+
+        [Test]
+        public void RotatingTraceFailsHalfWindowDirectionGateEvenWhenMagnitudeMatches() {
+            var estimator = new PolarDriftEstimator();
+            const double speed = 0.001;
+            var angle = 8.0 * Math.PI / 180.0;
+            for (var i = 0; i <= 60; i++) {
+                var elapsed = i <= 30 ? i : i - 30;
+                var x = i <= 30 ? speed * i : 30 * speed + speed * Math.Cos(angle) * elapsed;
+                var y = i <= 30 ? 0 : speed * Math.Sin(angle) * elapsed;
+                estimator.TryAddSample(i, x, y);
+            }
+
+            var result = estimator.Evaluate(2.0, 1, 1, FastPolicy);
+
+            result.IsStable.Should().BeFalse();
+            result.HalfDirectionDifferenceDegrees.Should().BeGreaterThan(5.0);
+            result.Reason.Should().Contain("direction");
         }
 
         [Test]

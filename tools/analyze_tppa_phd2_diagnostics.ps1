@@ -31,6 +31,7 @@ $PdaMinimumDurationSeconds = 600.0
 $PdaMinimumSampleCount = 200
 $PdaMaximumSigmaArcMinutes = 0.25
 $PdaHalfSlopeDifferenceFraction = 0.15
+$PdaMaximumHalfDirectionDifferenceDegrees = 5.0
 
 function Get-LatestNinaLogPath {
     $logDir = Join-Path $env:LOCALAPPDATA "NINA\Logs"
@@ -239,7 +240,7 @@ function Get-TppaStabilitySummary {
 function Get-PolarDriftEstimate {
     param([object[]]$Rows)
 
-    $unavailable = { param([string]$Reason) [pscustomobject]@{ Available = $false; Stable = $false; SampleCount = 0; DurationSeconds = 0; ErrorArcMinutes = $null; SigmaArcMinutes = $null; PoleDirectionCameraDegrees = $null; Phd2DisplayAngleDegrees = $null; HalfSlopeDifferenceArcMinutes = $null; Reason = $Reason } }
+    $unavailable = { param([string]$Reason) [pscustomobject]@{ Available = $false; Stable = $false; SampleCount = 0; DurationSeconds = 0; ErrorArcMinutes = $null; SigmaArcMinutes = $null; PoleDirectionCameraDegrees = $null; Phd2DisplayAngleDegrees = $null; HalfSlopeDifferenceArcMinutes = $null; HalfDirectionDifferenceDegrees = $null; Reason = $Reason } }
     if ($Rows.Count -lt 3) { return & $unavailable "Too few guide steps" }
     $properties = @($Rows[0].PSObject.Properties.Name)
     if (-not ($properties -contains "camera_dx_px") -or -not ($properties -contains "camera_dy_px")) { return & $unavailable "Capture predates camera dx/dy recording" }
@@ -298,6 +299,7 @@ function Get-PolarDriftEstimate {
     $sx = Get-LinearFitPerMinute $secondT.ToArray() $secondX.ToArray()
     $sy = Get-LinearFitPerMinute $secondT.ToArray() $secondY.ToArray()
     $halfDifference = if ($null -ne $fx -and $null -ne $fy -and $null -ne $sx -and $null -ne $sy) { (Get-VectorMagnitude ($sx.Slope - $fx.Slope) ($sy.Slope - $fy.Slope)) * $PdaSecondsPerRadian * $pixelScale / 3600.0 } else { [double]::PositiveInfinity }
+    $halfDirectionDifference = if ($null -ne $fx -and $null -ne $fy -and $null -ne $sx -and $null -ne $sy) { [Math]::Abs((Normalize-Degrees (([Math]::Atan2($sy.Slope, $sx.Slope) - [Math]::Atan2($fy.Slope, $fx.Slope)) * 180.0 / [Math]::PI))) } else { [double]::PositiveInfinity }
 
     $durationSeconds = ($minutes[$minutes.Count - 1] - $minutes[0]) * 60.0
     $limit = [Math]::Max(0.5, $errorArcMinutes * $PdaHalfSlopeDifferenceFraction)
@@ -306,9 +308,10 @@ function Get-PolarDriftEstimate {
     elseif ($minutes.Count -lt $PdaMinimumSampleCount) { $reason = "Sample count $($minutes.Count) is below $PdaMinimumSampleCount" }
     elseif ([double]::IsNaN($sigmaArcMinutes) -or $sigmaArcMinutes -gt $PdaMaximumSigmaArcMinutes) { $reason = "Polar-error uncertainty $([Math]::Round($sigmaArcMinutes, 3)) arcmin exceeds $PdaMaximumSigmaArcMinutes arcmin" }
     elseif ($halfDifference -gt $limit) { $reason = "Half-window vector disagreement $([Math]::Round($halfDifference, 3)) arcmin exceeds $([Math]::Round($limit, 3)) arcmin" }
-    else { $stable = $true; $reason = "Duration, sample count, uncertainty, and half-window consistency gates passed" }
+    elseif ($halfDirectionDifference -gt $PdaMaximumHalfDirectionDifferenceDegrees) { $reason = "Half-window direction disagreement $([Math]::Round($halfDirectionDifference, 2)) deg exceeds $PdaMaximumHalfDirectionDifferenceDegrees deg" }
+    else { $stable = $true; $reason = "Duration, sample count, uncertainty, and half-window magnitude/direction consistency gates passed" }
 
-    return [pscustomobject]@{ Available = $true; Stable = $stable; SampleCount = $minutes.Count; DurationSeconds = $durationSeconds; ErrorArcMinutes = $errorArcMinutes; SigmaArcMinutes = $sigmaArcMinutes; PoleDirectionCameraDegrees = $poleDirection; Phd2DisplayAngleDegrees = $displayAngle; HalfSlopeDifferenceArcMinutes = $halfDifference; Reason = $reason }
+    return [pscustomobject]@{ Available = $true; Stable = $stable; SampleCount = $minutes.Count; DurationSeconds = $durationSeconds; ErrorArcMinutes = $errorArcMinutes; SigmaArcMinutes = $sigmaArcMinutes; PoleDirectionCameraDegrees = $poleDirection; Phd2DisplayAngleDegrees = $displayAngle; HalfSlopeDifferenceArcMinutes = $halfDifference; HalfDirectionDifferenceDegrees = $halfDirectionDifference; Reason = $reason }
 }
 
 function Analyze-GuideCsv {
@@ -366,6 +369,7 @@ function Analyze-GuideCsv {
             PdaPoleDirectionCameraDegrees = $pda.PoleDirectionCameraDegrees
             PdaDisplayAngleDegrees = $pda.Phd2DisplayAngleDegrees
             PdaHalfSlopeDifferenceArcMinutes = $pda.HalfSlopeDifferenceArcMinutes
+            PdaHalfDirectionDifferenceDegrees = $pda.HalfDirectionDifferenceDegrees
             PdaReason = $pda.Reason
             Note = "Too few guide steps"
         }
@@ -484,6 +488,7 @@ function Analyze-GuideCsv {
         PdaPoleDirectionCameraDegrees = $pda.PoleDirectionCameraDegrees
         PdaDisplayAngleDegrees = $pda.Phd2DisplayAngleDegrees
         PdaHalfSlopeDifferenceArcMinutes = $pda.HalfSlopeDifferenceArcMinutes
+        PdaHalfDirectionDifferenceDegrees = $pda.HalfDirectionDifferenceDegrees
         PdaReason = $pda.Reason
         Note = if ($PixelScaleArcsecPerPixel -gt 0) { "Converted using supplied pixel scale" } else { "PHD2 socket distance units; pass -PixelScaleArcsecPerPixel to convert if these are pixels" }
     }
@@ -557,7 +562,7 @@ if ($runTimes.Count -gt 0) {
 }
 
 $pdaJsonOut = Join-Path $RunDir "phd2-polar-drift-results.json"
-@($segments | Select-Object File, Label, PdaAvailable, PdaStable, PdaSampleCount, PdaDurationSeconds, PdaErrorArcMinutes, PdaSigmaArcMinutes, PdaPoleDirectionCameraDegrees, PdaDisplayAngleDegrees, PdaHalfSlopeDifferenceArcMinutes, PdaReason) | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $pdaJsonOut -Encoding UTF8
+@($segments | Select-Object File, Label, PdaAvailable, PdaStable, PdaSampleCount, PdaDurationSeconds, PdaErrorArcMinutes, PdaSigmaArcMinutes, PdaPoleDirectionCameraDegrees, PdaDisplayAngleDegrees, PdaHalfSlopeDifferenceArcMinutes, PdaHalfDirectionDifferenceDegrees, PdaReason) | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $pdaJsonOut -Encoding UTF8
 
 $csvOut = Join-Path $RunDir "phd2-drift-summary.csv"
 if ($segments.Count -gt 0) {
