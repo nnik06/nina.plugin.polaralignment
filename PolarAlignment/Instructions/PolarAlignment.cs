@@ -1327,6 +1327,10 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         ? $"Drift validation complete: {validation.TotalErrorArcMinutes:F2}' total (report only)"
                         : $"Drift validation rejected: {validation.Reason}"
                 });
+                if (!validation.IsValid) {
+                    throw new InvalidOperationException(
+                        $"TPPA report-only drift validation was rejected: {validation.Reason}");
+                }
             } catch (Exception failure) {
                 executionFailure = failure;
                 throw;

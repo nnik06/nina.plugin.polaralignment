@@ -1,5 +1,8 @@
 # Changelog
 
+## Version 2.2.6.27
+- Made a rejected report-only drift estimate a hard sequence failure. Invalid geometry, track quality, global fit, uncertainty, stationarity, or repeated-position results can no longer display a rejection and then let the sequence item complete successfully.
+
 ## Version 2.2.6.26
 - Hardened drift-validation tracking restoration. A restore failure no longer masks an existing diagnostic exception, while a restore failure after an otherwise successful acquisition now fails the sequence item instead of being silently ignored.
 
