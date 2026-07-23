@@ -59,6 +59,36 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public async Task FieldDefaultsQualifyRealisticThirtySecondSolveCadence() {
+            var session = new TppaDriftValidationSession();
+            var index = 0;
+            var residualPatternArcseconds = new[] { 0.08, -0.04, 0.02, -0.06, 0.05 };
+
+            var report = await TppaDriftTrackAcquisitionRunner.Run(
+                session,
+                Metadata("A"),
+                _ => {
+                    var elapsedSeconds = index * 35;
+                    var driftArcseconds = 0.4 * elapsedSeconds / 60;
+                    var residualArcseconds = residualPatternArcseconds[index % residualPatternArcseconds.Length];
+                    index++;
+                    return Task.FromResult(new TppaDriftSolveSample(
+                        Start.AddSeconds(elapsedSeconds),
+                        45 + (driftArcseconds + residualArcseconds) / 3600));
+                },
+                TppaDriftTrackAcquisitionPolicy.FieldDefault,
+                TppaDeclinationDriftTrackPolicy.FieldDefault,
+                CancellationToken.None,
+                (_, _) => Task.CompletedTask);
+
+            report.Samples.Should().HaveCount(10);
+            report.Fit.AcceptedSampleCount.Should().BeGreaterThanOrEqualTo(8);
+            report.Fit.DurationSeconds.Should().Be(315);
+            report.Fit.DeclinationDriftArcsecondsPerMinute.Should().BeApproximately(0.4, 0.02);
+            report.Fit.IsValid.Should().BeTrue(report.Fit.Reason);
+        }
+
+        [Test]
         public async Task CancellationInvalidatesSessionAndIsRethrown() {
             var session = new TppaDriftValidationSession();
             using var cts = new CancellationTokenSource();

@@ -14,7 +14,7 @@ namespace NINA.Plugins.PolarAlignment {
         double MaximumAbsoluteLagOneResidualCorrelation) {
         public static TppaDeclinationDriftTrackPolicy FieldDefault => new(
             MinimumDurationSeconds: 300,
-            MinimumSampleCount: 30,
+            MinimumSampleCount: 8,
             OutlierSigmaThreshold: 4,
             MaximumOutlierFraction: 0.15,
             MaximumSlopeSigmaArcsecondsPerMinute: 0.20,

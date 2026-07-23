@@ -1,5 +1,8 @@
 # Changelog
 
+## Version 2.2.6.16
+- Made the five-minute drift-validation defaults achievable with the runtime's 30-second solves and five-second cadence by requiring eight accepted samples instead of an impossible thirty, while retaining all duration, uncertainty, stationarity, geometry, and repeated-position gates.
+
 ## Version 2.2.6.15
 - Made report-only drift validation restore the telescope's initial tracking-enabled state, reject active non-sidereal tracking instead of silently replacing it, and settle at both A arrivals before retaining the first solve.
 - Documented in the runtime log that NINA 3.1 does not expose prior guiding-active state, so an Advanced Sequence must explicitly start guiding after this diagnostic.

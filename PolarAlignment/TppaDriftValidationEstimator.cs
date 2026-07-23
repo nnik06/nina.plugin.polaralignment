@@ -13,7 +13,7 @@ namespace NINA.Plugins.PolarAlignment {
         double MaximumRepeatedPositionStandardizedResidual) {
         public static TppaDriftValidationPolicy FieldDefault => new(
             MinimumTrackDurationSeconds: 300,
-            MinimumSamplesPerTrack: 30,
+            MinimumSamplesPerTrack: 8,
             MinimumAltitudeDegrees: 30,
             MaximumTrackSlopeSigmaArcsecondsPerMinute: 0.20,
             MaximumDesignConditionNumber: 100,
