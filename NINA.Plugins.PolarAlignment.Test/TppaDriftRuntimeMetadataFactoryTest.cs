@@ -31,6 +31,42 @@ namespace NINA.Plugins.PolarAlignment.Test {
             double.IsFinite(observation.Metadata.ComputedRefractionDriftArcsecondsPerMinute).Should().BeTrue();
         }
 
+        [Test]
+        public void ReconstructsHourAngleWithOfDateDeclination() {
+            var solved = CreateSolvedCoordinate(275, 40);
+            var vacuumTopocentric = solved.Transform(
+                Latitude,
+                Longitude,
+                10,
+                0,
+                Atmosphere.Temperature,
+                0,
+                Atmosphere.Wavelength,
+                ObservationTime);
+            var ofDateDeclination = solved.Transform(Epoch.JNOW).Dec;
+            var expected = TppaDriftRuntimeMetadataFactory.CalculateHourAngleDegrees(
+                vacuumTopocentric.Azimuth.Degree,
+                vacuumTopocentric.Altitude.Degree,
+                Latitude.Degree,
+                ofDateDeclination);
+            var catalogEpochResult = TppaDriftRuntimeMetadataFactory.CalculateHourAngleDegrees(
+                vacuumTopocentric.Azimuth.Degree,
+                vacuumTopocentric.Altitude.Degree,
+                Latitude.Degree,
+                solved.Dec);
+
+            var observation = TppaDriftRuntimeMetadataFactory.Create(
+                "A",
+                solved,
+                Latitude,
+                Longitude,
+                10,
+                Atmosphere);
+
+            observation.Metadata.HourAngleDegrees.Should().BeApproximately(expected, 1e-9);
+            Math.Abs(observation.Metadata.HourAngleDegrees - catalogEpochResult).Should().BeGreaterThan(1e-4);
+        }
+
         [TestCase(90, 0)]
         [TestCase(-90, 0)]
         [TestCase(-180, 45)]

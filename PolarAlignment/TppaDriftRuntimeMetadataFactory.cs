@@ -50,11 +50,14 @@ namespace NINA.Plugins.PolarAlignment {
                 0,
                 refraction.Wavelength,
                 observationTimeUtc);
+            // Topocentric azimuth/altitude are of-date. Use declination in the
+            // same frame so catalog precession cannot masquerade as hour angle.
+            var solvedAtObservationEpoch = solvedCoordinates.Transform(Epoch.JNOW);
             var hourAngleDegrees = CalculateHourAngleDegrees(
                 vacuumTopocentric.Azimuth.Degree,
                 vacuumTopocentric.Altitude.Degree,
                 latitude.Degree,
-                solvedCoordinates.Dec);
+                solvedAtObservationEpoch.Dec);
 
             return new TppaDriftRuntimeObservation(
                 new TppaDriftSolveSample(observationTimeUtc, solvedCoordinates.Dec),

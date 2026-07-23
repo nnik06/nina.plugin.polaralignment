@@ -1,5 +1,8 @@
 # Changelog
 
+## Version 2.2.6.14
+- Made drift-validation hour-angle reconstruction epoch-consistent by combining of-date topocentric geometry with JNOW declination instead of catalog-epoch declination.
+
 ## Version 2.2.6.13
 - Added the opt-in, report-only TPPA drift-validation instruction path. It performs four five-minute stationary solve tracks in A-B-C-A order using telescope RA movement only, reuses each metadata solve as the first drift sample, reports the independently fitted polar-error vector, and cannot configure, connect to, or move UPAS.
 
