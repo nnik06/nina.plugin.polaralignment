@@ -1,5 +1,8 @@
 # Changelog
 
+## Version 2.2.6.12
+- Added a solve-derived runtime metadata factory for report-only TPPA drift validation. It uses the exposure-midpoint timestamp, reconstructs hour angle from vacuum topocentric geometry, computes atmospheric-refraction drift, and rejects tracks below the qualified altitude.
+
 ## Version 2.2.6.11
 - Added fail-closed execution policy and validation for an upcoming report-only A-B-C-A drift-validation instruction mode. The mode is automated-mount-only, mutually exclusive with verification-only mode, and bypasses every UPAS actuator phase.
 
