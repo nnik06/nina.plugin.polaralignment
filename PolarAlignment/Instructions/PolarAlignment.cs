@@ -75,6 +75,11 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
         private double searchRadius;
         private int targetDistance;
         private bool eastDirection;
+        private bool mountMotionEnvelopeEnabled;
+        private double mountMotionMinimumAltitudeDegrees = -90;
+        private double mountMotionMaximumAltitudeDegrees = 90;
+        private double mountMotionAzimuthStartDegrees;
+        private double mountMotionAzimuthEndDegrees = 360;
         private bool manualMode;
         private bool startFromCurrentPosition;
         private bool verificationOnly;
@@ -189,6 +194,11 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 Filter = Filter,
                 TargetDistance = TargetDistance,
                 EastDirection = EastDirection,
+                MountMotionEnvelopeEnabled = MountMotionEnvelopeEnabled,
+                MountMotionMinimumAltitudeDegrees = MountMotionMinimumAltitudeDegrees,
+                MountMotionMaximumAltitudeDegrees = MountMotionMaximumAltitudeDegrees,
+                MountMotionAzimuthStartDegrees = MountMotionAzimuthStartDegrees,
+                MountMotionAzimuthEndDegrees = MountMotionAzimuthEndDegrees,
                 ExposureTime = ExposureTime,
                 Binning = Binning == null ? null : new BinningMode(Binning.X, Binning.Y),
                 Gain = Gain,
@@ -246,6 +256,51 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             get => targetDistance;
             set {
                 targetDistance = value;
+                RaisePropertyChanged();
+            }
+        }
+
+        [JsonProperty]
+        public bool MountMotionEnvelopeEnabled {
+            get => mountMotionEnvelopeEnabled;
+            set {
+                mountMotionEnvelopeEnabled = value;
+                RaisePropertyChanged();
+            }
+        }
+
+        [JsonProperty]
+        public double MountMotionMinimumAltitudeDegrees {
+            get => mountMotionMinimumAltitudeDegrees;
+            set {
+                mountMotionMinimumAltitudeDegrees = value;
+                RaisePropertyChanged();
+            }
+        }
+
+        [JsonProperty]
+        public double MountMotionMaximumAltitudeDegrees {
+            get => mountMotionMaximumAltitudeDegrees;
+            set {
+                mountMotionMaximumAltitudeDegrees = value;
+                RaisePropertyChanged();
+            }
+        }
+
+        [JsonProperty]
+        public double MountMotionAzimuthStartDegrees {
+            get => mountMotionAzimuthStartDegrees;
+            set {
+                mountMotionAzimuthStartDegrees = value;
+                RaisePropertyChanged();
+            }
+        }
+
+        [JsonProperty]
+        public double MountMotionAzimuthEndDegrees {
+            get => mountMotionAzimuthEndDegrees;
+            set {
+                mountMotionAzimuthEndDegrees = value;
                 RaisePropertyChanged();
             }
         }
@@ -1767,6 +1822,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 var startPosition = telescopeMediator.GetCurrentPosition();
                 var currentPosition = telescopeMediator.GetCurrentPosition();
                 var rates = telescopeMediator.GetInfo().PrimaryAxisRates;
+                EnsureMountMotionEnvelope();
 
                 var foundRate = rates
                     .OrderBy(x => x.Item2).LastOrDefault(x => x.Item1 <= rate && rate <= x.Item2 || x.Item2 < rate);
@@ -1791,6 +1847,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         while (Distance(currentPosition.RADegrees, startPosition.RADegrees) < moveDistance) {
                             await Task.Delay(100, cts.Token);
                             currentPosition = telescopeMediator.GetCurrentPosition();
+                            EnsureMountMotionEnvelope();
 
                             var distance = Distance(currentPosition.RADegrees, startPosition.RADegrees);
 
@@ -1824,6 +1881,24 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         "Emergency RA-axis stop failed after TPPA drift-validation movement.",
                         stopFailure);
                 }
+            }
+        }
+
+        private void EnsureMountMotionEnvelope() {
+            if (!MountMotionEnvelopeEnabled) {
+                return;
+            }
+
+            var mount = telescopeMediator.GetInfo();
+            var envelope = new TppaMountMotionEnvelope(
+                MountMotionMinimumAltitudeDegrees,
+                MountMotionMaximumAltitudeDegrees,
+                MountMotionAzimuthStartDegrees,
+                MountMotionAzimuthEndDegrees);
+            var violation = envelope.Validate(mount.Azimuth, mount.Altitude);
+            if (!string.IsNullOrWhiteSpace(violation)) {
+                throw new InvalidOperationException(
+                    $"TPPA mount-motion envelope stopped the RA-axis move: {violation}.");
             }
         }
 
