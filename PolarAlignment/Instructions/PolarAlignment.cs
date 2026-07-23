@@ -1086,6 +1086,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             Logger.Info($"TPPA drift-validation preflight passed: {preflight.Reason}.");
 
             Coordinates pointA = null;
+            var pointAPierSide = NINA.Core.Enum.PierSide.pierUnknown;
             TppaDriftRuntimeObservation? pendingObservation = null;
             var arrivalIndex = 0;
 
@@ -1113,6 +1114,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                     $"Using current telescope pointing as drift-validation position A: {telescopeMediator.GetCurrentPosition()}.");
                             }
                             pointA = telescopeMediator.GetCurrentPosition();
+                            pointAPierSide = telescopeMediator.DestinationSideOfPier(pointA);
                             if (initialSettleTime > 0) {
                                 await CoreUtil.Wait(
                                     TimeSpan.FromSeconds(initialSettleTime),
@@ -1166,6 +1168,22 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                     progress,
                                     "Settling at drift-validation return position A");
                             }
+                            var returnedPointA = telescopeMediator.GetCurrentPosition();
+                            var returnedPierSide =
+                                telescopeMediator.DestinationSideOfPier(returnedPointA);
+                            var closure = TppaDriftArcClosurePolicy.Evaluate(
+                                pointA.RADegrees,
+                                pointA.Dec,
+                                returnedPointA.RADegrees,
+                                returnedPointA.Dec,
+                                pointAPierSide,
+                                returnedPierSide);
+                            if (!closure.IsSafe) {
+                                throw new InvalidOperationException(
+                                    $"TPPA drift-validation A-B-C-A closure rejected: {closure.Reason}.");
+                            }
+                            Logger.Info(
+                                $"TPPA drift-validation A-B-C-A closure verified: separation={closure.PointingSeparationDegrees:F4} deg; {closure.Reason}.");
                             break;
                         default:
                             throw new InvalidOperationException(

@@ -1,5 +1,8 @@
 # Changelog
 
+## Version 2.2.6.21
+- Added fail-closed A-B-C-A closure verification for report-only drift validation. The final return must be within 0.25 degrees of the captured A pointing by great-circle separation and must not change a known destination pier side.
+
 ## Version 2.2.6.20
 - Added fail-closed post-move verification for report-only drift arcs. Each relative RA move must now reach the expected distance without excessive overshoot, unexpected declination travel, or a known destination-side change; movement timeout now aborts instead of silently continuing.
 
