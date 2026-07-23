@@ -1,8 +1,9 @@
 # Next-Night UPAS Field Protocol
 
 ## Build
-- Use the 2.2.6.6 fresh-feedback build from this repository only after hash verification.
-- Keep the prior deployed DLL available for rollback.
+- Build the current committed branch and record its DLL SHA-256.
+- Run `tools/validate_tppa_plugin_install.ps1` before opening a diagnostic sequence. The live plugin tree must contain exactly one TPPA assembly and its hash must match the tested build.
+- Keep prior DLLs in `Documents\TPPA-PHD2-tests` or another directory outside NINA's live plugin tree. A rollback DLL below the live plugin directory can be discovered as another plugin assembly.
 - Do not begin unattended. The first actuator trial requires an observer at the rig.
 
 ## Starting State
@@ -13,13 +14,13 @@
 - Record reversal settings and do not change them during a run.
 
 ## Trial
-1. Run one fresh TPPA three-point measurement with automated correction disabled.
-2. Repeat once without moving anything. Continue only if the two fresh totals agree within 1 arcminute and neither axis differs by more than 1 arcminute.
+1. Run `tools/run_guarded_tppa_verification.ps1` with the tested DLL hash and a VerificationOnly sequence whose target has at least 2 degrees of altitude margin inside the measured balcony opening.
+2. Require the forward and repeated-forward determinations to agree within the selected tolerance. Treat the centered reciprocal comparison as a required internal-consistency gate, not an absolute-accuracy proof.
 3. Enable automated correction. Permit exactly one bounded UPAS move.
 4. Verify the plugin performs an independent fresh three-point measurement before planning another move.
 5. Compare signed fresh azimuth/altitude changes with the command. Continue one move at a time only while the response is plausible.
 6. Require two consecutive independent fresh results below the selected tolerance before accepting completion.
-7. Finish with an 8-12 minute passive PHD2 drift capture.
+7. Optionally collect a passive PHD2 drift capture for research. Do not authorize UPAS movement from PHD2: the tested PDA captures were nonstationary and disagreed in direction across runs.
 
 ## Immediate Stop Criteria
 - Any move is planned from a continuous-overlay value rather than the last fresh three-point result.
@@ -28,6 +29,7 @@
 - The plugin requests another move before completing the fresh post-move measurement.
 - X/Y travel approaches the configured guard, the controller direction becomes contradictory, or the UPAS bridge loses status synchronization.
 - A fresh solve fails repeatedly, clouds invalidate solves, or physical marker travel becomes unsafe.
+- The verification launcher reports a duplicate assembly, DLL hash mismatch, insufficient target margin, or settled pointing outside the balcony guard.
 
 ## Evidence to Preserve
 - NINA log, TPPA fresh-result lines, every UPAS command/status frame, PHD2 debug log, controller MPos before/after, marker photographs, reversal settings, gear ratios, tolerance, refraction setting, and DLL SHA-256.
