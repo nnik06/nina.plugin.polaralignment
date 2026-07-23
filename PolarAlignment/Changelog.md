@@ -1,5 +1,9 @@
 # Changelog
 
+## Version 2.2.6.15
+- Made report-only drift validation restore the telescope's initial tracking-enabled state, reject active non-sidereal tracking instead of silently replacing it, and settle at both A arrivals before retaining the first solve.
+- Documented in the runtime log that NINA 3.1 does not expose prior guiding-active state, so an Advanced Sequence must explicitly start guiding after this diagnostic.
+
 ## Version 2.2.6.14
 - Made drift-validation hour-angle reconstruction epoch-consistent by combining of-date topocentric geometry with JNOW declination instead of catalog-epoch declination.
 

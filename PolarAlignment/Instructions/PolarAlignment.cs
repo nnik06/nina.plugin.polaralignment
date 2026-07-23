@@ -911,7 +911,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 } catch (Exception) { }
                 IsPaused = false;
                 externalProgress?.Report(GetStatus(string.Empty));
-                if (Properties.Settings.Default.StopTrackingWhenDone) {
+                if (!executionPolicy.RunDriftValidation && Properties.Settings.Default.StopTrackingWhenDone) {
                     SetTrackingSidereal(false);
                 }
             }
@@ -1049,13 +1049,21 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     "Drift-validation mode requires a connected telescope for the A-B-C-A measurement arc.");
             }
 
+            var telescopeInfo = telescopeMediator.GetInfo();
+            var initialTracking = TppaDriftTrackingStatePolicy.Capture(
+                telescopeInfo.TrackingEnabled,
+                telescopeInfo.TrackingRate.TrackingMode);
             var refraction = RefractionParameters.GetRefractionParameters(weatherDataMediator.GetInfo());
             var elevationMeters = profileService.ActiveProfile.AstrometrySettings.Elevation;
             Coordinates pointA = null;
             TppaDriftRuntimeObservation? pendingObservation = null;
             var arrivalIndex = 0;
 
-            var report = await TppaDriftValidationOrchestrator.Run(
+            Logger.Info(
+                "TPPA drift validation stops guiding. NINA 3.1 does not expose prior guiding-active state; an Advanced Sequence must explicitly start guiding after this diagnostic.");
+
+            try {
+                var report = await TppaDriftValidationOrchestrator.Run(
                 Latitude.Degree,
                 async (positionId, movementToken) => {
                     progress?.Report(new ApplicationStatus() {
@@ -1063,6 +1071,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     });
                     switch (arrivalIndex++) {
                         case 0:
+                            var initialSettleTime = profileService.ActiveProfile.TelescopeSettings.SettleTime;
                             if (!StartFromCurrentPosition) {
                                 Logger.Info($"Slewing to drift-validation position A {Coordinates.Coordinates}.");
                                 SetTrackingSidereal(true);
@@ -1074,6 +1083,13 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                     $"Using current telescope pointing as drift-validation position A: {telescopeMediator.GetCurrentPosition()}.");
                             }
                             pointA = telescopeMediator.GetCurrentPosition();
+                            if (initialSettleTime > 0) {
+                                await CoreUtil.Wait(
+                                    TimeSpan.FromSeconds(initialSettleTime),
+                                    movementToken,
+                                    progress,
+                                    "Settling at drift-validation position A");
+                            }
                             break;
                         case 1:
                         case 2:
@@ -1094,6 +1110,14 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                             Logger.Info($"Returning to drift-validation position A {pointA}.");
                             SetTrackingSidereal(true);
                             await telescopeMediator.SlewToCoordinatesAsync(pointA, movementToken);
+                            var returnSettleTime = profileService.ActiveProfile.TelescopeSettings.SettleTime;
+                            if (returnSettleTime > 0) {
+                                await CoreUtil.Wait(
+                                    TimeSpan.FromSeconds(returnSettleTime),
+                                    movementToken,
+                                    progress,
+                                    "Settling at drift-validation return position A");
+                            }
                             break;
                         default:
                             throw new InvalidOperationException(
@@ -1141,19 +1165,22 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 TppaDriftValidationPolicy.FieldDefault,
                 token);
 
-            foreach (var track in report.Tracks) {
-                Logger.Info(
-                    $"TPPA drift-validation track {track.Metadata.PositionId}: samples={track.Samples.Count}; duration={track.Fit.DurationSeconds:F1}s; DEC drift={track.Fit.DeclinationDriftArcsecondsPerMinute:F5}+/-{track.Fit.DeclinationDriftSigmaArcsecondsPerMinute:F5}\"/min; valid={track.Fit.IsValid}; reason={track.Fit.Reason}");
-            }
+                foreach (var track in report.Tracks) {
+                    Logger.Info(
+                        $"TPPA drift-validation track {track.Metadata.PositionId}: samples={track.Samples.Count}; duration={track.Fit.DurationSeconds:F1}s; DEC drift={track.Fit.DeclinationDriftArcsecondsPerMinute:F5}+/-{track.Fit.DeclinationDriftSigmaArcsecondsPerMinute:F5}\"/min; valid={track.Fit.IsValid}; reason={track.Fit.Reason}");
+                }
 
-            var validation = report.Validation;
-            Logger.Info(
-                $"TPPA drift-validation result: valid={validation.IsValid}; Az={validation.AzimuthErrorArcMinutes:F3}'; Alt={validation.AltitudeErrorArcMinutes:F3}'; total={validation.TotalErrorArcMinutes:F3}'; Az sigma={validation.AzimuthSigmaArcMinutes:F3}'; Alt sigma={validation.AltitudeSigmaArcMinutes:F3}'; reduced chi2={validation.ReducedChiSquared:F3}; condition={validation.DesignConditionNumber:F3}; repeated residual={validation.MaximumRepeatedPositionStandardizedResidual:F3}; reason={validation.Reason}");
-            progress?.Report(new ApplicationStatus() {
-                Status = validation.IsValid
-                    ? $"Drift validation complete: {validation.TotalErrorArcMinutes:F2}' total (report only)"
-                    : $"Drift validation rejected: {validation.Reason}"
-            });
+                var validation = report.Validation;
+                Logger.Info(
+                    $"TPPA drift-validation result: valid={validation.IsValid}; Az={validation.AzimuthErrorArcMinutes:F3}'; Alt={validation.AltitudeErrorArcMinutes:F3}'; total={validation.TotalErrorArcMinutes:F3}'; Az sigma={validation.AzimuthSigmaArcMinutes:F3}'; Alt sigma={validation.AltitudeSigmaArcMinutes:F3}'; reduced chi2={validation.ReducedChiSquared:F3}; condition={validation.DesignConditionNumber:F3}; repeated residual={validation.MaximumRepeatedPositionStandardizedResidual:F3}; reason={validation.Reason}");
+                progress?.Report(new ApplicationStatus() {
+                    Status = validation.IsValid
+                        ? $"Drift validation complete: {validation.TotalErrorArcMinutes:F2}' total (report only)"
+                        : $"Drift validation rejected: {validation.Reason}"
+                });
+            } finally {
+                SetTrackingSidereal(initialTracking.TrackingEnabled);
+            }
         }
 
         private async Task ExecuteVerificationOnly(TPAPAVM context,
