@@ -1,5 +1,8 @@
 # Changelog
 
+## Version 2.2.6.13
+- Added the opt-in, report-only TPPA drift-validation instruction path. It performs four five-minute stationary solve tracks in A-B-C-A order using telescope RA movement only, reuses each metadata solve as the first drift sample, reports the independently fitted polar-error vector, and cannot configure, connect to, or move UPAS.
+
 ## Version 2.2.6.12
 - Added a solve-derived runtime metadata factory for report-only TPPA drift validation. It uses the exposure-midpoint timestamp, reconstructs hour angle from vacuum topocentric geometry, computes atmospheric-refraction drift, and rejects tracks below the qualified altitude.
 
