@@ -1,5 +1,8 @@
 # Changelog
 
+## Version 2.2.6.18
+- Added a pure fail-closed A-B-C-A drift-arc safety policy that rejects invalid position order, non-finite or sub-floor predicted altitude, and any known pier-side change before runtime movement wiring.
+
 ## Version 2.2.6.17
 - Added synthetic east/west-hour-angle recovery coverage for every polar-error sign quadrant at both northern and southern site latitudes.
 
