@@ -1088,6 +1088,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             Coordinates pointA = null;
             var pointAPierSide = NINA.Core.Enum.PierSide.pierUnknown;
             Coordinates solvedPointA = null;
+            Coordinates previousSolvedArcPoint = null;
             TppaDriftRuntimeObservation? pendingObservation = null;
             var arrivalIndex = 0;
             var metadataIndex = 0;
@@ -1265,6 +1266,27 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         Logger.Info(
                             $"TPPA drift-validation solved A closure verified: separation={solvedClosure.PointingSeparationDegrees:F4} deg.");
                     }
+                    if (metadataIndex is 1 or 2) {
+                        if (previousSolvedArcPoint == null) {
+                            throw new InvalidOperationException(
+                                $"TPPA drift-validation solved move to {positionId} has no preceding solved position.");
+                        }
+                        var solvedMove = TppaDriftMoveVerificationPolicy.Evaluate(
+                            previousSolvedArcPoint.RADegrees,
+                            solve.Coordinates.RADegrees,
+                            previousSolvedArcPoint.Dec,
+                            solve.Coordinates.Dec,
+                            TargetDistance,
+                            NINA.Core.Enum.PierSide.pierUnknown,
+                            NINA.Core.Enum.PierSide.pierUnknown);
+                        if (!solvedMove.IsSafe) {
+                            throw new InvalidOperationException(
+                                $"TPPA drift-validation solved move to {positionId} rejected: {solvedMove.Reason}.");
+                        }
+                        Logger.Info(
+                            $"TPPA drift-validation solved move to {positionId} verified: RA travel={solvedMove.RightAscensionTravelDegrees:F3} deg; DEC travel={solvedMove.DeclinationTravelDegrees:F3} deg.");
+                    }
+                    previousSolvedArcPoint = solve.Coordinates;
                     metadataIndex++;
                     var metadata = pendingObservation.Value.Metadata;
                     Logger.Info(

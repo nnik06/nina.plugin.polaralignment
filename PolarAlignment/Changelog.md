@@ -1,5 +1,8 @@
 # Changelog
 
+## Version 2.2.6.25
+- Added independent plate-solve verification of the B and C arc legs. Each solved sky displacement must satisfy the same bounded RA travel and declination cross-axis gates as mount telemetry before that track can enter the drift estimator.
+
 ## Version 2.2.6.24
 - Added current-time safety preflight immediately before each B/C relative RA move and the absolute return to A. Every leg now rechecks the destination's full five-minute track against the 30-degree altitude floor and known destination-side continuity, preventing the initial preflight from becoming stale during long dwells.
 
