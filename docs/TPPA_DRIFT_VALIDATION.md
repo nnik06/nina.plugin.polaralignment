@@ -100,7 +100,13 @@ are separate states. A completed acquisition can still produce a rejected
 validation report, and rejection must never be converted into an actuator
 command.
 
+`TppaRefractionDriftCalculator` now supplies the candidate per-track
+refraction term by simulating the plate-solved declination through NINA's
+apparent/vacuum coordinate transforms. It validates site, atmosphere, UTC,
+altitude, and centered-transform closure before returning a value.
+
 The next integration step is to feed exposure-midpoint timestamps and solved
-declinations from the existing TPPA solve path into this session. Refraction
-drift must come from a verified physical calculation using the observation
-metadata; it must not be guessed, fitted away, or silently treated as zero.
+declinations from the existing TPPA solve path into the acquisition session
+and attach the calculator result to each track. The runtime path must reject a
+track when this calculation is unavailable; it must not guess, fit away, or
+silently replace refraction drift with zero.
