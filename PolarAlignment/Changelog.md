@@ -1,5 +1,8 @@
 # Changelog
 
+## Version 2.2.6.9
+- Added a bounded, cancellation-safe, report-only stationary TPPA drift-track runner that uses exposure-midpoint solve times, preserves raw solves, and invalidates interrupted or failed acquisitions. It cannot slew the telescope or move UPAS.
+
 ## Version 2.2.6.8
 - Added the first report-only TPPA A-B-C-A declination-drift validation components, including qualified raw-track fitting, fail-closed acquisition state, and a coordinate-transform-based atmospheric-refraction drift calculator. These components cannot move UPAS and are not yet wired into runtime acquisition.
 

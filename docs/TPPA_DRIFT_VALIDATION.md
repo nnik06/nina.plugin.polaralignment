@@ -105,8 +105,15 @@ refraction term by simulating the plate-solved declination through NINA's
 apparent/vacuum coordinate transforms. It validates site, atmosphere, UTC,
 altitude, and centered-transform closure before returning a value.
 
-The next integration step is to feed exposure-midpoint timestamps and solved
-declinations from the existing TPPA solve path into the acquisition session
-and attach the calculator result to each track. The runtime path must reject a
-track when this calculation is unavailable; it must not guess, fit away, or
-silently replace refraction drift with zero.
+`TppaDriftTrackAcquisitionRunner` provides the bounded stationary-track loop.
+It measures duration from exposure-midpoint solve timestamps, enforces a
+maximum sample count, and invalidates the session on cancellation or failure.
+The runner receives a solve callback and has no telescope or actuator
+dependency.
+
+The next integration step is to connect the existing TPPA solve method to that
+callback, attach the refraction calculator result to each track, and sequence
+the four stationary tracks around the existing automated A-B-C-A movement.
+The runtime path must reject a track when refraction calculation is
+unavailable; it must not guess, fit away, or silently replace refraction drift
+with zero.
