@@ -71,4 +71,36 @@ revisited-position standardized residual.
    noise, changing refraction, and position-dependent disturbances.
 2. Add raw plate-solve track fitting with outlier and residual-autocorrelation
    gates.
-3. Run no-motion A-B-C-A acquisitions and compare five-, eight-, and
+3. Wire the report-only acquisition session into TPPA's capture/solve path.
+4. Run no-motion A-B-C-A acquisitions and compare five-, eight-, and
+   ten-minute track fits.
+5. Compare repeated sessions on unchanged hardware and require agreement in
+   both fitted magnitude and direction.
+6. Compare qualified sessions against independent drift measurements, while
+   keeping those measurements advisory until their own repeatability is
+   demonstrated.
+
+## Acquisition Session
+
+`TppaDriftValidationSession` implements the report-only state boundary for one
+ordered A-B-C-A acquisition. It:
+
+- enforces the required position order;
+- accepts only finite declinations with strictly increasing UTC observation
+  times;
+- retains every raw solve rather than only fitted slopes;
+- qualifies each stationary track through
+  `TppaDeclinationDriftTrackEstimator`;
+- refuses global validation when any track fails or when computed refraction
+  drift metadata is absent;
+- contains no telescope, UPAS, or actuator dependency.
+
+Completing the four-track acquisition and obtaining a valid polar-error fit
+are separate states. A completed acquisition can still produce a rejected
+validation report, and rejection must never be converted into an actuator
+command.
+
+The next integration step is to feed exposure-midpoint timestamps and solved
+declinations from the existing TPPA solve path into this session. Refraction
+drift must come from a verified physical calculation using the observation
+metadata; it must not be guessed, fitted away, or silently treated as zero.
