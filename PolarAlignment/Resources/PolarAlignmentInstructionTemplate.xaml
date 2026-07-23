@@ -210,6 +210,50 @@
                     ToolTip="Requires automated mount control. Collects four five-minute stationary plate-solve drift tracks in A-B-C-A order, reports an independently fitted polar-error vector, and never configures, connects to, or moves the polar alignment actuator. The two diagnostic-only modes are mutually exclusive." />
             </WrapPanel>
 
+            <WrapPanel Margin="0,5,0,0" Orientation="Horizontal">
+                <TextBlock
+                    VerticalAlignment="Center"
+                    Text="Mount motion envelope"
+                    ToolTip="Stops TPPA if the telescope leaves this altitude and wrap-aware azimuth envelope during automated mount motion. This runtime guard supplements, but does not replace, route preflight." />
+                <CheckBox
+                    Margin="5,0,10,0"
+                    VerticalAlignment="Center"
+                    IsChecked="{Binding MountMotionEnvelopeEnabled, UpdateSourceTrigger=PropertyChanged}"
+                    ToolTip="Stops TPPA if the telescope leaves this altitude and wrap-aware azimuth envelope during automated mount motion. This runtime guard supplements, but does not replace, route preflight." />
+                <TextBlock VerticalAlignment="Center" Text="Alt min" />
+                <ninactrl:UnitTextBox
+                    MinWidth="55"
+                    Margin="5,0,10,0"
+                    VerticalAlignment="Center"
+                    Text="{Binding MountMotionMinimumAltitudeDegrees, UpdateSourceTrigger=LostFocus}"
+                    ToolTip="Minimum permitted telescope altitude during TPPA mount motion."
+                    Unit="deg" />
+                <TextBlock VerticalAlignment="Center" Text="Alt max" />
+                <ninactrl:UnitTextBox
+                    MinWidth="55"
+                    Margin="5,0,10,0"
+                    VerticalAlignment="Center"
+                    Text="{Binding MountMotionMaximumAltitudeDegrees, UpdateSourceTrigger=LostFocus}"
+                    ToolTip="Maximum permitted telescope altitude during TPPA mount motion."
+                    Unit="deg" />
+                <TextBlock VerticalAlignment="Center" Text="Az start" />
+                <ninactrl:UnitTextBox
+                    MinWidth="55"
+                    Margin="5,0,10,0"
+                    VerticalAlignment="Center"
+                    Text="{Binding MountMotionAzimuthStartDegrees, UpdateSourceTrigger=LostFocus}"
+                    ToolTip="Start of the permitted azimuth interval. Use a start greater than the end for an interval that crosses north, for example 270 to 10 degrees."
+                    Unit="deg" />
+                <TextBlock VerticalAlignment="Center" Text="Az end" />
+                <ninactrl:UnitTextBox
+                    MinWidth="55"
+                    Margin="5,0,0,0"
+                    VerticalAlignment="Center"
+                    Text="{Binding MountMotionAzimuthEndDegrees, UpdateSourceTrigger=LostFocus}"
+                    ToolTip="End of the permitted azimuth interval. Use a start greater than the end for an interval that crosses north, for example 270 to 10 degrees."
+                    Unit="deg" />
+            </WrapPanel>
+
             <WrapPanel
                 Margin="0,5,0,0"
                 Orientation="Horizontal"
