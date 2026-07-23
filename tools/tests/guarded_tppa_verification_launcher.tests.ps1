@@ -8,6 +8,10 @@ Describe 'guarded TPPA verification launcher static safety contract' {
         $text.Contains('Find-VerificationInstruction') | Should Be $true
     }
 
+    It 'requires the install validator and an expected plugin hash' {
+        $text.Contains('validate_tppa_plugin_install.ps1') | Should Be $true
+        $text.Contains('ExpectedPluginSha256') | Should Be $true
+    }
     It 'requires an altitude margin before starting' {
         $text.Contains('TargetAltitudeMarginDegrees') | Should Be $true
         $text.Contains('lacks the required') | Should Be $true
@@ -30,10 +34,17 @@ Describe 'guarded TPPA verification launcher static safety contract' {
 }
 
 Describe 'guarded TPPA verification launcher preflight' {
+    BeforeEach {
+        $plugin = Join-Path $TestDrive ([Guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $plugin | Out-Null
+        Set-Content -LiteralPath (Join-Path $plugin 'NINA.Plugins.PolarAlignment.dll') -Value 'current'
+        $pluginHash = (Get-FileHash (Join-Path $plugin 'NINA.Plugins.PolarAlignment.dll') -Algorithm SHA256).Hash
+    }
+
     It 'parses horizontal degrees minutes and seconds structurally' {
         $sequence = Join-Path $TestDrive 'verification.json'
         '{"Items":{"$values":[{"VerificationOnly":true,"Coordinates":{"AzDegrees":315,"AzMinutes":30,"AzSeconds":0,"AltDegrees":30,"AltMinutes":15,"AltSeconds":0}}]}}' | Set-Content -LiteralPath $sequence
-        $result = & $scriptPath -SequencePath $sequence -PreflightOnly
+        $result = & $scriptPath -SequencePath $sequence -PluginDirectory $plugin -ExpectedPluginSha256 $pluginHash -PreflightOnly
         $result.TargetAzimuthDegrees | Should Be 315.5
         $result.TargetAltitudeDegrees | Should Be 30.25
     }
@@ -42,7 +53,7 @@ Describe 'guarded TPPA verification launcher preflight' {
         $sequence = Join-Path $TestDrive 'edge.json'
         '{"VerificationOnly":true,"Coordinates":{"AzDegrees":315,"AzMinutes":0,"AzSeconds":0,"AltDegrees":25,"AltMinutes":0,"AltSeconds":0}}' | Set-Content -LiteralPath $sequence
         $threw = $false
-        try { & $scriptPath -SequencePath $sequence -PreflightOnly } catch { $threw = $true }
+        try { & $scriptPath -SequencePath $sequence -PluginDirectory $plugin -ExpectedPluginSha256 $pluginHash -PreflightOnly } catch { $threw = $true }
         $threw | Should Be $true
     }
 }
