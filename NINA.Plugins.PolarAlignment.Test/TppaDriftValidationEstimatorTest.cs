@@ -18,6 +18,31 @@ namespace NINA.Plugins.PolarAlignment.Test {
             result.TotalErrorArcMinutes.Should().BeApproximately(Math.Sqrt(13), 0.01);
         }
 
+        [TestCase(25.2, -4.0, -3.0)]
+        [TestCase(25.2, -4.0, 3.0)]
+        [TestCase(25.2, 4.0, -3.0)]
+        [TestCase(25.2, 4.0, 3.0)]
+        [TestCase(-25.2, -4.0, -3.0)]
+        [TestCase(-25.2, -4.0, 3.0)]
+        [TestCase(-25.2, 4.0, -3.0)]
+        [TestCase(-25.2, 4.0, 3.0)]
+        public void RecoversEverySignQuadrantAcrossHemispheres(
+            double latitudeDegrees,
+            double azimuthErrorArcMinutes,
+            double altitudeErrorArcMinutes) {
+            var tracks = CreateTracks(
+                azimuthErrorArcMinutes,
+                altitudeErrorArcMinutes,
+                hourAngles: new[] { -80.0, -25.0, 40.0, -75.0 },
+                siteLatitudeDegrees: latitudeDegrees);
+
+            var result = TppaDriftValidationEstimator.Evaluate(tracks, latitudeDegrees);
+
+            result.IsValid.Should().BeTrue(result.Reason);
+            result.AzimuthErrorArcMinutes.Should().BeApproximately(azimuthErrorArcMinutes, 0.01);
+            result.AltitudeErrorArcMinutes.Should().BeApproximately(altitudeErrorArcMinutes, 0.01);
+        }
+
         [Test]
         public void ComputedRefractionIsRemovedBeforePolarFit() {
             var tracks = CreateTracks(
@@ -112,14 +137,15 @@ namespace NINA.Plugins.PolarAlignment.Test {
             double azimuthErrorArcMinutes,
             double altitudeErrorArcMinutes,
             double refractionDriftArcsecondsPerMinute = 0,
-            double[]? hourAngles = null) {
+            double[]? hourAngles = null,
+            double siteLatitudeDegrees = LatitudeDegrees) {
             hourAngles ??= new[] { -75.0, -20.0, 35.0, -70.0 };
             var ids = new[] { "A", "B", "C", "A" };
             return hourAngles.Select((hourAngle, index) => {
                 var drift = TppaDriftValidationEstimator.PredictDeclinationDriftArcsecondsPerMinute(
                     azimuthErrorArcMinutes,
                     altitudeErrorArcMinutes,
-                    LatitudeDegrees,
+                    siteLatitudeDegrees,
                     hourAngle,
                     refractionDriftArcsecondsPerMinute);
                 return new TppaDriftTrack(

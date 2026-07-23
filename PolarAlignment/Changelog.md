@@ -1,5 +1,8 @@
 # Changelog
 
+## Version 2.2.6.17
+- Added synthetic east/west-hour-angle recovery coverage for every polar-error sign quadrant at both northern and southern site latitudes.
+
 ## Version 2.2.6.16
 - Made the five-minute drift-validation defaults achievable with the runtime's 30-second solves and five-second cadence by requiring eight accepted samples instead of an impossible thirty, while retaining all duration, uncertainty, stationarity, geometry, and repeated-position gates.
 
