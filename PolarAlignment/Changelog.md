@@ -1,5 +1,8 @@
 # Changelog
 
+## Version 2.2.6.23
+- Moved the rate-based RA-axis stop into a non-masking `finally` block. Success, timeout, cancellation, telemetry rejection, and unexpected exceptions now all attempt to send `MoveAxis(Primary, 0)` without replacing the original failure if the emergency stop command itself fails.
+
 ## Version 2.2.6.22
 - Added independent plate-solve closure validation for report-only drift acquisition. The final A solve must return within 0.25 degrees of the first A solve before its metadata or samples can enter the estimator.
 

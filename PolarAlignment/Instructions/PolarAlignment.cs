@@ -1744,10 +1744,15 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 SetTrackingSidereal(true);
 
                 progress?.Report(new ApplicationStatus() { Status = string.Empty });
-            } catch (Exception) {
-                //Reset move rate in case of problems or early cancellation
-                telescopeMediator.MoveAxis(Core.Enum.TelescopeAxes.Primary, 0);
-                throw;
+            } finally {
+                try {
+                    // MoveAxis is rate-based and must be halted on every exit path.
+                    telescopeMediator.MoveAxis(Core.Enum.TelescopeAxes.Primary, 0);
+                } catch (Exception stopFailure) {
+                    Logger.Error(
+                        "Emergency RA-axis stop failed after TPPA drift-validation movement.",
+                        stopFailure);
+                }
             }
         }
 
