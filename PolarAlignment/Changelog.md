@@ -1,5 +1,8 @@
 # Changelog
 
+## Version 2.2.6.11
+- Added fail-closed execution policy and validation for an upcoming report-only A-B-C-A drift-validation instruction mode. The mode is automated-mount-only, mutually exclusive with verification-only mode, and bypasses every UPAS actuator phase.
+
 ## Version 2.2.6.10
 - Added a fail-closed, diagnostic-only A-B-C-A drift-validation coordinator. It enforces telescope-position order, captures metadata only after arrival, stops immediately on failed or cancelled tracks, and has no UPAS actuator dependency.
 

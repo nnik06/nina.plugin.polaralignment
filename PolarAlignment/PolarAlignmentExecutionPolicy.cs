@@ -10,13 +10,17 @@ namespace NINA.Plugins.PolarAlignment {
     /// </summary>
     internal readonly struct PolarAlignmentExecutionPolicy {
         internal const string VerificationOnlyManualModeIssue = "Verification-only mode requires automated mount control to replay the identical measurement arc. Turn off Manual Mode to continue.";
+        internal const string DriftValidationManualModeIssue = "Drift-validation mode requires automated mount control to visit the A-B-C-A measurement positions. Turn off Manual Mode to continue.";
+        internal const string ConflictingDiagnosticModesIssue = "Verification-only mode and drift-validation mode cannot be enabled together. Select one diagnostic mode.";
         private PolarAlignmentExecutionPolicy(bool runSingleFreshVerification,
+                                              bool runDriftValidation,
                                               bool allowActuatorConfiguration,
                                               bool allowActuatorPreparation,
                                               bool allowActuatorConnection,
                                               bool allowActuatorMovement,
                                               bool disconnectActuatorOnDispose) {
             RunSingleFreshVerification = runSingleFreshVerification;
+            RunDriftValidation = runDriftValidation;
             AllowActuatorConfiguration = allowActuatorConfiguration;
             AllowActuatorPreparation = allowActuatorPreparation;
             AllowActuatorConnection = allowActuatorConnection;
@@ -25,22 +29,43 @@ namespace NINA.Plugins.PolarAlignment {
         }
 
         public bool RunSingleFreshVerification { get; }
+        public bool RunDriftValidation { get; }
         public bool AllowActuatorConfiguration { get; }
         public bool AllowActuatorPreparation { get; }
         public bool AllowActuatorConnection { get; }
         public bool AllowActuatorMovement { get; }
         public bool DisconnectActuatorOnDispose { get; }
 
-        public static PolarAlignmentExecutionPolicy Create(bool verificationOnly) {
-            return verificationOnly
-                ? new PolarAlignmentExecutionPolicy(true, false, false, false, false, false)
-                : new PolarAlignmentExecutionPolicy(false, true, true, true, true, true);
+        public static PolarAlignmentExecutionPolicy Create(bool verificationOnly, bool driftValidationOnly = false) {
+            if (verificationOnly && driftValidationOnly) {
+                return new PolarAlignmentExecutionPolicy(false, false, false, false, false, false, false);
+            }
+
+            if (verificationOnly) {
+                return new PolarAlignmentExecutionPolicy(true, false, false, false, false, false, false);
+            }
+
+            if (driftValidationOnly) {
+                return new PolarAlignmentExecutionPolicy(false, true, false, false, false, false, false);
+            }
+
+            return new PolarAlignmentExecutionPolicy(false, false, true, true, true, true, true);
         }
 
-        public static IReadOnlyList<string> GetValidationIssues(bool verificationOnly, bool manualMode) {
-            return verificationOnly && manualMode
-                ? new[] { VerificationOnlyManualModeIssue }
-                : Array.Empty<string>();
+        public static IReadOnlyList<string> GetValidationIssues(bool verificationOnly,
+                                                                bool driftValidationOnly,
+                                                                bool manualMode) {
+            var issues = new List<string>();
+            if (verificationOnly && driftValidationOnly) {
+                issues.Add(ConflictingDiagnosticModesIssue);
+            }
+            if (verificationOnly && manualMode) {
+                issues.Add(VerificationOnlyManualModeIssue);
+            }
+            if (driftValidationOnly && manualMode) {
+                issues.Add(DriftValidationManualModeIssue);
+            }
+            return issues;
         }
     }
 

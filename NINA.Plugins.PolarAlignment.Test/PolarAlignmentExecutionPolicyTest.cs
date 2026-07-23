@@ -11,6 +11,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
             var policy = PolarAlignmentExecutionPolicy.Create(verificationOnly: true);
 
             policy.RunSingleFreshVerification.Should().BeTrue();
+            policy.RunDriftValidation.Should().BeFalse();
             policy.AllowActuatorConfiguration.Should().BeFalse();
             policy.AllowActuatorPreparation.Should().BeFalse();
             policy.AllowActuatorConnection.Should().BeFalse();
@@ -23,6 +24,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
             var policy = PolarAlignmentExecutionPolicy.Create(verificationOnly: false);
 
             policy.RunSingleFreshVerification.Should().BeFalse();
+            policy.RunDriftValidation.Should().BeFalse();
             policy.AllowActuatorConfiguration.Should().BeTrue();
             policy.AllowActuatorPreparation.Should().BeTrue();
             policy.AllowActuatorConnection.Should().BeTrue();
@@ -32,17 +34,64 @@ namespace NINA.Plugins.PolarAlignment.Test {
 
         [Test]
         public void VerificationOnlyRejectsManualModeWithClearValidationIssue() {
-            var issues = PolarAlignmentExecutionPolicy.GetValidationIssues(verificationOnly: true, manualMode: true);
+            var issues = PolarAlignmentExecutionPolicy.GetValidationIssues(
+                verificationOnly: true,
+                driftValidationOnly: false,
+                manualMode: true);
 
             issues.Should().ContainSingle()
                 .Which.Should().Be(PolarAlignmentExecutionPolicy.VerificationOnlyManualModeIssue);
         }
 
-        [TestCase(false, false)]
-        [TestCase(false, true)]
-        [TestCase(true, false)]
-        public void OtherModeCombinationsDoNotAddVerificationOnlyValidationIssue(bool verificationOnly, bool manualMode) {
-            PolarAlignmentExecutionPolicy.GetValidationIssues(verificationOnly, manualMode).Should().BeEmpty();
+        [Test]
+        public void DriftValidationRunsWithoutAnyActuatorPhase() {
+            var policy = PolarAlignmentExecutionPolicy.Create(
+                verificationOnly: false,
+                driftValidationOnly: true);
+
+            policy.RunSingleFreshVerification.Should().BeFalse();
+            policy.RunDriftValidation.Should().BeTrue();
+            policy.AllowActuatorConfiguration.Should().BeFalse();
+            policy.AllowActuatorPreparation.Should().BeFalse();
+            policy.AllowActuatorConnection.Should().BeFalse();
+            policy.AllowActuatorMovement.Should().BeFalse();
+            policy.DisconnectActuatorOnDispose.Should().BeFalse();
+        }
+
+        [Test]
+        public void DriftValidationRejectsManualModeWithClearValidationIssue() {
+            var issues = PolarAlignmentExecutionPolicy.GetValidationIssues(
+                verificationOnly: false,
+                driftValidationOnly: true,
+                manualMode: true);
+
+            issues.Should().ContainSingle()
+                .Which.Should().Be(PolarAlignmentExecutionPolicy.DriftValidationManualModeIssue);
+        }
+
+        [Test]
+        public void DiagnosticModesAreMutuallyExclusiveAndFailClosed() {
+            var issues = PolarAlignmentExecutionPolicy.GetValidationIssues(
+                verificationOnly: true,
+                driftValidationOnly: true,
+                manualMode: false);
+            var policy = PolarAlignmentExecutionPolicy.Create(
+                verificationOnly: true,
+                driftValidationOnly: true);
+
+            issues.Should().ContainSingle()
+                .Which.Should().Be(PolarAlignmentExecutionPolicy.ConflictingDiagnosticModesIssue);
+            policy.RunSingleFreshVerification.Should().BeFalse();
+            policy.RunDriftValidation.Should().BeFalse();
+            policy.AllowActuatorMovement.Should().BeFalse();
+        }
+
+        [TestCase(false, false, false)]
+        [TestCase(false, false, true)]
+        [TestCase(true, false, false)]
+        [TestCase(false, true, false)]
+        public void OtherModeCombinationsDoNotAddDiagnosticValidationIssues(bool verificationOnly, bool driftValidationOnly, bool manualMode) {
+            PolarAlignmentExecutionPolicy.GetValidationIssues(verificationOnly, driftValidationOnly, manualMode).Should().BeEmpty();
         }
 
         [Test]

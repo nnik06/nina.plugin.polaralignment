@@ -78,6 +78,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
         private bool manualMode;
         private bool startFromCurrentPosition;
         private bool verificationOnly;
+        private bool driftValidationOnly;
         private const double MinimumPositiveAlignmentTolerance = 0.5;
         private double alignmentTolerance;
         private IList<string> issues = new List<string>();
@@ -195,6 +196,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 ManualMode = ManualMode,
                 StartFromCurrentPosition = StartFromCurrentPosition,
                 VerificationOnly = VerificationOnly,
+                DriftValidationOnly = DriftValidationOnly,
                 AlignmentTolerance = AlignmentTolerance,
                 Coordinates = this.Coordinates == null
                     ? null
@@ -270,6 +272,15 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             get => verificationOnly;
             set {
                 verificationOnly = value;
+                RaisePropertyChanged();
+            }
+        }
+
+        [JsonProperty]
+        public bool DriftValidationOnly {
+            get => driftValidationOnly;
+            set {
+                driftValidationOnly = value;
                 RaisePropertyChanged();
             }
         }
@@ -423,7 +434,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
         /// <param name="token">When a cancel signal is triggered from outside, this token can be used to register to it or check if it is cancelled</param>
         /// <returns></returns>
         public override async Task Execute(IProgress<ApplicationStatus> externalProgress, CancellationToken token) {
-            var executionPolicy = PolarAlignmentExecutionPolicy.Create(VerificationOnly);
+            var executionPolicy = PolarAlignmentExecutionPolicy.Create(VerificationOnly, DriftValidationOnly);
             try {
                 using (var localCTS = CancellationTokenSource.CreateLinkedTokenSource(token)) {
                     Guid correlatedGuid = Guid.NewGuid();
@@ -461,6 +472,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         Starting polar alignment:
                             Manual mode: {ManualMode}
                             Verification only: {VerificationOnly}
+                            Drift validation only: {DriftValidationOnly}
                             Measure point distance: {TargetDistance}
                             Mount move rate: {MoveRate}
                             Timeout factor: {Properties.Settings.Default.MoveTimeoutFactor}
@@ -1514,7 +1526,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
 
         public bool Validate() {
             var i = new List<string>();
-            i.AddRange(PolarAlignmentExecutionPolicy.GetValidationIssues(VerificationOnly, ManualMode));
+            i.AddRange(PolarAlignmentExecutionPolicy.GetValidationIssues(VerificationOnly, DriftValidationOnly, ManualMode));
 
             //Location
             if (profileService.ActiveProfile.AstrometrySettings.Latitude == 0 && profileService.ActiveProfile.AstrometrySettings.Longitude == 0) {
@@ -1555,7 +1567,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 i.Add("Telescope is parked. Please unpark the telescope first!");
             }
 
-            var executionPolicy = PolarAlignmentExecutionPolicy.Create(VerificationOnly);
+            var executionPolicy = PolarAlignmentExecutionPolicy.Create(VerificationOnly, DriftValidationOnly);
             if (executionPolicy.AllowActuatorMovement && PolarAlignmentPlugin.ActiveAlignmentSystemVM != null && PolarAlignmentPlugin.ActiveAlignmentSystemVM?.DoAutomatedAdjustments == true && AlignmentTolerance == 0) {
                 i.Add("Automated adjustments are enabled, but polar alignment tolerance is set to zero. Please set an alignment tolerance!");
             }

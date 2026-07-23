@@ -9,6 +9,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
             var instruction = CreateInstruction();
 
             instruction.VerificationOnly.Should().BeFalse();
+            instruction.DriftValidationOnly.Should().BeFalse();
         }
 
         [Test]
@@ -36,6 +37,36 @@ namespace NINA.Plugins.PolarAlignment.Test {
 
             serialized[nameof(Instructions.PolarAlignment.VerificationOnly)]!.Value<bool>().Should().BeTrue();
             restored.VerificationOnly.Should().BeTrue();
+            restored.AlignmentTolerance.Should().Be(4.5);
+        }
+
+        [Test]
+        public void DriftValidationOnlyIsCopiedWithoutChangingAlignmentTolerance() {
+            var instruction = CreateInstruction();
+            instruction.DriftValidationOnly = true;
+            instruction.AlignmentTolerance = 3.5;
+
+            var clone = (Instructions.PolarAlignment)instruction.Clone();
+
+            clone.DriftValidationOnly.Should().BeTrue();
+            clone.VerificationOnly.Should().BeFalse();
+            clone.AlignmentTolerance.Should().Be(3.5);
+        }
+
+        [Test]
+        public void DriftValidationOnlyRoundTripsThroughInstructionJson() {
+            var instruction = CreateInstruction();
+            instruction.DriftValidationOnly = true;
+            instruction.AlignmentTolerance = 4.5;
+
+            var json = JsonConvert.SerializeObject(instruction);
+            var serialized = JObject.Parse(json);
+            var restored = CreateInstruction();
+            JsonConvert.PopulateObject(json, restored);
+
+            serialized[nameof(Instructions.PolarAlignment.DriftValidationOnly)]!.Value<bool>().Should().BeTrue();
+            restored.DriftValidationOnly.Should().BeTrue();
+            restored.VerificationOnly.Should().BeFalse();
             restored.AlignmentTolerance.Should().Be(4.5);
         }
 
