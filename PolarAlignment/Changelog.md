@@ -1,5 +1,8 @@
 # Changelog
 
+## Version 2.2.6.22
+- Added independent plate-solve closure validation for report-only drift acquisition. The final A solve must return within 0.25 degrees of the first A solve before its metadata or samples can enter the estimator.
+
 ## Version 2.2.6.21
 - Added fail-closed A-B-C-A closure verification for report-only drift validation. The final return must be within 0.25 degrees of the captured A pointing by great-circle separation and must not change a known destination pier side.
 

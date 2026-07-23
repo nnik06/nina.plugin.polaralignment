@@ -1087,8 +1087,10 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
 
             Coordinates pointA = null;
             var pointAPierSide = NINA.Core.Enum.PierSide.pierUnknown;
+            Coordinates solvedPointA = null;
             TppaDriftRuntimeObservation? pendingObservation = null;
             var arrivalIndex = 0;
+            var metadataIndex = 0;
 
             Logger.Info(
                 "TPPA drift validation stops guiding. NINA 3.1 does not expose prior guiding-active state; an Advanced Sequence must explicitly start guiding after this diagnostic.");
@@ -1206,6 +1208,33 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         Longitude,
                         elevationMeters,
                         refraction);
+                    if (metadataIndex == 0) {
+                        if (!string.Equals(positionId, "A", StringComparison.OrdinalIgnoreCase)) {
+                            throw new InvalidOperationException(
+                                "The first drift-validation solved position must be A.");
+                        }
+                        solvedPointA = solve.Coordinates;
+                    } else if (metadataIndex == 3) {
+                        if (solvedPointA == null
+                                || !string.Equals(positionId, "A", StringComparison.OrdinalIgnoreCase)) {
+                            throw new InvalidOperationException(
+                                "The final drift-validation solved position must close on captured A.");
+                        }
+                        var solvedClosure = TppaDriftArcClosurePolicy.Evaluate(
+                            solvedPointA.RADegrees,
+                            solvedPointA.Dec,
+                            solve.Coordinates.RADegrees,
+                            solve.Coordinates.Dec,
+                            NINA.Core.Enum.PierSide.pierUnknown,
+                            NINA.Core.Enum.PierSide.pierUnknown);
+                        if (!solvedClosure.IsSafe) {
+                            throw new InvalidOperationException(
+                                $"TPPA drift-validation solved A closure rejected: {solvedClosure.Reason}.");
+                        }
+                        Logger.Info(
+                            $"TPPA drift-validation solved A closure verified: separation={solvedClosure.PointingSeparationDegrees:F4} deg.");
+                    }
+                    metadataIndex++;
                     var metadata = pendingObservation.Value.Metadata;
                     Logger.Info(
                         $"TPPA drift-validation metadata {positionId}: HA={metadata.HourAngleDegrees:F4} deg; altitude={metadata.AltitudeDegrees:F4} deg; refraction drift={metadata.ComputedRefractionDriftArcsecondsPerMinute:F5}\"/min.");
