@@ -111,9 +111,18 @@ maximum sample count, and invalidates the session on cancellation or failure.
 The runner receives a solve callback and has no telescope or actuator
 dependency.
 
-The next integration step is to connect the existing TPPA solve method to that
-callback, attach the refraction calculator result to each track, and sequence
-the four stationary tracks around the existing automated A-B-C-A movement.
+`TppaDriftValidationOrchestrator` now enforces the A-B-C-A position order and
+sequences the four bounded tracks. It obtains position metadata after each
+movement callback completes, stops before any later position after a track
+failure, and still has no UPAS actuator dependency. It intentionally does not
+attempt a recovery slew after cancellation or failure because the telescope
+state may be uncertain. The outer runtime integration must restore
+tracking/guiding state without issuing an implicit slew.
+
+The next integration step is to connect the existing TPPA telescope movement
+and solve methods to these callbacks and attach the refraction calculator
+result to each track. That hook must initially remain diagnostic-only and
+explicitly enabled; its report must not alter TPPA completion or UPAS commands.
 The runtime path must reject a track when refraction calculation is
 unavailable; it must not guess, fit away, or silently replace refraction drift
 with zero.

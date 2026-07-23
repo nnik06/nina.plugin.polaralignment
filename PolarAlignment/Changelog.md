@@ -1,5 +1,8 @@
 # Changelog
 
+## Version 2.2.6.10
+- Added a fail-closed, diagnostic-only A-B-C-A drift-validation coordinator. It enforces telescope-position order, captures metadata only after arrival, stops immediately on failed or cancelled tracks, and has no UPAS actuator dependency.
+
 ## Version 2.2.6.9
 - Added a bounded, cancellation-safe, report-only stationary TPPA drift-track runner that uses exposure-midpoint solve times, preserves raw solves, and invalidates interrupted or failed acquisitions. It cannot slew the telescope or move UPAS.
 
