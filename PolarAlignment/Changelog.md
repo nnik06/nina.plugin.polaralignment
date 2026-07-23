@@ -1,5 +1,8 @@
 # Changelog
 
+## Version 2.2.6.26
+- Hardened drift-validation tracking restoration. A restore failure no longer masks an existing diagnostic exception, while a restore failure after an otherwise successful acquisition now fails the sequence item instead of being silently ignored.
+
 ## Version 2.2.6.25
 - Added independent plate-solve verification of the B and C arc legs. Each solved sky displacement must satisfy the same bounded RA travel and declination cross-axis gates as mount telemetry before that track can enter the drift estimator.
 

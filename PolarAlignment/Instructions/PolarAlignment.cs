@@ -1092,6 +1092,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             TppaDriftRuntimeObservation? pendingObservation = null;
             var arrivalIndex = 0;
             var metadataIndex = 0;
+            Exception executionFailure = null;
 
             Logger.Info(
                 "TPPA drift validation stops guiding. NINA 3.1 does not expose prior guiding-active state; an Advanced Sequence must explicitly start guiding after this diagnostic.");
@@ -1326,8 +1327,21 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         ? $"Drift validation complete: {validation.TotalErrorArcMinutes:F2}' total (report only)"
                         : $"Drift validation rejected: {validation.Reason}"
                 });
+            } catch (Exception failure) {
+                executionFailure = failure;
+                throw;
             } finally {
-                SetTrackingSidereal(initialTracking.TrackingEnabled);
+                try {
+                    SetTrackingSidereal(initialTracking.TrackingEnabled);
+                } catch (Exception restorationFailure) {
+                    if (executionFailure != null) {
+                        Logger.Error(
+                            "TPPA drift validation also failed to restore the original tracking-enabled state; preserving the original diagnostic failure.",
+                            restorationFailure);
+                    } else {
+                        throw;
+                    }
+                }
             }
         }
 
