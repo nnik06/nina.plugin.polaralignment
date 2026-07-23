@@ -1055,6 +1055,36 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 telescopeInfo.TrackingRate.TrackingMode);
             var refraction = RefractionParameters.GetRefractionParameters(weatherDataMediator.GetInfo());
             var elevationMeters = profileService.ActiveProfile.AstrometrySettings.Elevation;
+            var preflightStartUtc = DateTime.UtcNow;
+            var plannedPointA = StartFromCurrentPosition
+                ? telescopeMediator.GetCurrentPosition()
+                : new TopocentricCoordinates(
+                    Coordinates.Coordinates.Azimuth,
+                    Coordinates.Coordinates.Altitude,
+                    Latitude,
+                    Longitude,
+                    elevationMeters,
+                    new FixedObservationDateTime(preflightStartUtc))
+                .Transform(
+                    Epoch.J2000,
+                    refraction.PressureHPa,
+                    refraction.Temperature,
+                    refraction.RelativeHumidity,
+                    refraction.Wavelength);
+            var preflight = TppaDriftArcPreflightFactory.Evaluate(
+                plannedPointA,
+                TargetDistance,
+                preflightStartUtc,
+                Latitude,
+                Longitude,
+                elevationMeters,
+                refraction,
+                destination => telescopeMediator.DestinationSideOfPier(destination));
+            if (!preflight.IsSafe) {
+                throw new InvalidOperationException(preflight.Reason);
+            }
+            Logger.Info($"TPPA drift-validation preflight passed: {preflight.Reason}.");
+
             Coordinates pointA = null;
             TppaDriftRuntimeObservation? pendingObservation = null;
             var arrivalIndex = 0;

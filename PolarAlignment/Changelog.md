@@ -1,5 +1,8 @@
 # Changelog
 
+## Version 2.2.6.19
+- Wired conservative drift-arc preflight into report-only runtime. Before any movement it predicts both possible RA-axis sign interpretations through A-B-C-A, covers each five-minute track's start and end altitude, and refuses either sub-floor altitude or a known pier-side change.
+
 ## Version 2.2.6.18
 - Added a pure fail-closed A-B-C-A drift-arc safety policy that rejects invalid position order, non-finite or sub-floor predicted altitude, and any known pier-side change before runtime movement wiring.
 
