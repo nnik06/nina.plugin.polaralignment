@@ -1,5 +1,8 @@
 # Changelog
 
+## Version 2.2.6.24
+- Added current-time safety preflight immediately before each B/C relative RA move and the absolute return to A. Every leg now rechecks the destination's full five-minute track against the 30-degree altitude floor and known destination-side continuity, preventing the initial preflight from becoming stale during long dwells.
+
 ## Version 2.2.6.23
 - Moved the rate-based RA-axis stop into a non-masking `finally` block. Success, timeout, cancellation, telemetry rejection, and unexpected exceptions now all attempt to send `MoveAxis(Primary, 0)` without replacing the original failure if the emergency stop command itself fails.
 

@@ -1128,6 +1128,21 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         case 1:
                         case 2:
                             var moveStart = telescopeMediator.GetCurrentPosition();
+                            var relativeLegPreflight = TppaDriftLegPreflightFactory.EvaluateRelative(
+                                moveStart,
+                                TargetDistance,
+                                DateTime.UtcNow,
+                                Latitude,
+                                Longitude,
+                                elevationMeters,
+                                refraction,
+                                destination => telescopeMediator.DestinationSideOfPier(destination));
+                            if (!relativeLegPreflight.IsSafe) {
+                                throw new InvalidOperationException(
+                                    $"TPPA drift-validation move to {positionId} rejected before actuation: {relativeLegPreflight.Reason}.");
+                            }
+                            Logger.Info(
+                                $"TPPA drift-validation current-time preflight for {positionId} passed: {relativeLegPreflight.Reason}.");
                             var startPierSide = telescopeMediator.DestinationSideOfPier(moveStart);
                             Logger.Info(
                                 $"Moving RA axis to drift-validation position {positionId}; distance={TargetDistance} deg, east={EastDirection}.");
@@ -1159,6 +1174,22 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                 throw new InvalidOperationException(
                                     "Drift-validation position A was not captured.");
                             }
+                            var returnStart = telescopeMediator.GetCurrentPosition();
+                            var returnPreflight = TppaDriftLegPreflightFactory.EvaluateAbsolute(
+                                returnStart,
+                                pointA,
+                                DateTime.UtcNow,
+                                Latitude,
+                                Longitude,
+                                elevationMeters,
+                                refraction,
+                                destination => telescopeMediator.DestinationSideOfPier(destination));
+                            if (!returnPreflight.IsSafe) {
+                                throw new InvalidOperationException(
+                                    $"TPPA drift-validation return to A rejected before slew: {returnPreflight.Reason}.");
+                            }
+                            Logger.Info(
+                                $"TPPA drift-validation current-time return preflight passed: {returnPreflight.Reason}.");
                             Logger.Info($"Returning to drift-validation position A {pointA}.");
                             SetTrackingSidereal(true);
                             await telescopeMediator.SlewToCoordinatesAsync(pointA, movementToken);
