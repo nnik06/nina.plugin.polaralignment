@@ -1,5 +1,8 @@
 # Changelog
 
+## Version 2.2.6.20
+- Added fail-closed post-move verification for report-only drift arcs. Each relative RA move must now reach the expected distance without excessive overshoot, unexpected declination travel, or a known destination-side change; movement timeout now aborts instead of silently continuing.
+
 ## Version 2.2.6.19
 - Wired conservative drift-arc preflight into report-only runtime. Before any movement it predicts both possible RA-axis sign interpretations through A-B-C-A, covers each five-minute track's start and end altitude, and refuses either sub-floor altitude or a known pier-side change.
 

@@ -1123,6 +1123,8 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                             break;
                         case 1:
                         case 2:
+                            var moveStart = telescopeMediator.GetCurrentPosition();
+                            var startPierSide = telescopeMediator.DestinationSideOfPier(moveStart);
                             Logger.Info(
                                 $"Moving RA axis to drift-validation position {positionId}; distance={TargetDistance} deg, east={EastDirection}.");
                             await MoveToNextPoint(
@@ -1131,6 +1133,22 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                 EastDirection,
                                 progress,
                                 movementToken);
+                            var moveEnd = telescopeMediator.GetCurrentPosition();
+                            var endPierSide = telescopeMediator.DestinationSideOfPier(moveEnd);
+                            var moveVerification = TppaDriftMoveVerificationPolicy.Evaluate(
+                                moveStart.RADegrees,
+                                moveEnd.RADegrees,
+                                moveStart.Dec,
+                                moveEnd.Dec,
+                                TargetDistance,
+                                startPierSide,
+                                endPierSide);
+                            if (!moveVerification.IsSafe) {
+                                throw new InvalidOperationException(
+                                    $"TPPA drift-validation move to {positionId} rejected: {moveVerification.Reason}.");
+                            }
+                            Logger.Info(
+                                $"TPPA drift-validation move to {positionId} verified: RA travel={moveVerification.RightAscensionTravelDegrees:F3} deg; DEC travel={moveVerification.DeclinationTravelDegrees:F3} deg; {moveVerification.Reason}.");
                             break;
                         case 3:
                             if (pointA == null) {
@@ -1660,11 +1678,12 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
 
                             progress?.Report(new ApplicationStatus() { Status = "Moving to next point", MaxProgress = (int)moveDistance, Progress = distance, ProgressType = ApplicationStatus.StatusProgressType.ValueOfMaxValue });
                         }
-                    } catch (OperationCanceledException ex) {
+                    } catch (OperationCanceledException) {
                         // Rethrow cancellation when parent token is cancelled
                         if (token.IsCancellationRequested) {
                             throw;
                         }
+                        throw new TimeoutException($"RA-axis movement did not reach {moveDistance:F3} deg within {timeToDestination.TotalSeconds:F1} seconds.");
                     }
                 }
 
@@ -1678,7 +1697,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 SetTrackingSidereal(true);
 
                 progress?.Report(new ApplicationStatus() { Status = string.Empty });
-            } catch (Exception ex) {
+            } catch (Exception) {
                 //Reset move rate in case of problems or early cancellation
                 telescopeMediator.MoveAxis(Core.Enum.TelescopeAxes.Primary, 0);
                 throw;
