@@ -724,9 +724,11 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
 
                     TPAPAVM.ActivateFourthStep();
 
-                    if (executionPolicy.AllowActuatorConnection && TPAPAVM.ActiveAlignmentSystemVM != null) {
+                    if (executionPolicy.ShouldConnectActuator(
+                        TPAPAVM.ActiveAlignmentSystemVM != null,
+                        TPAPAVM.ActiveAlignmentSystemVM?.DoAutomatedAdjustments == true)) {
                         await TPAPAVM.ActiveAlignmentSystemVM.Connect();
-                        if (TPAPAVM.ActiveAlignmentSystemVM.DoAutomatedAdjustments && !TPAPAVM.ActiveAlignmentSystemVM.Connected) {
+                        if (!TPAPAVM.ActiveAlignmentSystemVM.Connected) {
                             throw new SequenceEntityFailedException("Unable to connect to Polar Alignment system. Cancelling polar alignment routine as automated adjustments are impossible.");
                         }
                     }

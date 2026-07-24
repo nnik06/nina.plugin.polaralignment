@@ -36,6 +36,10 @@ namespace NINA.Plugins.PolarAlignment {
         public bool AllowActuatorMovement { get; }
         public bool DisconnectActuatorOnDispose { get; }
 
+        public bool ShouldConnectActuator(bool actuatorPresent, bool automatedAdjustmentsEnabled) {
+            return AllowActuatorConnection && actuatorPresent && automatedAdjustmentsEnabled;
+        }
+
         public static PolarAlignmentExecutionPolicy Create(bool verificationOnly, bool driftValidationOnly = false) {
             if (verificationOnly && driftValidationOnly) {
                 return new PolarAlignmentExecutionPolicy(false, false, false, false, false, false, false);

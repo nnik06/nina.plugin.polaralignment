@@ -32,6 +32,31 @@ namespace NINA.Plugins.PolarAlignment.Test {
             policy.DisconnectActuatorOnDispose.Should().BeTrue();
         }
 
+        [TestCase(false, false)]
+        [TestCase(false, true)]
+        [TestCase(true, false)]
+        public void NormalRunSkipsActuatorConnectionUnlessAutomatedAdjustmentsAreEnabled(
+            bool actuatorPresent,
+            bool automatedAdjustmentsEnabled) {
+            var policy = PolarAlignmentExecutionPolicy.Create(verificationOnly: false);
+
+            policy.ShouldConnectActuator(actuatorPresent, automatedAdjustmentsEnabled).Should().BeFalse();
+        }
+
+        [Test]
+        public void NormalRunConnectsPresentActuatorWhenAutomatedAdjustmentsAreEnabled() {
+            var policy = PolarAlignmentExecutionPolicy.Create(verificationOnly: false);
+
+            policy.ShouldConnectActuator(actuatorPresent: true, automatedAdjustmentsEnabled: true).Should().BeTrue();
+        }
+
+        [Test]
+        public void VerificationOnlyNeverConnectsActuatorEvenWhenAdjustmentsAreEnabled() {
+            var policy = PolarAlignmentExecutionPolicy.Create(verificationOnly: true);
+
+            policy.ShouldConnectActuator(actuatorPresent: true, automatedAdjustmentsEnabled: true).Should().BeFalse();
+        }
+
         [Test]
         public void VerificationOnlyRejectsManualModeWithClearValidationIssue() {
             var issues = PolarAlignmentExecutionPolicy.GetValidationIssues(
