@@ -1,3 +1,10 @@
+## Version 2.2.6.32
+
+- Serialize report-only diagnostics against every in-flight UPAS/OAPA serial operation with a bounded, process-wide handshake; deny new discovery and movement and drain active polling before measurements start.
+- Make actuator connection re-entrant-safe and bind each polling loop to its own controller instance and cancellation lifetime.
+- Hard-bound every guarded-launcher NINA REST call, including mount checks and emergency sequence stop, with a reusable HttpClient plus an independent task deadline.
+- Require PowerShell 7 for the guarded launcher and prevent a racing Disconnect from leaving stale connected UI state.
+
 # Changelog
 
 ## Version 2.2.6.31

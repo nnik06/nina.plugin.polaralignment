@@ -52,39 +52,106 @@ namespace NINA.Plugins.PolarAlignment {
         [NotifyCanExecuteChangedFor(nameof(MoveYCommand))]
         private bool isNotMoving;
 
+        private readonly object connectionSync = new();
+
         private CancellationTokenSource pollCts;
 
+        private Task connectTask;
+
+        private int connectionGeneration;
         [RelayCommand]
         public Task Connect() {
-            if (upa?.Connected == true) { return Task.CompletedTask; }
-            InvalidatePhysicalPositionConfirmation();
-            return Task.Run(async () => {
-                try {
-                    await Application.Current.Dispatcher.BeginInvoke(() => IsNotMoving = true);
-
-                    upa = CreateSystem();
-                    _ = StartPoll();
-                    Connected = true;
-                    Notification.ShowInformation($"Successfully connected to {SystemName}");
-                } catch (Exception ex) {
-                    Logger.Error(ex);
-                    Notification.ShowError($"Unable to connect to {SystemName}");
+            lock (connectionSync) {
+                if (upa?.Connected == true) { return Task.CompletedTask; }
+                if (connectTask?.IsCompleted == false) { return connectTask; }
+                if (!PolarAlignmentActuatorConnectionGate.TryBeginOperation(out var operationScope)) {
+                    Logger.Warning(
+                        $"Suppressing {SystemName} connection because a report-only polar-alignment diagnostic is active " +
+                        $"(suppression count {PolarAlignmentActuatorConnectionGate.SuppressionCount}).");
+                    return Task.CompletedTask;
                 }
-            });
+
+                InvalidatePhysicalPositionConfirmation();
+                var generation = ++connectionGeneration;
+                connectTask = Task.Run(async () => {
+                    using (operationScope) {
+                        IPolarAlignmentSystem createdSystem = null;
+                        try {
+                            await Application.Current.Dispatcher.BeginInvoke(() => IsNotMoving = true);
+                            createdSystem = CreateSystem();
+
+                            CancellationTokenSource newPollCts;
+                            lock (connectionSync) {
+                                if (generation != connectionGeneration) {
+                                    createdSystem.Dispose();
+                                    return;
+                                }
+                                pollCts?.Cancel();
+                                pollCts?.Dispose();
+                                upa = createdSystem;
+                                newPollCts = new CancellationTokenSource();
+                                pollCts = newPollCts;
+                            }
+
+                            _ = StartPoll(createdSystem, newPollCts.Token);
+                            lock (connectionSync) {
+                                if (generation != connectionGeneration ||
+                                    !ReferenceEquals(upa, createdSystem)) {
+                                    return;
+                                }
+                                Connected = true;
+                            }
+                            Notification.ShowInformation($"Successfully connected to {SystemName}");
+                        } catch (Exception ex) {
+                            lock (connectionSync) {
+                                if (ReferenceEquals(upa, createdSystem)) {
+                                    pollCts?.Cancel();
+                                    pollCts?.Dispose();
+                                    pollCts = null;
+                                    upa = null;
+                                }
+                            }
+                            createdSystem?.Dispose();
+                            Logger.Error(ex);
+                            Notification.ShowError($"Unable to connect to {SystemName}");
+                        }
+                    }
+                });
+                return connectTask;
+            }
         }
 
         [RelayCommand]
         public void Disconnect() {
             InvalidatePhysicalPositionConfirmation();
-            if (upa?.Connected != true) { return; }
+
+            IPolarAlignmentSystem disconnectedSystem;
+            CancellationTokenSource disconnectedPollCts;
+            lock (connectionSync) {
+                connectionGeneration++;
+                disconnectedSystem = upa;
+                upa = null;
+                disconnectedPollCts = pollCts;
+                pollCts = null;
+            }
+
             Connected = false;
             try {
-                pollCts?.Cancel();
-                upa.Dispose();
+                disconnectedPollCts?.Cancel();
+                disconnectedPollCts?.Dispose();
+                disconnectedSystem?.Dispose();
             } catch (Exception ex) {
                 Logger.Error(ex);
             }
             Notification.ShowInformation($"Disconnected from {SystemName}");
+        }
+
+        private IDisposable BeginActuatorSerialOperation(string action) {
+            if (PolarAlignmentActuatorConnectionGate.TryBeginOperation(out var operationScope)) {
+                return operationScope;
+            }
+            throw new InvalidOperationException(
+                $"{action} on {SystemName} is suppressed while a report-only polar-alignment diagnostic is active.");
         }
 
         protected virtual void InvalidatePhysicalPositionConfirmation() {
@@ -106,6 +173,7 @@ namespace NINA.Plugins.PolarAlignment {
 
         private async Task<bool> TryNudgeX(float position, CancellationToken token, bool applyBacklashCompensation) {
             try {
+                using var operationScope = BeginActuatorSerialOperation("Movement");
                 if (ReverseAzimuth) { position = position * -1; }
                 await Application.Current.Dispatcher.BeginInvoke(() => IsNotMoving = false);
 
@@ -138,6 +206,7 @@ namespace NINA.Plugins.PolarAlignment {
 
         public async Task<bool> TryNudgeY(float position, CancellationToken token) {
             try {
+                using var operationScope = BeginActuatorSerialOperation("Movement");
                 if (ReverseAltitude) { position = position * -1; }
                 await Application.Current.Dispatcher.BeginInvoke(() => IsNotMoving = false);
 
@@ -162,6 +231,7 @@ namespace NINA.Plugins.PolarAlignment {
         [RelayCommand(CanExecute = (nameof(IsNotMoving)))]
         public async Task MoveX(CancellationToken token) {
             try {
+                using var operationScope = BeginActuatorSerialOperation("Movement");
                 InvalidatePhysicalPositionConfirmation();
                 await Application.Current.Dispatcher.BeginInvoke(() => IsNotMoving = false);
 
@@ -196,6 +266,7 @@ namespace NINA.Plugins.PolarAlignment {
         [RelayCommand(CanExecute = (nameof(IsNotMoving)))]
         public async Task MoveY(CancellationToken token) {
             try {
+                using var operationScope = BeginActuatorSerialOperation("Movement");
                 InvalidatePhysicalPositionConfirmation();
                 await Application.Current.Dispatcher.BeginInvoke(() => IsNotMoving = false);
 
@@ -214,16 +285,18 @@ namespace NINA.Plugins.PolarAlignment {
             }
         }
 
-        private async Task StartPoll() {
-            pollCts = new CancellationTokenSource();
-            var token = pollCts.Token;
-            var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+        private async Task StartPoll(IPolarAlignmentSystem system, CancellationToken token) {
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
             try {
                 while (await timer.WaitForNextTickAsync(token).ConfigureAwait(false) && !token.IsCancellationRequested) {
-                    if (IsNotMoving) {
-                        await upa.RefreshStatus(token).ConfigureAwait(false);
+                    if (!ReferenceEquals(upa, system)) { return; }
+                    if (IsNotMoving &&
+                        PolarAlignmentActuatorConnectionGate.TryBeginOperation(out var operationScope)) {
+                        using (operationScope) {
+                            await system.RefreshStatus(token).ConfigureAwait(false);
+                            await Application.Current.Dispatcher.BeginInvoke(() => UpdatePositions(system));
+                        }
                     }
-                    await Application.Current.Dispatcher.BeginInvoke(UpdatePositions);
                 }
             } catch (OperationCanceledException) {
             } catch (Exception ex) {
@@ -231,10 +304,10 @@ namespace NINA.Plugins.PolarAlignment {
             }
         }
 
-        private void UpdatePositions() {
-            if (upa == null) { return; }
-            PositionX = upa.XPosition1;
-            PositionY = upa.YPosition1;
+        private void UpdatePositions(IPolarAlignmentSystem system) {
+            if (!ReferenceEquals(upa, system)) { return; }
+            PositionX = system.XPosition1;
+            PositionY = system.YPosition1;
         }
     }
 }

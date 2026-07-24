@@ -1,3 +1,4 @@
+#requires -Version 7.0
 param(
     [string]$BaseUrl = 'http://127.0.0.1:1888/v2/api',
     [Parameter(Mandatory = $true)]
@@ -36,8 +37,39 @@ function Write-RunLog([string]$Message) {
     Add-Content -LiteralPath $LogPath -Value ('{0:O} {1}' -f (Get-Date), $Message)
 }
 
+function New-NinaHttpClient {
+    $client = [Net.Http.HttpClient]::new()
+    $client.Timeout = [Threading.Timeout]::InfiniteTimeSpan
+    $client
+}
+
+$script:NinaHttpClient = New-NinaHttpClient
+
 function Invoke-Nina([string]$Path, [int]$TimeoutSeconds = 20) {
-    Invoke-RestMethod -Uri ($BaseUrl.TrimEnd('/') + $Path) -Method Get -TimeoutSec $TimeoutSeconds
+    $uri = $BaseUrl.TrimEnd('/') + $Path
+    $cts = [Threading.CancellationTokenSource]::new()
+    try {
+        $cts.CancelAfter([TimeSpan]::FromSeconds($TimeoutSeconds))
+        $requestTask = $script:NinaHttpClient.GetStringAsync($uri, $cts.Token)
+        $waitMilliseconds = [Math]::Max(1000, ($TimeoutSeconds + 1) * 1000)
+        $completed = [Threading.Tasks.Task]::WaitAny(
+            [Threading.Tasks.Task[]]@($requestTask),
+            $waitMilliseconds)
+        if ($completed -ne 0) {
+            $cts.Cancel()
+            $script:NinaHttpClient.Dispose()
+            $script:NinaHttpClient = New-NinaHttpClient
+            throw "NINA request $Path exceeded the independent $TimeoutSeconds-second watchdog."
+        }
+        $json = $requestTask.GetAwaiter().GetResult()
+        $json | ConvertFrom-Json
+    } catch [OperationCanceledException] {
+        $script:NinaHttpClient.Dispose()
+        $script:NinaHttpClient = New-NinaHttpClient
+        throw "NINA request $Path exceeded the independent $TimeoutSeconds-second watchdog."
+    } finally {
+        $cts.Dispose()
+    }
 }
 
 function Stop-NinaSequence {
@@ -165,7 +197,7 @@ $seenRunning = $false
 $guardArmed = $false
 try {
     while ((Get-Date) -lt $deadline) {
-        $state = Invoke-Nina -Path '/sequence/state'
+        $state = Invoke-Nina -Path '/sequence/state' -TimeoutSeconds 8
         $stateJson = $state.Response | ConvertTo-Json -Compress -Depth 20
         if ($stateJson -match '"Status":"RUNNING"') { $seenRunning = $true }
 

@@ -495,6 +495,11 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
         /// <returns></returns>
         public override async Task Execute(IProgress<ApplicationStatus> externalProgress, CancellationToken token) {
             var executionPolicy = PolarAlignmentExecutionPolicy.Create(VerificationOnly, DriftValidationOnly);
+            using var actuatorConnectionSuppression = executionPolicy.AllowActuatorConnection
+                ? null
+                : await PolarAlignmentActuatorConnectionGate.SuppressAsync(
+                    TimeSpan.FromSeconds(15),
+                    token).ConfigureAwait(false);
             try {
                 if (VerificationOnly && DriftValidationOnly) {
                     throw new InvalidOperationException(PolarAlignmentExecutionPolicy.ConflictingDiagnosticModesIssue);
