@@ -25,6 +25,12 @@
     <s:String x:Key="UpasAzimuthTravelLimitToolTip">Maximum cumulative automated UPAS azimuth X travel allowed for this TPPA run, in estimated marker degrees from the visually checked starting position.</s:String>
     <s:String x:Key="UpasAzimuthTravelConfirmToolTip">Confirms that you visually checked the UPAS azimuth marker and that the selected travel limit is safely available.</s:String>
     <s:String x:Key="UpasAzimuthDegreesPerUnitToolTip">Estimated physical UPAS azimuth marker degrees per logical X nudge unit. Default 0.025 means 30 units consumes about 0.75 degrees of travel budget.</s:String>
+    <s:String x:Key="UpasAltitudeTravelGuardToolTip">Enables a conservative physical-envelope guard for automated UPAS altitude Y movement. It uses the visually checked marker, never GRBL MPos.</s:String>
+    <s:String x:Key="UpasAltitudeStartToolTip">Physical altitude-marker position at visual confirmation. Factory center is 0 degrees.</s:String>
+    <s:String x:Key="UpasAltitudeMinimumToolTip">Lowest permitted physical altitude-marker position. Keep the default -5 degrees away from the -6 degree hard stop.</s:String>
+    <s:String x:Key="UpasAltitudeMaximumToolTip">Highest permitted physical altitude-marker position. Keep the default +5 degrees away from the +6 degree hard stop.</s:String>
+    <s:String x:Key="UpasAltitudeTravelConfirmToolTip">Confirms the physical ALT marker was visually checked after this UPAS connection. Reconnects and ALT scale/direction changes clear this confirmation.</s:String>
+    <s:String x:Key="UpasAltitudeDegreesPerUnitToolTip">Estimated physical ALT degrees per logical Y unit. With gear ratio 22 and about 0.001 degree per raw unit, use 0.022.</s:String>
 
     <DataTemplate x:Key="PolarAlignmentInstructionSettings">
         <StackPanel x:Name="PART_StackPanel" Orientation="Vertical">
@@ -317,6 +323,60 @@
                     Text="{Binding UniversalPolarAlignmentVM.AzimuthPreSeatUnits, UpdateSourceTrigger=LostFocus}"
                     ToolTip="{StaticResource UpasAzimuthPreSeatUnitsToolTip}"
                     Unit="steps" />
+            </WrapPanel>
+
+            <WrapPanel
+                Margin="0,5,0,0"
+                Orientation="Horizontal"
+                Visibility="{Binding ShowUpasRunSettings, Converter={StaticResource BooleanToVisibilityCollapsedConverter}}">
+                <TextBlock
+                    VerticalAlignment="Center"
+                    Text="UPAS ALT guard"
+                    ToolTip="{StaticResource UpasAltitudeTravelGuardToolTip}" />
+                <CheckBox
+                    Margin="5,0,10,0"
+                    VerticalAlignment="Center"
+                    IsChecked="{Binding UniversalPolarAlignmentVM.AltitudeTravelGuardEnabled, UpdateSourceTrigger=PropertyChanged}"
+                    ToolTip="{StaticResource UpasAltitudeTravelGuardToolTip}" />
+                <TextBlock VerticalAlignment="Center" Text="Start" ToolTip="{StaticResource UpasAltitudeStartToolTip}" />
+                <ninactrl:UnitTextBox
+                    MinWidth="48"
+                    Margin="5,0,10,0"
+                    Text="{Binding UniversalPolarAlignmentVM.AltitudeStartingPositionDegrees, UpdateSourceTrigger=LostFocus}"
+                    ToolTip="{StaticResource UpasAltitudeStartToolTip}"
+                    Unit="deg" />
+                <TextBlock VerticalAlignment="Center" Text="Min" ToolTip="{StaticResource UpasAltitudeMinimumToolTip}" />
+                <ninactrl:UnitTextBox
+                    MinWidth="48"
+                    Margin="5,0,10,0"
+                    Text="{Binding UniversalPolarAlignmentVM.AltitudeMinimumDegrees, UpdateSourceTrigger=LostFocus}"
+                    ToolTip="{StaticResource UpasAltitudeMinimumToolTip}"
+                    Unit="deg" />
+                <TextBlock VerticalAlignment="Center" Text="Max" ToolTip="{StaticResource UpasAltitudeMaximumToolTip}" />
+                <ninactrl:UnitTextBox
+                    MinWidth="48"
+                    Margin="5,0,10,0"
+                    Text="{Binding UniversalPolarAlignmentVM.AltitudeMaximumDegrees, UpdateSourceTrigger=LostFocus}"
+                    ToolTip="{StaticResource UpasAltitudeMaximumToolTip}"
+                    Unit="deg" />
+                <TextBlock
+                    VerticalAlignment="Center"
+                    Text="Marker checked"
+                    ToolTip="{StaticResource UpasAltitudeTravelConfirmToolTip}" />
+                <CheckBox
+                    Margin="5,0,10,0"
+                    VerticalAlignment="Center"
+                    IsChecked="{Binding UniversalPolarAlignmentVM.AltitudeTravelGuardConfirmed, UpdateSourceTrigger=PropertyChanged}"
+                    ToolTip="{StaticResource UpasAltitudeTravelConfirmToolTip}" />
+                <TextBlock
+                    VerticalAlignment="Center"
+                    Text="deg/Y"
+                    ToolTip="{StaticResource UpasAltitudeDegreesPerUnitToolTip}" />
+                <ninactrl:UnitTextBox
+                    MinWidth="48"
+                    Margin="5,0,0,0"
+                    Text="{Binding UniversalPolarAlignmentVM.AltitudeDegreesPerNudgeUnit, UpdateSourceTrigger=LostFocus}"
+                    ToolTip="{StaticResource UpasAltitudeDegreesPerUnitToolTip}" />
             </WrapPanel>
 
             <WrapPanel Margin="0,5,0,0" Orientation="Horizontal">

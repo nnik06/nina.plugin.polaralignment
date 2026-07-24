@@ -113,6 +113,24 @@
     <Setting Name="AvalonAzimuthDegreesPerNudgeUnit" Type="System.Double" Scope="User">
       <Value Profile="(Default)">0.025</Value>
     </Setting>
+    <Setting Name="AvalonAltitudeTravelGuardEnabled" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">False</Value>
+    </Setting>
+    <Setting Name="AvalonAltitudeTravelGuardConfirmed" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">False</Value>
+    </Setting>
+    <Setting Name="AvalonAltitudeStartingPositionDegrees" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">0</Value>
+    </Setting>
+    <Setting Name="AvalonAltitudeMinimumDegrees" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">-5</Value>
+    </Setting>
+    <Setting Name="AvalonAltitudeMaximumDegrees" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">5</Value>
+    </Setting>
+    <Setting Name="AvalonAltitudeDegreesPerNudgeUnit" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">0.022</Value>
+    </Setting>
     <Setting Name="AutoPause" Type="System.Boolean" Scope="User">
       <Value Profile="(Default)">False</Value>
     </Setting>

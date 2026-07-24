@@ -466,6 +466,78 @@ namespace NINA.Plugins.PolarAlignment.Properties {
                 this["AvalonAzimuthDegreesPerNudgeUnit"] = value;
             }
         }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("False")]
+        public bool AvalonAltitudeTravelGuardEnabled {
+            get {
+                return ((bool)(this["AvalonAltitudeTravelGuardEnabled"]));
+            }
+            set {
+                this["AvalonAltitudeTravelGuardEnabled"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("False")]
+        public bool AvalonAltitudeTravelGuardConfirmed {
+            get {
+                return ((bool)(this["AvalonAltitudeTravelGuardConfirmed"]));
+            }
+            set {
+                this["AvalonAltitudeTravelGuardConfirmed"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("0")]
+        public double AvalonAltitudeStartingPositionDegrees {
+            get {
+                return ((double)(this["AvalonAltitudeStartingPositionDegrees"]));
+            }
+            set {
+                this["AvalonAltitudeStartingPositionDegrees"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("-5")]
+        public double AvalonAltitudeMinimumDegrees {
+            get {
+                return ((double)(this["AvalonAltitudeMinimumDegrees"]));
+            }
+            set {
+                this["AvalonAltitudeMinimumDegrees"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("5")]
+        public double AvalonAltitudeMaximumDegrees {
+            get {
+                return ((double)(this["AvalonAltitudeMaximumDegrees"]));
+            }
+            set {
+                this["AvalonAltitudeMaximumDegrees"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("0.022")]
+        public double AvalonAltitudeDegreesPerNudgeUnit {
+            get {
+                return ((double)(this["AvalonAltitudeDegreesPerNudgeUnit"]));
+            }
+            set {
+                this["AvalonAltitudeDegreesPerNudgeUnit"] = value;
+            }
+        }
         
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]

@@ -129,6 +129,10 @@ namespace NINA.Plugins.PolarAlignment {
         private int? committedXDirection;
         private double committedXTravelSinceReversal;
         private double azimuthTravelUsedDegrees;
+        private bool altitudeTravelGuardInitialized;
+        private bool altitudeTravelGuardWasConfirmed;
+        private double altitudePossibleMinimumDegrees;
+        private double altitudePossibleMaximumDegrees;
         private bool xAcquisitionConfirmed;
         private int rejectedWorseningXDirectionMask;
         private int earlyXImprovementEvidenceCount;
@@ -147,6 +151,15 @@ namespace NINA.Plugins.PolarAlignment {
         public double AzimuthTravelLimitDegrees { get; set; }
         public double AzimuthDegreesPerXUnit { get; set; } = 0.025;
         public double AzimuthTravelUsedDegrees => azimuthTravelUsedDegrees;
+        public bool AltitudeTravelGuardEnabled { get; private set; }
+        public bool AltitudeTravelGuardConfirmed { get; private set; }
+        public double AltitudeStartingPositionDegrees { get; private set; }
+        public double AltitudeMinimumDegrees { get; private set; } = -5.0;
+        public double AltitudeMaximumDegrees { get; private set; } = 5.0;
+        public double AltitudeDegreesPerYUnit { get; private set; } = 0.022;
+        public int AltitudeCommandDirectionMultiplier { get; private set; } = 1;
+        public double AltitudePossibleMinimumDegrees => altitudePossibleMinimumDegrees;
+        public double AltitudePossibleMaximumDegrees => altitudePossibleMaximumDegrees;
 
         public int SampleCount => samples.Count;
 
@@ -223,6 +236,88 @@ namespace NINA.Plugins.PolarAlignment {
 
             azimuthDeltaPerXUnit = 0;
             return false;
+        }
+
+        public void ConfigureAltitudeTravelGuard(
+            bool enabled,
+            bool confirmed,
+            double startingPositionDegrees,
+            double minimumDegrees,
+            double maximumDegrees,
+            double degreesPerYUnit,
+            int commandDirectionMultiplier) {
+            var normalizedDirection = commandDirectionMultiplier < 0 ? -1 : 1;
+            var configurationChanged =
+                AltitudeStartingPositionDegrees != startingPositionDegrees
+                || AltitudeMinimumDegrees != minimumDegrees
+                || AltitudeMaximumDegrees != maximumDegrees
+                || AltitudeDegreesPerYUnit != degreesPerYUnit
+                || AltitudeCommandDirectionMultiplier != normalizedDirection;
+
+            AltitudeTravelGuardEnabled = enabled;
+            AltitudeTravelGuardConfirmed = confirmed;
+            AltitudeStartingPositionDegrees = startingPositionDegrees;
+            AltitudeMinimumDegrees = minimumDegrees;
+            AltitudeMaximumDegrees = maximumDegrees;
+            AltitudeDegreesPerYUnit = degreesPerYUnit;
+            AltitudeCommandDirectionMultiplier = normalizedDirection;
+
+            if (!enabled || !confirmed) {
+                altitudeTravelGuardInitialized = false;
+                altitudeTravelGuardWasConfirmed = confirmed;
+                return;
+            }
+
+            if (configurationChanged || !altitudeTravelGuardInitialized || !altitudeTravelGuardWasConfirmed) {
+                altitudePossibleMinimumDegrees = startingPositionDegrees;
+                altitudePossibleMaximumDegrees = startingPositionDegrees;
+                altitudeTravelGuardInitialized = true;
+                Logger.Info($"UPAS altitude travel guard initialized from visually confirmed ALT {Math.Round(startingPositionDegrees, 3)} deg; permitted range {Math.Round(minimumDegrees, 3)}..{Math.Round(maximumDegrees, 3)} deg; scale {Math.Round(degreesPerYUnit, 6)} deg/Y unit; command direction multiplier {normalizedDirection}.");
+            }
+
+            altitudeTravelGuardWasConfirmed = true;
+        }
+
+        public bool CanExecuteAltitudeTravel(double yMagnitude, out string reason) {
+            reason = null;
+            if (!UseUpasEngagementController || !AltitudeTravelGuardEnabled || Math.Abs(yMagnitude) <= 0) {
+                return true;
+            }
+
+            if (!AltitudeTravelGuardConfirmed || !altitudeTravelGuardInitialized) {
+                reason = "UPAS altitude travel guard is enabled, but the physical ALT marker confirmation is not checked.";
+                return false;
+            }
+
+            if (!double.IsFinite(AltitudeMinimumDegrees)
+                || !double.IsFinite(AltitudeMaximumDegrees)
+                || AltitudeMinimumDegrees >= AltitudeMaximumDegrees) {
+                reason = "UPAS altitude travel guard has an invalid physical range.";
+                return false;
+            }
+
+            if (!double.IsFinite(AltitudeStartingPositionDegrees)
+                || AltitudeStartingPositionDegrees < AltitudeMinimumDegrees
+                || AltitudeStartingPositionDegrees > AltitudeMaximumDegrees) {
+                reason = "UPAS altitude travel guard starting position is outside its physical range.";
+                return false;
+            }
+
+            var degreesPerUnit = Math.Abs(AltitudeDegreesPerYUnit);
+            if (!double.IsFinite(degreesPerUnit) || degreesPerUnit <= 0) {
+                reason = "UPAS altitude travel guard has an invalid degrees-per-Y-unit calibration.";
+                return false;
+            }
+
+            var physicalDelta = yMagnitude * degreesPerUnit * AltitudeCommandDirectionMultiplier;
+            var predictedMinimum = altitudePossibleMinimumDegrees + Math.Min(0, physicalDelta);
+            var predictedMaximum = altitudePossibleMaximumDegrees + Math.Max(0, physicalDelta);
+            if (predictedMinimum < AltitudeMinimumDegrees || predictedMaximum > AltitudeMaximumDegrees) {
+                reason = $"UPAS altitude travel guard refused Y {Math.Round(yMagnitude, 3)} because the conservative physical interval would become {Math.Round(predictedMinimum, 3)}..{Math.Round(predictedMaximum, 3)} deg outside {Math.Round(AltitudeMinimumDegrees, 3)}..{Math.Round(AltitudeMaximumDegrees, 3)} deg.";
+                return false;
+            }
+
+            return true;
         }
 
         public bool CanExecuteAzimuthTravel(double xMagnitude, out string reason) {
@@ -421,6 +516,10 @@ namespace NINA.Plugins.PolarAlignment {
                 pendingXReversalDirection = null;
             }
 
+            if (Math.Abs(plan.YMagnitude) > 0) {
+                NoteAltitudeTravelUsed(plan.YMagnitude, "automated correction");
+            }
+
             pendingPlan = new PendingPlan(plan, currentObservation);
         }
 
@@ -432,12 +531,18 @@ namespace NINA.Plugins.PolarAlignment {
         public void NoteFailedExecution(AutomatedAdjustmentPlan attemptedPlan) {
             pendingPlan = null;
 
-            if (attemptedPlan == null || Math.Abs(attemptedPlan.XMagnitude) <= 0) {
+            if (attemptedPlan == null) {
                 return;
             }
 
-            NoteAzimuthTravelUsed(attemptedPlan.XMagnitude, "failed automated correction (conservative)");
-            InvalidateXSeatingAndEngagementState(preserveLearnedDirection: true);
+            if (Math.Abs(attemptedPlan.XMagnitude) > 0) {
+                NoteAzimuthTravelUsed(attemptedPlan.XMagnitude, "failed automated correction (conservative)");
+                InvalidateXSeatingAndEngagementState(preserveLearnedDirection: true);
+            }
+
+            if (Math.Abs(attemptedPlan.YMagnitude) > 0) {
+                NoteAltitudeTravelUsed(attemptedPlan.YMagnitude, "failed automated correction (conservative)");
+            }
         }
 
         private void AddSample(ResponseSample sample) {
@@ -449,13 +554,19 @@ namespace NINA.Plugins.PolarAlignment {
 
         private AutomatedAdjustmentPlan ApplyAzimuthTravelGuard(AutomatedAdjustmentPlan plan) {
             plan = ApplyNearTargetXMoveLimit(plan);
-            if (plan == null || !plan.HasMovement || Math.Abs(plan.XMagnitude) <= 0) {
+            if (plan == null || !plan.HasMovement) {
                 return plan;
             }
 
-            return CanExecuteAzimuthTravel(plan.XMagnitude, out var reason)
-                ? plan
-                : AutomatedAdjustmentPlan.Skip(reason);
+            if (Math.Abs(plan.XMagnitude) > 0 && !CanExecuteAzimuthTravel(plan.XMagnitude, out var azimuthReason)) {
+                return AutomatedAdjustmentPlan.Skip(azimuthReason);
+            }
+
+            if (Math.Abs(plan.YMagnitude) > 0 && !CanExecuteAltitudeTravel(plan.YMagnitude, out var altitudeReason)) {
+                return AutomatedAdjustmentPlan.Skip(altitudeReason);
+            }
+
+            return plan;
         }
 
         private AutomatedAdjustmentPlan ApplyNearTargetXMoveLimit(AutomatedAdjustmentPlan plan) {
@@ -488,6 +599,21 @@ namespace NINA.Plugins.PolarAlignment {
             var used = Math.Abs(xMagnitude) * degreesPerUnit;
             azimuthTravelUsedDegrees += used;
             Logger.Info($"UPAS azimuth travel guard recorded {Math.Round(used, 3)} deg for {context}; cumulative {Math.Round(azimuthTravelUsedDegrees, 3)}/{Math.Round(Math.Abs(AzimuthTravelLimitDegrees), 3)} deg.");
+        }
+
+        private void NoteAltitudeTravelUsed(double yMagnitude, string context) {
+            if (!UseUpasEngagementController
+                || !AltitudeTravelGuardEnabled
+                || !AltitudeTravelGuardConfirmed
+                || !altitudeTravelGuardInitialized
+                || Math.Abs(yMagnitude) <= 0) {
+                return;
+            }
+
+            var physicalDelta = yMagnitude * Math.Abs(AltitudeDegreesPerYUnit) * AltitudeCommandDirectionMultiplier;
+            altitudePossibleMinimumDegrees += Math.Min(0, physicalDelta);
+            altitudePossibleMaximumDegrees += Math.Max(0, physicalDelta);
+            Logger.Info($"UPAS altitude travel guard recorded conservative physical delta {Math.Round(physicalDelta, 3)} deg for {context}; possible ALT interval {Math.Round(altitudePossibleMinimumDegrees, 3)}..{Math.Round(altitudePossibleMaximumDegrees, 3)} deg within {Math.Round(AltitudeMinimumDegrees, 3)}..{Math.Round(AltitudeMaximumDegrees, 3)} deg.");
         }
 
         private void IncrementProbeRejectionCount(AutomatedAdjustmentPlan plan) {

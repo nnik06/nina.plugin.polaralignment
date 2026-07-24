@@ -52,6 +52,9 @@ namespace NINA.Plugins.PolarAlignment.Avalon {
         public override float YGearRatio {
             get => Properties.Settings.Default.AvalonYGearRatio;
             set {
+                if (Properties.Settings.Default.AvalonYGearRatio != value) {
+                    InvalidateAltitudeTravelConfirmation();
+                }
                 if (value < 1) { value = 1; }
                 Properties.Settings.Default.AvalonYGearRatio = value;
                 if (upa != null) { upa.YGearRatio = value; }
@@ -85,6 +88,9 @@ namespace NINA.Plugins.PolarAlignment.Avalon {
         public override bool ReverseAltitude {
             get => Properties.Settings.Default.AvalonReverseAltitude;
             set {
+                if (Properties.Settings.Default.AvalonReverseAltitude != value) {
+                    InvalidateAltitudeTravelConfirmation();
+                }
                 Properties.Settings.Default.AvalonReverseAltitude = value;
                 CoreUtil.SaveSettings(Properties.Settings.Default);
                 RaisePropertyChanged();
@@ -152,6 +158,88 @@ namespace NINA.Plugins.PolarAlignment.Avalon {
                 CoreUtil.SaveSettings(Properties.Settings.Default);
                 RaisePropertyChanged();
             }
+        }
+
+        public bool AltitudeTravelGuardEnabled {
+            get => Properties.Settings.Default.AvalonAltitudeTravelGuardEnabled;
+            set {
+                Properties.Settings.Default.AvalonAltitudeTravelGuardEnabled = value;
+                CoreUtil.SaveSettings(Properties.Settings.Default);
+                RaisePropertyChanged();
+            }
+        }
+
+        public bool AltitudeTravelGuardConfirmed {
+            get => Properties.Settings.Default.AvalonAltitudeTravelGuardConfirmed;
+            set {
+                Properties.Settings.Default.AvalonAltitudeTravelGuardConfirmed = value;
+                CoreUtil.SaveSettings(Properties.Settings.Default);
+                RaisePropertyChanged();
+            }
+        }
+
+        public double AltitudeStartingPositionDegrees {
+            get => Properties.Settings.Default.AvalonAltitudeStartingPositionDegrees;
+            set {
+                if (Properties.Settings.Default.AvalonAltitudeStartingPositionDegrees != value) {
+                    InvalidateAltitudeTravelConfirmation();
+                }
+                Properties.Settings.Default.AvalonAltitudeStartingPositionDegrees = value;
+                CoreUtil.SaveSettings(Properties.Settings.Default);
+                RaisePropertyChanged();
+            }
+        }
+
+        public double AltitudeMinimumDegrees {
+            get => Properties.Settings.Default.AvalonAltitudeMinimumDegrees;
+            set {
+                if (Properties.Settings.Default.AvalonAltitudeMinimumDegrees != value) {
+                    InvalidateAltitudeTravelConfirmation();
+                }
+                Properties.Settings.Default.AvalonAltitudeMinimumDegrees = value;
+                CoreUtil.SaveSettings(Properties.Settings.Default);
+                RaisePropertyChanged();
+            }
+        }
+
+        public double AltitudeMaximumDegrees {
+            get => Properties.Settings.Default.AvalonAltitudeMaximumDegrees;
+            set {
+                if (Properties.Settings.Default.AvalonAltitudeMaximumDegrees != value) {
+                    InvalidateAltitudeTravelConfirmation();
+                }
+                Properties.Settings.Default.AvalonAltitudeMaximumDegrees = value;
+                CoreUtil.SaveSettings(Properties.Settings.Default);
+                RaisePropertyChanged();
+            }
+        }
+
+        public double AltitudeDegreesPerNudgeUnit {
+            get => Properties.Settings.Default.AvalonAltitudeDegreesPerNudgeUnit;
+            set {
+                var normalized = value <= 0 ? 0.022 : value;
+                if (Properties.Settings.Default.AvalonAltitudeDegreesPerNudgeUnit != normalized) {
+                    InvalidateAltitudeTravelConfirmation();
+                }
+                Properties.Settings.Default.AvalonAltitudeDegreesPerNudgeUnit = normalized;
+                CoreUtil.SaveSettings(Properties.Settings.Default);
+                RaisePropertyChanged();
+            }
+        }
+
+        protected override void InvalidatePhysicalPositionConfirmation() {
+            AzimuthTravelGuardConfirmed = false;
+            InvalidateAltitudeTravelConfirmation();
+        }
+
+        private void InvalidateAltitudeTravelConfirmation() {
+            if (!Properties.Settings.Default.AvalonAltitudeTravelGuardConfirmed) {
+                return;
+            }
+
+            Properties.Settings.Default.AvalonAltitudeTravelGuardConfirmed = false;
+            CoreUtil.SaveSettings(Properties.Settings.Default);
+            RaisePropertyChanged(nameof(AltitudeTravelGuardConfirmed));
         }
     }
 }

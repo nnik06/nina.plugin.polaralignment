@@ -57,6 +57,7 @@ namespace NINA.Plugins.PolarAlignment {
         [RelayCommand]
         public Task Connect() {
             if (upa?.Connected == true) { return Task.CompletedTask; }
+            InvalidatePhysicalPositionConfirmation();
             return Task.Run(async () => {
                 try {
                     await Application.Current.Dispatcher.BeginInvoke(() => IsNotMoving = true);
@@ -74,6 +75,7 @@ namespace NINA.Plugins.PolarAlignment {
 
         [RelayCommand]
         public void Disconnect() {
+            InvalidatePhysicalPositionConfirmation();
             if (upa?.Connected != true) { return; }
             Connected = false;
             try {
@@ -85,8 +87,12 @@ namespace NINA.Plugins.PolarAlignment {
             Notification.ShowInformation($"Disconnected from {SystemName}");
         }
 
+        protected virtual void InvalidatePhysicalPositionConfirmation() {
+        }
+
         [RelayCommand(CanExecute = (nameof(IsNotMoving)))]
         public async Task NudgeX(float position, CancellationToken token) {
+            InvalidatePhysicalPositionConfirmation();
             await TryNudgeX(position, token);
         }
 
@@ -126,6 +132,7 @@ namespace NINA.Plugins.PolarAlignment {
 
         [RelayCommand(CanExecute = (nameof(IsNotMoving)))]
         public async Task NudgeY(float position, CancellationToken token) {
+            InvalidatePhysicalPositionConfirmation();
             await TryNudgeY(position, token);
         }
 
@@ -155,6 +162,7 @@ namespace NINA.Plugins.PolarAlignment {
         [RelayCommand(CanExecute = (nameof(IsNotMoving)))]
         public async Task MoveX(CancellationToken token) {
             try {
+                InvalidatePhysicalPositionConfirmation();
                 await Application.Current.Dispatcher.BeginInvoke(() => IsNotMoving = false);
 
                 var target = TargetPositionX;
@@ -188,6 +196,7 @@ namespace NINA.Plugins.PolarAlignment {
         [RelayCommand(CanExecute = (nameof(IsNotMoving)))]
         public async Task MoveY(CancellationToken token) {
             try {
+                InvalidatePhysicalPositionConfirmation();
                 await Application.Current.Dispatcher.BeginInvoke(() => IsNotMoving = false);
 
                 var target = TargetPositionY;

@@ -302,6 +302,15 @@ namespace NINA.Plugins.PolarAlignment {
             automatedAdjustmentController.AzimuthTravelLimitDegrees = Properties.Settings.Default.AvalonAzimuthTravelLimitDegrees;
             automatedAdjustmentController.AzimuthDegreesPerXUnit = Properties.Settings.Default.AvalonAzimuthDegreesPerNudgeUnit;
 
+            automatedAdjustmentController.ConfigureAltitudeTravelGuard(
+                useUpasController && Properties.Settings.Default.AvalonAltitudeTravelGuardEnabled,
+                Properties.Settings.Default.AvalonAltitudeTravelGuardConfirmed,
+                Properties.Settings.Default.AvalonAltitudeStartingPositionDegrees,
+                Properties.Settings.Default.AvalonAltitudeMinimumDegrees,
+                Properties.Settings.Default.AvalonAltitudeMaximumDegrees,
+                Properties.Settings.Default.AvalonAltitudeDegreesPerNudgeUnit,
+                Properties.Settings.Default.AvalonReverseAltitude ? -1 : 1);
+
             if (!useUpasController) {
                 upasResponseMemorySeeded = false;
                 return;
@@ -379,7 +388,10 @@ namespace NINA.Plugins.PolarAlignment {
 
             if (Math.Abs(plan.XMagnitude) > 0) {
                 if (!await activeSystem.TryNudgeXForAutomation((float)plan.XMagnitude, token)) {
-                    automatedAdjustmentController.NoteFailedExecution(plan);
+                    automatedAdjustmentController.NoteFailedExecution(new AutomatedAdjustmentPlan(plan.XMagnitude,
+                                                                                                   0,
+                                                                                                   plan.IsProbe,
+                                                                                                   $"{plan.Reason} (failed X move)"));
                     return false;
                 }
                 executedX = plan.XMagnitude;
@@ -387,6 +399,10 @@ namespace NINA.Plugins.PolarAlignment {
 
             if (Math.Abs(plan.YMagnitude) > 0) {
                 if (!await activeSystem.TryNudgeY((float)plan.YMagnitude, token)) {
+                    automatedAdjustmentController.NoteFailedExecution(new AutomatedAdjustmentPlan(0,
+                                                                                                   plan.YMagnitude,
+                                                                                                   plan.IsProbe,
+                                                                                                   $"{plan.Reason} (failed Y move)"));
                     if (Math.Abs(executedX) > 0) {
                         automatedAdjustmentController.NoteSuccessfulExecution(new AutomatedAdjustmentPlan(executedX,
                                                                                                            0,
@@ -396,7 +412,6 @@ namespace NINA.Plugins.PolarAlignment {
                         return true;
                     }
 
-                    automatedAdjustmentController.NoteFailedExecution(plan);
                     return false;
                 }
                 executedY = plan.YMagnitude;

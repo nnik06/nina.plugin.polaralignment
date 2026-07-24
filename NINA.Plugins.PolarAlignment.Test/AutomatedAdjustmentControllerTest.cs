@@ -1132,5 +1132,81 @@ namespace NINA.Plugins.PolarAlignment.Test {
             controller.CanExecuteAzimuthTravel(11, out var reason).Should().BeFalse();
             reason.Should().Contain("travel guard refused");
         }
+
+        [Test]
+        public void AutomatedAdjustmentController_BlocksYMoveUntilPhysicalAltitudeMarkerIsConfirmed() {
+            var controller = new AutomatedAdjustmentController(useUpasEngagementController: true);
+            controller.ConfigureAltitudeTravelGuard(true, false, 0, -5, 5, 0.022, 1);
+
+            controller.CanExecuteAltitudeTravel(8, out var reason).Should().BeFalse();
+            reason.Should().Contain("physical ALT marker confirmation");
+        }
+
+        [Test]
+        public void AutomatedAdjustmentController_BlocksYMoveBeyondConservativeAltitudeEnvelope() {
+            var controller = new AutomatedAdjustmentController(useUpasEngagementController: true);
+            controller.ConfigureAltitudeTravelGuard(true, true, 4.9, -5, 5, 0.022, 1);
+
+            controller.CanExecuteAltitudeTravel(5, out var reason).Should().BeFalse();
+            reason.Should().Contain("outside");
+        }
+
+        [Test]
+        public void AutomatedAdjustmentController_AppliesAltitudeDirectionMultiplier() {
+            var controller = new AutomatedAdjustmentController(useUpasEngagementController: true);
+            controller.ConfigureAltitudeTravelGuard(true, true, 4.9, -5, 5, 0.022, -1);
+
+            controller.CanExecuteAltitudeTravel(5, out _).Should().BeTrue();
+            controller.CanExecuteAltitudeTravel(-5, out var reason).Should().BeFalse();
+            reason.Should().Contain("outside");
+        }
+
+        [Test]
+        public void AutomatedAdjustmentController_SuccessfulYMoveExpandsConservativeAltitudeInterval() {
+            var controller = new AutomatedAdjustmentController(useUpasEngagementController: true);
+            controller.ConfigureAltitudeTravelGuard(true, true, 0, -5, 5, 0.022, 1);
+            controller.UpdateObservation(0, 1);
+
+            controller.NoteSuccessfulExecution(new AutomatedAdjustmentPlan(0, 8, true, "test Y move"));
+
+            controller.AltitudePossibleMinimumDegrees.Should().BeApproximately(0, 0.0001);
+            controller.AltitudePossibleMaximumDegrees.Should().BeApproximately(0.176, 0.0001);
+        }
+
+        [Test]
+        public void AutomatedAdjustmentController_FailedYMoveStillExpandsConservativeAltitudeInterval() {
+            var controller = new AutomatedAdjustmentController(useUpasEngagementController: true);
+            controller.ConfigureAltitudeTravelGuard(true, true, 0, -5, 5, 0.022, 1);
+
+            controller.NoteFailedExecution(new AutomatedAdjustmentPlan(0, -8, true, "failed Y move"));
+
+            controller.AltitudePossibleMinimumDegrees.Should().BeApproximately(-0.176, 0.0001);
+            controller.AltitudePossibleMaximumDegrees.Should().BeApproximately(0, 0.0001);
+        }
+
+        [Test]
+        public void AutomatedAdjustmentController_ReversalWidensRatherThanRewindsAltitudeInterval() {
+            var controller = new AutomatedAdjustmentController(useUpasEngagementController: true);
+            controller.ConfigureAltitudeTravelGuard(true, true, 0, -5, 5, 0.022, 1);
+            controller.UpdateObservation(0, 1);
+
+            controller.NoteSuccessfulExecution(new AutomatedAdjustmentPlan(0, 8, true, "positive Y move"));
+            controller.NoteSuccessfulExecution(new AutomatedAdjustmentPlan(0, -8, true, "negative Y move"));
+
+            controller.AltitudePossibleMinimumDegrees.Should().BeApproximately(-0.176, 0.0001);
+            controller.AltitudePossibleMaximumDegrees.Should().BeApproximately(0.176, 0.0001);
+        }
+
+        [Test]
+        public void AutomatedAdjustmentController_RepeatedIdenticalConfigurationPreservesAltitudeInterval() {
+            var controller = new AutomatedAdjustmentController(useUpasEngagementController: true);
+            controller.ConfigureAltitudeTravelGuard(true, true, 0, -5, 5, 0.022, 1);
+            controller.UpdateObservation(0, 1);
+            controller.NoteSuccessfulExecution(new AutomatedAdjustmentPlan(0, 8, true, "Y move"));
+
+            controller.ConfigureAltitudeTravelGuard(true, true, 0, -5, 5, 0.022, 1);
+
+            controller.AltitudePossibleMaximumDegrees.Should().BeApproximately(0.176, 0.0001);
+        }
     }
 }
