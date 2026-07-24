@@ -689,6 +689,11 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     var activeTarget = correctForRefraction ? "true celestial pole" : "refracted apparent pole";
 
                     Logger.Info($"TPPA fresh 3-point calculated error: Az: {determination.InitialMountAxisAzimuthError}, Alt: {determination.InitialMountAxisAltitudeError}, Tot: {determination.InitialMountAxisTotalError}");
+                    var freshVector = TppaPolarErrorVector.FromMinutes(
+                        determination.InitialMountAxisAzimuthError.ArcMinutes,
+                        determination.InitialMountAxisAltitudeError.ArcMinutes,
+                        determination.InitialMountAxisTotalError.ArcMinutes);
+                    Logger.Info($"TPPA fresh 3-point vector diagnostic: {freshVector.ToLogString()}.");
                     Logger.Info($"TPPA fresh 3-point active target diagnostic: {activeTarget}.");
 
                     try {
@@ -1528,6 +1533,19 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             var verificationAzimuthMinutes = verificationDetermination.InitialMountAxisAzimuthError.ArcMinutes;
             var verificationAltitudeMinutes = verificationDetermination.InitialMountAxisAltitudeError.ArcMinutes;
             var verificationTotalMinutes = verificationDetermination.InitialMountAxisTotalError.ArcMinutes;
+            var initialVector = TppaPolarErrorVector.FromMinutes(
+                initialAzimuthMinutes, initialAltitudeMinutes, initialTotalMinutes);
+            var reciprocalVector = TppaPolarErrorVector.FromMinutes(
+                reciprocalAzimuthMinutes, reciprocalAltitudeMinutes, reciprocalTotalMinutes);
+            var verificationVector = TppaPolarErrorVector.FromMinutes(
+                verificationAzimuthMinutes, verificationAltitudeMinutes, verificationTotalMinutes);
+            var repeatedForwardPhaseDelta = TppaPolarErrorVector.CircularDistanceDegrees(
+                initialVector.PhaseDegrees,
+                verificationVector.PhaseDegrees);
+            Logger.Info($"TPPA verification-only initial vector diagnostic: {initialVector.ToLogString()}.");
+            Logger.Info($"TPPA verification-only reciprocal vector diagnostic: {reciprocalVector.ToLogString()}.");
+            Logger.Info($"TPPA verification-only repeated-forward vector diagnostic: {verificationVector.ToLogString()}.");
+            Logger.Info($"TPPA verification-only repeated-forward phase delta: {repeatedForwardPhaseDelta:F3} deg.");
             var verificationAgreement = FreshPolarAlignmentAgreementPolicy.Evaluate(
                 initialAzimuthMinutes,
                 initialAltitudeMinutes,
