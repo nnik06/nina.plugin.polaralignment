@@ -197,8 +197,10 @@ $seenRunning = $false
 $guardArmed = $false
 try {
     while ((Get-Date) -lt $deadline) {
-        $state = Invoke-Nina -Path '/sequence/state' -TimeoutSeconds 8
-        $stateJson = $state.Response | ConvertTo-Json -Compress -Depth 20
+        # The state route embeds large sequence payloads and can block for minutes.
+        # The json route contains the same status tree without image-heavy state.
+        $state = Invoke-Nina -Path '/sequence/json' -TimeoutSeconds 8
+        $stateJson = $state.Response | ConvertTo-Json -Compress -Depth 10
         if ($stateJson -match '"Status":"RUNNING"') { $seenRunning = $true }
 
         $mountResponse = Invoke-Nina -Path '/equipment/mount/info'

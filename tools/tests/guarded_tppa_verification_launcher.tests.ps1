@@ -31,6 +31,12 @@ Describe 'guarded TPPA verification launcher static safety contract' {
         $text.Contains('MaximumRuntimeSeconds') | Should Be $true
         $text.Contains('$deadline') | Should Be $true
     }
+
+    It 'polls the compact sequence status endpoint' {
+        $text.Contains("Invoke-Nina -Path '/sequence/json'") | Should Be $true
+        $text.Contains("Invoke-Nina -Path '/sequence/state'") | Should Be $false
+        $text.Contains('without image-heavy state') | Should Be $true
+    }
 }
 
 Describe 'guarded TPPA verification launcher preflight' {
@@ -43,7 +49,7 @@ Describe 'guarded TPPA verification launcher preflight' {
 
     It 'parses horizontal degrees minutes and seconds structurally' {
         $sequence = Join-Path $TestDrive 'verification.json'
-        '{"Items":{"$values":[{"VerificationOnly":true,"Coordinates":{"AzDegrees":315,"AzMinutes":30,"AzSeconds":0,"AltDegrees":30,"AltMinutes":15,"AltSeconds":0}}]}}' | Set-Content -LiteralPath $sequence
+        '{"Items":{"$values":[{"VerificationOnly":true,"MountMotionEnvelopeEnabled":true,"MountMotionMinimumAltitudeDegrees":25,"MountMotionMaximumAltitudeDegrees":55,"MountMotionAzimuthStartDegrees":270,"MountMotionAzimuthEndDegrees":10,"Coordinates":{"AzDegrees":315,"AzMinutes":30,"AzSeconds":0,"AltDegrees":30,"AltMinutes":15,"AltSeconds":0}}]}}' | Set-Content -LiteralPath $sequence
         $result = & $scriptPath -SequencePath $sequence -PluginDirectory $plugin -ExpectedPluginSha256 $pluginHash -PreflightOnly
         $result.TargetAzimuthDegrees | Should Be 315.5
         $result.TargetAltitudeDegrees | Should Be 30.25
@@ -51,7 +57,7 @@ Describe 'guarded TPPA verification launcher preflight' {
 
     It 'rejects a target without altitude margin' {
         $sequence = Join-Path $TestDrive 'edge.json'
-        '{"VerificationOnly":true,"Coordinates":{"AzDegrees":315,"AzMinutes":0,"AzSeconds":0,"AltDegrees":25,"AltMinutes":0,"AltSeconds":0}}' | Set-Content -LiteralPath $sequence
+        '{"VerificationOnly":true,"MountMotionEnvelopeEnabled":true,"MountMotionMinimumAltitudeDegrees":25,"MountMotionMaximumAltitudeDegrees":55,"MountMotionAzimuthStartDegrees":270,"MountMotionAzimuthEndDegrees":10,"Coordinates":{"AzDegrees":315,"AzMinutes":0,"AzSeconds":0,"AltDegrees":25,"AltMinutes":0,"AltSeconds":0}}' | Set-Content -LiteralPath $sequence
         $threw = $false
         try { & $scriptPath -SequencePath $sequence -PluginDirectory $plugin -ExpectedPluginSha256 $pluginHash -PreflightOnly } catch { $threw = $true }
         $threw | Should Be $true

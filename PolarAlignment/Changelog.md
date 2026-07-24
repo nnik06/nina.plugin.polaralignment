@@ -4,6 +4,7 @@
 - Make actuator connection re-entrant-safe and bind each polling loop to its own controller instance and cancellation lifetime.
 - Hard-bound every guarded-launcher NINA REST call, including mount checks and emergency sequence stop, with a reusable HttpClient plus an independent task deadline.
 - Require PowerShell 7 for the guarded launcher and prevent a racing Disconnect from leaving stale connected UI state.
+- Poll the compact Advanced API sequence JSON route during guarded runs, avoiding the image-heavy state payload that can block for minutes.
 
 # Changelog
 
