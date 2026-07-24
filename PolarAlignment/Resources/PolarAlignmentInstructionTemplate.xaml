@@ -40,7 +40,7 @@
                 <TextBlock
                     Margin="5,0,0,0"
                     VerticalAlignment="Center"
-                    Text="Measure Point Distance" />
+                    Text="Per-leg Point Distance" />
                 <ninactrl:UnitTextBox
                     MinWidth="40"
                     Margin="5,0,0,0"

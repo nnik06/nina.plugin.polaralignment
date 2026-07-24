@@ -6,7 +6,8 @@ param(
     [string]$PluginDirectory,
     [Parameter(Mandatory = $true)]
     [ValidatePattern('^[0-9A-Fa-f]{64}$')]
-    [string]$ExpectedPluginSha256,    [ValidateRange(270.0, 359.9)]
+    [string]$ExpectedPluginSha256,
+    [ValidateRange(270.0, 359.9)]
     [double]$WesternAzimuthMinimumDegrees = 270.0,
     [ValidateRange(0.0, 20.0)]
     [double]$EasternAzimuthMaximumDegrees = 10.0,
@@ -95,6 +96,26 @@ if ($verificationInstruction.PSObject.Properties['PreSeatAzimuthBeforeMeasuremen
     [bool]$verificationInstruction.PreSeatAzimuthBeforeMeasurement) {
     throw 'Azimuth pre-seat must be disabled for verification-only diagnostics.'
 }
+$requiredEnvelope = [ordered]@{
+    MountMotionMinimumAltitudeDegrees = $MinimumAltitudeDegrees
+    MountMotionMaximumAltitudeDegrees = $MaximumAltitudeDegrees
+    MountMotionAzimuthStartDegrees = $WesternAzimuthMinimumDegrees
+    MountMotionAzimuthEndDegrees = $EasternAzimuthMaximumDegrees
+}
+if (-not $verificationInstruction.PSObject.Properties['MountMotionEnvelopeEnabled'] -or
+    -not [bool]$verificationInstruction.MountMotionEnvelopeEnabled) {
+    throw 'The verification sequence must explicitly enable its mount-motion envelope.'
+}
+foreach ($entry in $requiredEnvelope.GetEnumerator()) {
+    $property = $verificationInstruction.PSObject.Properties[$entry.Key]
+    if (-not $property) {
+        throw "The verification sequence is missing required envelope field $($entry.Key)."
+    }
+    if ([Math]::Abs([double]$property.Value - [double]$entry.Value) -gt 0.001) {
+        throw "Envelope field $($entry.Key)=$($property.Value) does not match required guard value $($entry.Value)."
+    }
+}
+
 
 $coordinates = $verificationInstruction.Coordinates
 if ($null -eq $coordinates -or

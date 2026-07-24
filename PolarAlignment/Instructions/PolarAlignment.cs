@@ -1612,6 +1612,11 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             solves[2] = await AutomatedNextPoint(progress, token, eastDirection);
             RecordVerificationOnlyPoint(2);
 
+            var firstObservationUtc = solves[0].Coordinates.DateTime.UtcNow;
+            var finalObservationUtc = solves[2].Coordinates.DateTime.UtcNow;
+            Logger.Info($"TPPA verification-only arc timing: direction={(eastDirection ? "East" : "West")}; " +
+                        $"point1Utc={firstObservationUtc:O}; point3Utc={finalObservationUtc:O}; " +
+                        $"spanSeconds={(finalObservationUtc - firstObservationUtc).TotalSeconds:F3}; exposureSeconds={ExposureTime:F3}.");
             var decSpread = Angle.Zero;
             if (mountConnected.All(connected => connected)) {
                 decSpread = Angle.ByDegree(mountDeclinations.Max() - mountDeclinations.Min());
@@ -1643,7 +1648,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 var mountInfoSuffix = mountInfo.Connected
                     ? $" - Mount RA: {mountInfo.RightAscensionString}; Mount Dec: {mountInfo.DeclinationString}"
                     : string.Empty;
-                Logger.Info($"Verification-only measurement point {index + 1} {solves[index].Coordinates} - Vector: {positions[index].Vector} - Position Angle: {positions[index].PositionAngle}{mountInfoSuffix}");
+                Logger.Info($"TPPA verification-only point telemetry: direction={(eastDirection ? "East" : "West")}; point={index + 1}; observationUtc={solves[index].Coordinates.DateTime.UtcNow:O}; mountAz={mountInfo.Azimuth:F6}; mountAlt={mountInfo.Altitude:F6}; solveRa={solves[index].Coordinates.RADegrees:F9}; solveDec={solves[index].Coordinates.Dec:F9}; vector={positions[index].Vector}; positionAngle={positions[index].PositionAngle}{mountInfoSuffix}");
             }
         }
 

@@ -21,7 +21,7 @@
     <coreconverters:BooleanToVisibilityHiddenConverter x:Key="BooleanToVisibilityHiddenConverter" />
     <s:String x:Key="DefaultMoveRateToolTip">Default RA-axis rate TPPA requests when it moves the mount between the first three measurement points in automatic mode.</s:String>
     <s:String x:Key="DefaultEastDirectionToolTip">Controls whether the initial automatic RA sweep is sent in the eastward direction.</s:String>
-    <s:String x:Key="DefaultTargetDistanceToolTip">Default angular separation between the TPPA measurement points during the initial RA-only sweep. Larger values make the mount move farther between the first, second, and third solve.</s:String>
+    <s:String x:Key="DefaultTargetDistanceToolTip">Default angular separation for each RA-axis leg between adjacent TPPA measurement points. A three-point sweep makes two legs, so its end-to-end span is approximately twice this value.</s:String>
     <s:String x:Key="DefaultSearchRadiusToolTip">Initial plate-solve search radius, in degrees, used by TPPA. The setting is clamped to the range 30 to 180.</s:String>
     <s:String x:Key="MoveTimeoutFactorToolTip">Multiplier applied to the computed automatic RA-move timeout. TPPA calculates the timeout as move distance divided by move rate, then multiplies by this factor.</s:String>
     <s:String x:Key="DefaultAzimuthOffsetToolTip">Default azimuth offset used when TPPA creates start coordinates instead of starting from the current position. In the southern hemisphere TPPA applies this offset relative to 180 degrees.</s:String>

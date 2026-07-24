@@ -1,5 +1,10 @@
 # Changelog
 
+## Version 2.2.6.31
+- Added structured verification-point telemetry with exposure-midpoint UTC, mount azimuth/altitude, solved RA/Dec, traversal direction, and per-arc observation span.
+- Clarified that the configured TPPA point distance applies to each of the two RA-axis legs in a three-point sweep.
+- Hardened the guarded verification runner to require an explicitly enabled mount-motion envelope matching the requested balcony limits.
+
 ## Version 2.2.6.28
 - Added a configurable mount-motion safety envelope that rejects TPPA arcs outside the known balcony azimuth/altitude opening.
 - Added robust multi-run measurement-set evaluation using per-axis and total-error median/MAD gates.
