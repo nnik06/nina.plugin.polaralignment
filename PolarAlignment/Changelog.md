@@ -1,5 +1,12 @@
 # Changelog
 
+## Version 2.2.6.28
+- Added a configurable mount-motion safety envelope that rejects TPPA arcs outside the known balcony azimuth/altitude opening.
+- Added robust multi-run measurement-set evaluation using per-axis and total-error median/MAD gates.
+- Exposed the mount-motion envelope controls in plugin settings.
+- Added structured polar-error vector and phase diagnostics for fresh, reciprocal, and repeated-forward determinations.
+- Added fail-closed same-arc cross-block consistency evaluation with independent component, magnitude, and circular phase thresholds.
+
 ## Version 2.2.6.27
 - Made a rejected report-only drift estimate a hard sequence failure. Invalid geometry, track quality, global fit, uncertainty, stationarity, or repeated-position results can no longer display a rejection and then let the sequence item complete successfully.
 
