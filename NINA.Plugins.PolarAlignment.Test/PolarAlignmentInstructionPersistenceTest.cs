@@ -17,11 +17,13 @@ namespace NINA.Plugins.PolarAlignment.Test {
             var instruction = CreateInstruction();
             instruction.VerificationOnly = true;
             instruction.AlignmentTolerance = 3.5;
+            instruction.VerificationPointSettleTimeSeconds = 10.0;
 
             var clone = (Instructions.PolarAlignment)instruction.Clone();
 
             clone.VerificationOnly.Should().BeTrue();
             clone.AlignmentTolerance.Should().Be(3.5);
+            clone.VerificationPointSettleTimeSeconds.Should().Be(10.0);
         }
 
         [Test]
@@ -29,6 +31,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
             var instruction = CreateInstruction();
             instruction.VerificationOnly = true;
             instruction.AlignmentTolerance = 4.5;
+            instruction.VerificationPointSettleTimeSeconds = 10.0;
 
             var json = JsonConvert.SerializeObject(instruction);
             var serialized = JObject.Parse(json);
@@ -37,7 +40,10 @@ namespace NINA.Plugins.PolarAlignment.Test {
 
             serialized[nameof(Instructions.PolarAlignment.VerificationOnly)]!.Value<bool>().Should().BeTrue();
             restored.VerificationOnly.Should().BeTrue();
+            serialized[nameof(Instructions.PolarAlignment.VerificationPointSettleTimeSeconds)]!
+                .Value<double>().Should().Be(10.0);
             restored.AlignmentTolerance.Should().Be(4.5);
+            restored.VerificationPointSettleTimeSeconds.Should().Be(10.0);
         }
 
         [Test]

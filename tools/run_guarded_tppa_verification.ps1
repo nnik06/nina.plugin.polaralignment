@@ -113,6 +113,57 @@ function Find-VerificationInstruction([object]$Node) {
     return $null
 }
 
+function Find-SequenceInstructionNodes([object]$Node) {
+    if ($null -eq $Node -or $Node -is [string]) { return }
+    $typeProperty = $Node.PSObject.Properties['$type']
+    $typeName = if ($typeProperty) { [string]$typeProperty.Value } else { '' }
+    if ($typeName -notmatch '^System\.Collections\.' -and $typeName -match '\.Instructions\.|\.SequenceItem\.') {
+        Write-Output -NoEnumerate $Node
+        return
+    }
+    if ($Node -is [Collections.IEnumerable]) {
+        foreach ($item in $Node) {
+            Find-SequenceInstructionNodes $item
+        }
+        return
+    }
+    foreach ($property in $Node.PSObject.Properties) {
+        Find-SequenceInstructionNodes $property.Value
+    }
+}
+
+function Find-SequenceHazardNodes([object]$Node) {
+    if ($null -eq $Node -or $Node -is [string]) { return }
+    $typeProperty = $Node.PSObject.Properties['$type']
+    $typeName = if ($typeProperty) { [string]$typeProperty.Value } else { '' }
+    if ($typeName -notmatch '^System\.Collections\.' -and $typeName -match '\.Triggers?\.|\.Conditions?\.') {
+        Write-Output -NoEnumerate $Node
+        return
+    }
+    if ($Node -is [Collections.IEnumerable]) {
+        foreach ($item in $Node) { Find-SequenceHazardNodes $item }
+        return
+    }
+    foreach ($property in $Node.PSObject.Properties) {
+        Find-SequenceHazardNodes $property.Value
+    }
+}
+
+function Find-CompactSequenceLeafNodes([object]$Node) {
+    if ($null -eq $Node -or $Node -is [string]) { return }
+    if ($Node -is [Collections.IEnumerable]) {
+        foreach ($item in $Node) { Find-CompactSequenceLeafNodes $item }
+        return
+    }
+    $itemsProperty = $Node.PSObject.Properties['Items']
+    if ($itemsProperty) {
+        foreach ($item in @($itemsProperty.Value)) { Find-CompactSequenceLeafNodes $item }
+        return
+    }
+    if ($Node.PSObject.Properties['Status']) {
+        Write-Output -NoEnumerate $Node
+    }
+}
 function ConvertFrom-DegreesMinutesSeconds([double]$Degrees, [double]$Minutes, [double]$Seconds) {
     $sign = if ($Degrees -lt 0 -or $Minutes -lt 0 -or $Seconds -lt 0) { -1.0 } else { 1.0 }
     $sign * ([Math]::Abs($Degrees) + [Math]::Abs($Minutes) / 60.0 + [Math]::Abs($Seconds) / 3600.0)
@@ -121,6 +172,18 @@ $resolvedSequence = (Resolve-Path -LiteralPath $SequencePath).Path
 $sequenceJson = [IO.File]::ReadAllText($resolvedSequence)
 $sequenceDocument = $sequenceJson | ConvertFrom-Json
 $verificationInstruction = Find-VerificationInstruction $sequenceDocument
+$instructionNodes = @(Find-SequenceInstructionNodes $sequenceDocument)
+if ($instructionNodes.Count -ne 1) {
+    throw "The guarded sequence must contain exactly one executable instruction; found $($instructionNodes.Count)."
+}
+$hazardNodes = @(Find-SequenceHazardNodes $sequenceDocument)
+if ($hazardNodes.Count -ne 0) {
+    throw "The guarded sequence must not contain triggers or conditions; found $($hazardNodes.Count)."
+}
+$instructionType = [string]$instructionNodes[0].'$type'
+if ($instructionType -notmatch '^NINA\.Plugins\.PolarAlignment\.Instructions\.PolarAlignment,') {
+    throw "The guarded sequence contains an unexpected instruction type: $instructionType"
+}
 if ($null -eq $verificationInstruction) {
     throw 'The selected sequence is not VerificationOnly.'
 }
@@ -187,12 +250,27 @@ $sequenceName = [IO.Path]::GetFileNameWithoutExtension($resolvedSequence)
 Write-RunLog "Loading guarded verification sequence $sequenceName at Az=$targetAzimuth Alt=$targetAltitude"
 $load = Invoke-Nina -Path ('/sequence/load?sequenceName=' + [uri]::EscapeDataString($sequenceName))
 if (-not $load.Success) { throw "Sequence load failed: $($load.Error)" }
+$preStartMount = Invoke-Nina -Path '/equipment/mount/info'
+if (-not $preStartMount.Success -or -not $preStartMount.Response.Connected) {
+    throw 'A connected mount is required before starting guarded verification.'
+}
+if (-not $preStartMount.Response.PSObject.Properties['AtPark'] -or
+    -not $preStartMount.Response.PSObject.Properties['Slewing']) {
+    throw 'Guarded verification requires explicit parked and slewing mount state.'
+}
+if ([bool]$preStartMount.Response.AtPark) {
+    throw 'Guarded verification will not start while the mount is parked.'
+}
+if ([bool]$preStartMount.Response.Slewing) {
+    throw 'Guarded verification will not start while the mount is already slewing.'
+}
 
 $start = Invoke-Nina -Path '/sequence/start?skipValidation=true'
 if (-not $start.Success) { throw "Sequence start failed: $($start.Error)" }
 Write-RunLog 'Verification-only sequence started.'
 
 $deadline = (Get-Date).AddSeconds($MaximumRuntimeSeconds)
+$armDeadline = (Get-Date).AddSeconds([Math]::Min(120, $MaximumRuntimeSeconds))
 $seenRunning = $false
 $guardArmed = $false
 try {
@@ -200,8 +278,17 @@ try {
         # The state route embeds large sequence payloads and can block for minutes.
         # The json route contains the same status tree without image-heavy state.
         $state = Invoke-Nina -Path '/sequence/json' -TimeoutSeconds 8
-        $stateJson = $state.Response | ConvertTo-Json -Compress -Depth 10
-        if ($stateJson -match '"Status":"RUNNING"') { $seenRunning = $true }
+        if (-not $state.Success) {
+            throw "Compact sequence status is unavailable: $($state.Error)"
+        }
+        $instructionStates = @(Find-CompactSequenceLeafNodes $state.Response)
+        if ($instructionStates.Count -ne 1) {
+            throw "Compact sequence status must contain exactly one instruction; found $($instructionStates.Count)."
+        }
+        $instructionStatus = ([string]$instructionStates[0].Status).ToUpperInvariant()
+        $isRunning = $instructionStatus -eq 'RUNNING'
+        $isFailed = $instructionStatus -eq 'FAILED'
+        if ($isRunning) { $seenRunning = $true }
 
         $mountResponse = Invoke-Nina -Path '/equipment/mount/info'
         if (-not $mountResponse.Success -or -not $mountResponse.Response.Connected) {
@@ -223,9 +310,21 @@ try {
                 throw "Balcony guard violated at a settled pointing: Az=$azimuth Alt=$altitude."
             }
         }
+        if (-not $guardArmed -and (Get-Date) -ge $armDeadline) {
+            throw 'Balcony guard did not arm at the validated target within 120 seconds.'
+        }
 
-        if ($seenRunning -and $stateJson -notmatch '"Status":"RUNNING"') {
-            Write-RunLog 'Verification-only sequence completed.'
+        if ($seenRunning -and -not $isRunning) {
+            if (-not $guardArmed) {
+                throw 'Verification-only sequence ended before the balcony guard armed.'
+            }
+            if ($isFailed) {
+                throw 'Verification-only sequence reported a failed status.'
+            }
+            if ($instructionStatus -ne 'FINISHED') {
+                throw "Verification-only sequence ended without FINISHED status; observed $instructionStatus."
+            }
+            Write-RunLog 'Verification-only sequence completed with FINISHED status.'
             exit 0
         }
         Start-Sleep -Seconds 2

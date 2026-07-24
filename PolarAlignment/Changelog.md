@@ -1,3 +1,10 @@
+## Version 2.2.6.33
+
+- Add a bounded, sequence-specific VerificationOnly point-settle override so directional-bias tests can change cadence without mutating the global mount profile.
+- Reject every VerificationOnly absolute slew whose destination leaves the configured mount-motion envelope or predicts a known pier-side change.
+- Make a failed VerificationOnly repeatability or reciprocity verdict fail the sequence item instead of completing with only a warning.
+- Require the guarded launcher sequence to contain exactly one TPPA instruction and no trigger/condition nodes, reject parked or already-slewing mounts, bound guard arming, structurally parse compact status, and accept only a positive FINISHED result.
+
 ## Version 2.2.6.32
 
 - Serialize report-only diagnostics against every in-flight UPAS/OAPA serial operation with a bounded, process-wide handshake; deny new discovery and movement and drain active polling before measurements start.

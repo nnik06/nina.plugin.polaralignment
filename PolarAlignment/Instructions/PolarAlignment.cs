@@ -1,5 +1,6 @@
 using Newtonsoft.Json;
 using NINA.Astrometry;
+using NINA.Core.Enum;
 using NINA.Core.Locale;
 using NINA.Core.Model;
 using NINA.Core.Model.Equipment;
@@ -83,6 +84,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
         private bool manualMode;
         private bool startFromCurrentPosition;
         private bool verificationOnly;
+        private double verificationPointSettleTimeSeconds;
         private bool driftValidationOnly;
         private const double MinimumPositiveAlignmentTolerance = 0.5;
         private double alignmentTolerance;
@@ -206,6 +208,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 ManualMode = ManualMode,
                 StartFromCurrentPosition = StartFromCurrentPosition,
                 VerificationOnly = VerificationOnly,
+                VerificationPointSettleTimeSeconds = VerificationPointSettleTimeSeconds,
                 DriftValidationOnly = DriftValidationOnly,
 
                 AlignmentTolerance = AlignmentTolerance,
@@ -334,6 +337,20 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
         }
 
         [JsonProperty]
+        public double VerificationPointSettleTimeSeconds {
+            get => verificationPointSettleTimeSeconds;
+            set {
+                verificationPointSettleTimeSeconds = double.IsFinite(value)
+                    ? Math.Clamp(
+                        value,
+                        0.0,
+                        TppaVerificationSettlePolicy.MaximumOverrideSeconds)
+                    : 0.0;
+                RaisePropertyChanged();
+            }
+        }
+
+        [JsonProperty]
         public bool DriftValidationOnly {
             get => driftValidationOnly;
             set {
@@ -385,7 +402,12 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             var previousMountRADegrees = telescopeMediator.GetCurrentPosition().RADegrees;
 
             await WaitIfPaused(token, progress);
-            await MoveToNextPoint(totalDistance, MoveRate, eastDirectionOverride ?? EastDirection, progress, token);
+            var settleOverride = VerificationOnly && VerificationPointSettleTimeSeconds > 0.0
+                ? VerificationPointSettleTimeSeconds
+                : (double?)null;
+            await MoveToNextPoint(
+                totalDistance, MoveRate, eastDirectionOverride ?? EastDirection,
+                progress, token, settleOverride);
 
             if (domeMediator.GetInfo().Connected) {
                 await domeMediator.WaitForDomeSynchronization(token);
@@ -1436,6 +1458,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 async operationToken => {
                     if (!StartFromCurrentPosition) {
                         Logger.Info($"Slewing to verification-only initial position {Coordinates.Coordinates}");
+                        EnsureVerificationOnlySlewDestinationSafe(Coordinates.Coordinates);
                         SetTrackingSidereal(true);
                         await telescopeMediator.SlewToCoordinatesAsync(Coordinates.Coordinates, operationToken);
                     } else {
@@ -1472,6 +1495,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         },
                         async (arcStart, arcToken) => {
                             progress?.Report(new ApplicationStatus() { Status = "Returning to A for verification-only repeat" });
+                            EnsureVerificationOnlySlewDestinationSafe(arcStart);
                             SetTrackingSidereal(true);
                             await telescopeMediator.SlewToCoordinatesAsync(arcStart, arcToken);
                             if (domeMediator.GetInfo().Connected) {
@@ -1515,6 +1539,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 async cleanupToken => {
                     Logger.Info($"Restoring the verification-only A/correction pointing {cleanupPointing}.");
                     progress?.Report(new ApplicationStatus() { Status = "Restoring A/correction pointing" });
+                    EnsureVerificationOnlySlewDestinationSafe(cleanupPointing);
                     SetTrackingSidereal(true);
                     await telescopeMediator.SlewToCoordinatesAsync(cleanupPointing, cleanupToken);
                     if (domeMediator.GetInfo().Connected) {
@@ -1594,6 +1619,10 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 Notification.ShowWarning(verificationSummary, TimeSpan.FromMinutes(1));
             }
             progress?.Report(GetStatus($"Verification-only measurements complete: {(diagnosticPassed ? "passed" : "failed")}"));
+            if (!diagnosticPassed) {
+                throw new SequenceEntityFailedException(
+                    "Verification-only polar-alignment diagnostics failed repeatability or reciprocity validation.");
+            }
         }
 
         private async Task<PolarErrorDetermination> MeasureVerificationOnlyArc(TPAPAVM context,
@@ -1847,7 +1876,13 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             return 180 - Math.Abs(Math.Abs(raDegrees1 - raDegrees2) - 180);
         }
 
-        private async Task MoveToNextPoint(double moveDistance, double rate, bool eastDirection, IProgress<ApplicationStatus> progress, CancellationToken token) {
+        private async Task MoveToNextPoint(
+            double moveDistance,
+            double rate,
+            bool eastDirection,
+            IProgress<ApplicationStatus> progress,
+            CancellationToken token,
+            double? settleTimeOverrideSeconds = null) {
             try {
                 var startPosition = telescopeMediator.GetCurrentPosition();
                 var currentPosition = telescopeMediator.GetCurrentPosition();
@@ -1898,7 +1933,12 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 while (telescopeMediator.GetInfo().Slewing) {
                     await CoreUtil.Wait(TimeSpan.FromMilliseconds(500), token, progress, "Waiting for mount to stop slewing");
                 }
-                await CoreUtil.Wait(TimeSpan.FromSeconds(profileService.ActiveProfile.TelescopeSettings.SettleTime), token, progress, "Settling");
+                var settleTimeSeconds = TppaVerificationSettlePolicy.Resolve(
+                    profileService.ActiveProfile.TelescopeSettings.SettleTime,
+                    settleTimeOverrideSeconds ?? 0.0);
+                Logger.Info($"TPPA point settle time: {settleTimeSeconds:F3} seconds" +
+                            (settleTimeOverrideSeconds.HasValue ? " (verification override)." : " (profile setting)."));
+                await CoreUtil.Wait(TimeSpan.FromSeconds(settleTimeSeconds), token, progress, "Settling");
                 SetTrackingSidereal(true);
 
                 progress?.Report(new ApplicationStatus() { Status = string.Empty });
@@ -1914,6 +1954,76 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             }
         }
 
+        private void EnsureVerificationOnlySlewDestinationSafe(TopocentricCoordinates destination) {
+            if (destination == null) {
+                throw new SequenceEntityFailedException(
+                    "Verification-only slew destination is unavailable.");
+            }
+
+            var refraction = RefractionParameters.GetRefractionParameters(weatherDataMediator.GetInfo());
+            var equatorialDestination = destination.Transform(
+                Epoch.J2000,
+                refraction.PressureHPa,
+                refraction.Temperature,
+                refraction.RelativeHumidity,
+                refraction.Wavelength);
+            EnsureVerificationOnlySlewDestinationSafe(
+                equatorialDestination,
+                destination.Azimuth.Degree,
+                destination.Altitude.Degree);
+        }
+
+        private void EnsureVerificationOnlySlewDestinationSafe(Coordinates destination) {
+            if (destination == null) {
+                throw new SequenceEntityFailedException(
+                    "Verification-only slew destination is unavailable.");
+            }
+
+            var nowUtc = DateTime.UtcNow;
+            var refraction = RefractionParameters.GetRefractionParameters(weatherDataMediator.GetInfo());
+            var horizontal = destination.Transform(
+                Latitude,
+                Longitude,
+                Elevation,
+                refraction.PressureHPa,
+                refraction.Temperature,
+                refraction.RelativeHumidity,
+                refraction.Wavelength,
+                nowUtc);
+            EnsureVerificationOnlySlewDestinationSafe(
+                destination,
+                horizontal.Azimuth.Degree,
+                horizontal.Altitude.Degree);
+        }
+
+        private void EnsureVerificationOnlySlewDestinationSafe(
+                Coordinates equatorialDestination,
+                double destinationAzimuthDegrees,
+                double destinationAltitudeDegrees) {
+            var mountInfo = telescopeMediator.GetInfo();
+            var currentPierSide = mountInfo.SideOfPier;
+            var destinationPierSide = telescopeMediator.DestinationSideOfPier(equatorialDestination);
+            var envelope = new TppaMountMotionEnvelope(
+                MountMotionMinimumAltitudeDegrees,
+                MountMotionMaximumAltitudeDegrees,
+                MountMotionAzimuthStartDegrees,
+                MountMotionAzimuthEndDegrees);
+            var result = VerificationOnlySlewSafetyPolicy.Evaluate(
+                MountMotionEnvelopeEnabled,
+                envelope,
+                destinationAzimuthDegrees,
+                destinationAltitudeDegrees,
+                currentPierSide,
+                destinationPierSide);
+            if (!result.IsSafe) {
+                throw new SequenceEntityFailedException(
+                    $"Verification-only absolute slew rejected: {result.Reason}.");
+            }
+
+            Logger.Info(
+                $"Verification-only absolute slew preflight passed: destination Az={destinationAzimuthDegrees:F2} deg, " +
+                $"Alt={destinationAltitudeDegrees:F2} deg; {result.Reason}.");
+        }
         private void EnsureMountMotionEnvelope() {
             if (!MountMotionEnvelopeEnabled) {
                 return;
