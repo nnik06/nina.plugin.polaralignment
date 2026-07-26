@@ -1446,6 +1446,15 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 throw new InvalidOperationException("Verification-only mode requires a connected telescope so both measurements can use the same automated arc and A can be restored.");
             }
 
+            var qualificationIssues = TppaVerificationSettlePolicy.GetQualificationIssues(
+                TargetDistance,
+                profileService.ActiveProfile.TelescopeSettings.SettleTime,
+                VerificationPointSettleTimeSeconds);
+            if (qualificationIssues.Count > 0) {
+                throw new SequenceEntityFailedException(
+                    $"Verification-only qualification rejected: {string.Join(" ", qualificationIssues)}");
+            }
+
             var originalPointing = telescopeMediator.GetCurrentPosition();
             Coordinates cleanupPointing = originalPointing;
             PolarErrorDetermination initialDetermination = null;
@@ -1461,8 +1470,10 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         EnsureVerificationOnlySlewDestinationSafe(Coordinates.Coordinates);
                         SetTrackingSidereal(true);
                         await telescopeMediator.SlewToCoordinatesAsync(Coordinates.Coordinates, operationToken);
+                        EnsureVerificationOnlyActualPositionSafe("initial-position slew");
                     } else {
                         Logger.Info($"Starting verification-only measurement from current position {telescopeMediator.GetCurrentPosition()}");
+                        EnsureVerificationOnlyActualPositionSafe("current-position start");
                     }
 
                     if (domeMediator.GetInfo().Connected) {
@@ -1498,6 +1509,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                             EnsureVerificationOnlySlewDestinationSafe(arcStart);
                             SetTrackingSidereal(true);
                             await telescopeMediator.SlewToCoordinatesAsync(arcStart, arcToken);
+                            EnsureVerificationOnlyActualPositionSafe("return-to-A slew");
                             if (domeMediator.GetInfo().Connected) {
                                 await domeMediator.WaitForDomeSynchronization(arcToken);
                             }
@@ -1542,6 +1554,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     EnsureVerificationOnlySlewDestinationSafe(cleanupPointing);
                     SetTrackingSidereal(true);
                     await telescopeMediator.SlewToCoordinatesAsync(cleanupPointing, cleanupToken);
+                    EnsureVerificationOnlyActualPositionSafe("cleanup slew");
                     if (domeMediator.GetInfo().Connected) {
                         await domeMediator.WaitForDomeSynchronization(cleanupToken);
                     }
@@ -2122,6 +2135,30 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 $"Verification-only absolute slew preflight passed: destination Az={destinationAzimuthDegrees:F2} deg, " +
                 $"Alt={destinationAltitudeDegrees:F2} deg; {result.Reason}.");
         }
+
+        private void EnsureVerificationOnlyActualPositionSafe(string operation) {
+            var mount = telescopeMediator.GetInfo();
+            var envelope = new TppaMountMotionEnvelope(
+                MountMotionMinimumAltitudeDegrees,
+                MountMotionMaximumAltitudeDegrees,
+                MountMotionAzimuthStartDegrees,
+                MountMotionAzimuthEndDegrees);
+            var result = VerificationOnlySlewSafetyPolicy.EvaluateActualTelemetry(
+                MountMotionEnvelopeEnabled,
+                envelope,
+                mount.Connected,
+                mount.Slewing,
+                mount.Azimuth,
+                mount.Altitude);
+            if (!result.IsSafe) {
+                throw new SequenceEntityFailedException(
+                    $"Verification-only {operation} rejected: {result.Reason}.");
+            }
+
+            Logger.Info(
+                $"Verification-only {operation} post-slew check passed: {result.Reason}.");
+        }
+
         private void EnsureMountMotionEnvelope() {
             if (!MountMotionEnvelopeEnabled) {
                 return;
@@ -2169,6 +2206,10 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
         public bool Validate() {
             var i = new List<string>();
             i.AddRange(PolarAlignmentExecutionPolicy.GetValidationIssues(VerificationOnly, DriftValidationOnly, ManualMode));
+            if (VerificationOnly) {
+                i.AddRange(TppaVerificationSettlePolicy.GetQualificationIssues(
+                    TargetDistance, profileService.ActiveProfile.TelescopeSettings.SettleTime, VerificationPointSettleTimeSeconds));
+            }
 
             //Location
             if (profileService.ActiveProfile.AstrometrySettings.Latitude == 0 && profileService.ActiveProfile.AstrometrySettings.Longitude == 0) {

@@ -1,3 +1,10 @@
+## Version 2.2.6.38
+
+- Fail VerificationOnly validation and runtime qualification when a leg is shorter than the field-qualified 15-degree conservative floor or the effective point settle is shorter than 30 seconds.
+- Validate live stationary mount telemetry after every VerificationOnly absolute slew and before any solve or next leg; reject disconnected, still-slewing, non-finite, or out-of-envelope telemetry.
+- Preserve the existing predictive destination and pier-side preflight as an independent first gate, while treating actual post-slew altitude and azimuth as authoritative.
+- Add regression coverage for the observed 56.44-degree altitude violation, envelope boundaries, unavailable telemetry, non-finite telemetry, and the qualified 15-degree/30-second configuration.
+
 ## Version 2.2.6.37
 
 - Refuse `Evaluate -OutputPath` anywhere inside the campaign directory. The report was written after verification, so naming a preserved artifact, the event log, or the header destroyed the evidence the returned verdict had just certified as intact while still reporting `IntegrityValid=true`.

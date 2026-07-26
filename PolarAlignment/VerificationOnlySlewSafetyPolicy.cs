@@ -35,6 +35,38 @@ namespace NINA.Plugins.PolarAlignment {
                 $"destination envelope and constant {currentPierSide} pier-side gates passed");
         }
 
+        public static VerificationOnlySlewSafetyResult EvaluateActualTelemetry(
+            bool envelopeEnabled,
+            TppaMountMotionEnvelope envelope,
+            bool mountConnected,
+            bool mountSlewing,
+            double actualAzimuthDegrees,
+            double actualAltitudeDegrees) {
+            if (!mountConnected) {
+                return new(false, "post-slew mount telemetry is unavailable");
+            }
+
+            if (mountSlewing) {
+                return new(false, "post-slew mount telemetry still reports slewing");
+            }
+
+            if (!double.IsFinite(actualAzimuthDegrees) || !double.IsFinite(actualAltitudeDegrees)) {
+                return new(false, "post-slew mount position is not finite");
+            }
+
+            if (!envelopeEnabled) {
+                return new(
+                    true,
+                    $"stationary post-slew telemetry accepted at Az={actualAzimuthDegrees:F2} deg, Alt={actualAltitudeDegrees:F2} deg");
+            }
+
+            var envelopeFailure = envelope.Validate(actualAzimuthDegrees, actualAltitudeDegrees);
+            return string.IsNullOrEmpty(envelopeFailure)
+                ? new(
+                    true,
+                    $"stationary post-slew telemetry is inside the configured envelope at Az={actualAzimuthDegrees:F2} deg, Alt={actualAltitudeDegrees:F2} deg")
+                : new(false, $"post-slew telemetry violates the configured envelope: {envelopeFailure}");
+        }
 
     }
 }
