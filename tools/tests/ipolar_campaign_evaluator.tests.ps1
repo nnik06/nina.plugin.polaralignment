@@ -659,6 +659,204 @@ Assert-True ($packetText.Contains("cannot command UPAS")) "the council packet mu
 $rejectedReport = (New-IPolarCampaignReportMarkdown -Evaluation (Invoke-TestEvaluation -Campaign $eightOfTen)) -join [Environment]::NewLine
 Assert-True ($rejectedReport.Contains("| SolveReliability |")) "a rejected report must list every failed gate with its reason"
 
+# --- Finalization must be terminal ---------------------------------------------------------------------------------------------
+
+function New-FinalizedSpecs {
+    param([switch]$WithTrailingEvent, [switch]$Duplicate)
+
+    $specs = New-Object System.Collections.Generic.List[object]
+    foreach ($spec in (New-TestSpecs)) { [void]$specs.Add($spec) }
+    $finalizedPayload = [ordered]@{
+        QualificationLevelAtFinalization = "QuantitativeUnqualified"
+        ChainHeadHashBeforeFinalization = ""
+        FailedGateCount = 0
+        Artifacts = @()
+        PolicyId = $null
+        Notes = ""
+    }
+    [void]$specs.Add(@{ Type = "CampaignFinalized"; Utc = $BaseUtc.AddMinutes(92); Payload = $finalizedPayload })
+    if ($Duplicate) {
+        [void]$specs.Add(@{ Type = "CampaignFinalized"; Utc = $BaseUtc.AddMinutes(93); Payload = $finalizedPayload })
+    }
+    if ($WithTrailingEvent) {
+        [void]$specs.Add(@{ Type = "SolveAttempt"; Utc = $BaseUtc.AddMinutes(94); Payload = [ordered]@{
+            AttemptIndex = 99; Succeeded = $true; AvailableStarCount = 20; Reason = "appended after finalization"
+            ManualObservation = ""; Notes = ""
+        } })
+    }
+    return $specs.ToArray()
+}
+
+$terminalFinalized = New-TestCampaign -Header (New-TestHeader) -Specs (New-FinalizedSpecs)
+$result = Invoke-TestEvaluation -Campaign $terminalFinalized -Policy (New-TestPolicy)
+Register-Level $result
+Assert-Level $result "QualifiedCorroboratingWitness" "a campaign finalized at the chain tail stays valid"
+Assert-True ($result.Finalization.Finalized) "the evaluation must report the campaign as finalized"
+Assert-True ($result.Finalization.IsTerminal) "a tail finalization must be reported as terminal"
+Assert-NoGate $result "Finalization" "a tail finalization must raise no gate"
+
+$nonTailFinalized = New-TestCampaign -Header (New-TestHeader) -Specs (New-FinalizedSpecs -WithTrailingEvent)
+$result = Invoke-TestEvaluation -Campaign $nonTailFinalized -Policy (New-TestPolicy)
+Register-Level $result
+Assert-Level $result "Rejected" "an event appended after CampaignFinalized must reject the campaign"
+Assert-Gate $result "Finalization" "the finalization gate must fire when an event follows finalization"
+Assert-True (-not $result.IntegrityValid) "a non-terminal finalization must invalidate integrity"
+Assert-True (-not $result.Finalization.IsTerminal) "a non-tail finalization must not be reported as terminal"
+
+$duplicateFinalized = New-TestCampaign -Header (New-TestHeader) -Specs (New-FinalizedSpecs -Duplicate)
+$result = Invoke-TestEvaluation -Campaign $duplicateFinalized -Policy (New-TestPolicy)
+Register-Level $result
+Assert-Level $result "Rejected" "two CampaignFinalized events must reject the campaign"
+Assert-Gate $result "Finalization" "the finalization gate must fire on a duplicate finalization"
+Assert-True (-not $result.IntegrityValid) "a duplicate finalization must invalidate integrity"
+
+# --- Byte-level evidence facts ---------------------------------------------------------------------------------------------------
+
+$unverified = Invoke-TestEvaluation -Campaign $numerical -Policy (New-TestPolicy)
+Assert-True ($unverified.ArtifactIntegrity.Source -eq "NotSupplied") "an evaluation without supplied facts must say so"
+Assert-True ($unverified.ArtifactIntegrity.Note.Contains("were not compared")) "an unverified evaluation must disclose that bytes were not compared"
+
+function New-IntegrityFacts {
+    param([object[]]$Entries)
+
+    $preservedFailures = 0
+    $externalMismatches = 0
+    $externalMissing = 0
+    $verified = 0
+    foreach ($entry in $Entries) {
+        if ($entry.Status -eq "Verified") { $verified++ }
+        elseif ($entry.Status -eq "ExternalMissing") { $externalMissing++ }
+        elseif ($entry.EvidenceClass -eq "External") { $externalMismatches++ }
+        else { $preservedFailures++ }
+    }
+    return (ConvertTo-TestObject ([ordered]@{
+        Source = "FilesystemVerified"
+        CheckedCount = $Entries.Count
+        VerifiedCount = $verified
+        PreservedFailureCount = $preservedFailures
+        ExternalMismatchCount = $externalMismatches
+        ExternalMissingCount = $externalMissing
+        Entries = $Entries
+    }))
+}
+
+$cleanFacts = New-IntegrityFacts -Entries @(
+    [ordered]@{ Sequence = 3; EventType = "DarkFrame"; EvidenceClass = "Preserved"; Status = "Verified"; Reason = "ok" }
+    [ordered]@{ Sequence = 24; EventType = "Artifact"; EvidenceClass = "Preserved"; Status = "Verified"; Reason = "ok" }
+)
+$result = Invoke-IPolarCampaignEvaluation -Campaign $numerical -Policy (New-TestPolicy) -EvaluatedUtc $EvaluationUtc -ArtifactIntegrity $cleanFacts
+Register-Level $result
+Assert-Level $result "QualifiedCorroboratingWitness" "verified evidence must not disturb a qualified campaign"
+Assert-True ($result.ArtifactIntegrity.Source -eq "FilesystemVerified") "the evaluation must record that bytes were verified"
+Assert-True ($result.IntegrityValid) "verified evidence must keep integrity valid"
+
+foreach ($failingStatus in @("Modified", "Missing", "SizeMismatch", "Unreadable", "NoRecordedHash", "NoRecordedPath")) {
+    $facts = New-IntegrityFacts -Entries @(
+        [ordered]@{ Sequence = 3; EventType = "DarkFrame"; EvidenceClass = "Preserved"; Status = "Verified"; Reason = "ok" }
+        [ordered]@{ Sequence = 24; EventType = "Artifact"; EvidenceClass = "Preserved"; Status = $failingStatus; Reason = "evidence failed as $failingStatus" }
+    )
+    $result = Invoke-IPolarCampaignEvaluation -Campaign $numerical -Policy (New-TestPolicy) -EvaluatedUtc $EvaluationUtc -ArtifactIntegrity $facts
+    Register-Level $result
+    Assert-Level $result "Rejected" "preserved evidence with status '$failingStatus' must reject the campaign"
+    Assert-Gate $result "ArtifactIntegrity" "the artifact integrity gate must fire for '$failingStatus'"
+    Assert-True (-not $result.IntegrityValid) "IntegrityValid must be false when preserved evidence fails as '$failingStatus'"
+}
+
+# A DarkFrame failure must be treated exactly like an Artifact failure.
+$darkFacts = New-IntegrityFacts -Entries @(
+    [ordered]@{ Sequence = 3; EventType = "DarkFrame"; EvidenceClass = "Preserved"; Status = "Modified"; Reason = "dark frame bytes changed" }
+    [ordered]@{ Sequence = 24; EventType = "Artifact"; EvidenceClass = "Preserved"; Status = "Verified"; Reason = "ok" }
+)
+$result = Invoke-IPolarCampaignEvaluation -Campaign $numerical -Policy (New-TestPolicy) -EvaluatedUtc $EvaluationUtc -ArtifactIntegrity $darkFacts
+Register-Level $result
+Assert-Level $result "Rejected" "a modified dark frame must reject the campaign just like a modified artifact"
+Assert-True (-not $result.IntegrityValid) "a modified dark frame must invalidate integrity"
+
+# External evidence: absence is a limitation, alteration fails closed.
+$externalMissingFacts = New-IntegrityFacts -Entries @(
+    [ordered]@{ Sequence = 25; EventType = "TppaArtifactLink"; EvidenceClass = "External"; Status = "ExternalMissing"; Reason = "linked file is gone" }
+)
+$result = Invoke-IPolarCampaignEvaluation -Campaign $numerical -Policy (New-TestPolicy) -EvaluatedUtc $EvaluationUtc -ArtifactIntegrity $externalMissingFacts
+Register-Level $result
+Assert-Level $result "QualifiedCorroboratingWitness" "an absent external artifact must not reject the campaign"
+Assert-True ($result.IntegrityValid) "an absent external artifact must not invalidate integrity"
+Assert-True ($result.ArtifactIntegrity.ExternalLimitations.Count -eq 1) "the absent external artifact must be recorded as a limitation"
+Assert-NoGate $result "ArtifactIntegrity" "an absent external artifact must raise no integrity gate"
+
+$externalAlteredFacts = New-IntegrityFacts -Entries @(
+    [ordered]@{ Sequence = 25; EventType = "TppaArtifactLink"; EvidenceClass = "External"; Status = "Modified"; Reason = "linked file changed" }
+)
+$result = Invoke-IPolarCampaignEvaluation -Campaign $numerical -Policy (New-TestPolicy) -EvaluatedUtc $EvaluationUtc -ArtifactIntegrity $externalAlteredFacts
+Register-Level $result
+Assert-Level $result "Rejected" "an altered external artifact must fail closed"
+Assert-Gate $result "ArtifactIntegrity" "the integrity gate must fire for an altered external artifact"
+Assert-True (-not $result.IntegrityValid) "an altered external artifact must invalidate integrity"
+
+$integrityReport = (New-IPolarCampaignReportMarkdown -Evaluation (Invoke-IPolarCampaignEvaluation -Campaign $numerical -Policy (New-TestPolicy) -EvaluatedUtc $EvaluationUtc -ArtifactIntegrity $cleanFacts)) -join [Environment]::NewLine
+Assert-True ($integrityReport.Contains("## Evidence integrity")) "the report must contain an evidence integrity section"
+Assert-True ($integrityReport.Contains("FilesystemVerified")) "the report must state how evidence was verified"
+
+# --- Filesystem evidence verifier ------------------------------------------------------------------------------------------------
+
+$verifierRoot = Join-Path ([IO.Path]::GetTempPath()) ("ipolar-verifier-" + [guid]::NewGuid().ToString("N"))
+try {
+    [void][IO.Directory]::CreateDirectory($verifierRoot)
+    $goodPath = Join-Path $verifierRoot "good.bin"
+    $modifiedPath = Join-Path $verifierRoot "modified.bin"
+    $resizedPath = Join-Path $verifierRoot "resized.bin"
+    $externalGonePath = Join-Path $verifierRoot "external-gone.bin"
+    [IO.File]::WriteAllText($goodPath, "good evidence bytes")
+    [IO.File]::WriteAllText($modifiedPath, "aaaaaaaaaaaaaaaaaaa")
+    [IO.File]::WriteAllText($resizedPath, "resized evidence bytes")
+
+    $goodSha = (Get-FileHash -LiteralPath $goodPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $goodSize = [long](Get-Item -LiteralPath $goodPath).Length
+    $modifiedSize = [long](Get-Item -LiteralPath $modifiedPath).Length
+    $resizedSha = (Get-FileHash -LiteralPath $resizedPath -Algorithm SHA256).Hash.ToLowerInvariant()
+
+    # Same size, different bytes, so only the hash can catch it.
+    [IO.File]::WriteAllText($modifiedPath, "bbbbbbbbbbbbbbbbbbb")
+    [IO.File]::AppendAllText($resizedPath, " grown")
+
+    $verifierCampaign = [pscustomobject]@{
+        CampaignPath = $verifierRoot
+        Header = New-TestHeader
+        Events = @(
+            (ConvertTo-TestObject ([ordered]@{ Sequence = 1; EventType = "DarkFrame"; Payload = [ordered]@{ StoredPath = $goodPath; Sha256 = $goodSha; SizeBytes = $goodSize } }))
+            (ConvertTo-TestObject ([ordered]@{ Sequence = 2; EventType = "Artifact"; Payload = [ordered]@{ StoredPath = $modifiedPath; Sha256 = ("de" * 32); SizeBytes = $modifiedSize } }))
+            (ConvertTo-TestObject ([ordered]@{ Sequence = 3; EventType = "Artifact"; Payload = [ordered]@{ StoredPath = $resizedPath; Sha256 = $resizedSha; SizeBytes = 22 } }))
+            (ConvertTo-TestObject ([ordered]@{ Sequence = 4; EventType = "Artifact"; Payload = [ordered]@{ StoredPath = (Join-Path $verifierRoot "absent.bin"); Sha256 = ("ab" * 32); SizeBytes = 10 } }))
+            (ConvertTo-TestObject ([ordered]@{ Sequence = 5; EventType = "TppaArtifactLink"; Payload = [ordered]@{ ArtifactPath = $externalGonePath; Sha256 = ("cd" * 32); SizeBytes = 10 } }))
+            (ConvertTo-TestObject ([ordered]@{ Sequence = 6; EventType = "SolveAttempt"; Payload = [ordered]@{ AttemptIndex = 1; Succeeded = $true } }))
+        )
+    }
+
+    $facts = Test-IPolarPreservedEvidence -Campaign $verifierCampaign
+    Assert-True ($facts.CheckedCount -eq 5) "the verifier must check every evidence-bearing event and ignore the rest"
+    Assert-True ($facts.VerifiedCount -eq 1) "only the untouched file must verify"
+    Assert-True ($facts.PreservedFailureCount -eq 3) "the modified, resized, and absent preserved files must all fail"
+    Assert-True ($facts.ExternalMissingCount -eq 1) "the absent external file must be classified as external"
+
+    $bySequence = @{}
+    foreach ($entry in $facts.Entries) { $bySequence[[int]$entry.Sequence] = $entry }
+    Assert-True ($bySequence[1].Status -eq "Verified") "the untouched dark frame must be Verified"
+    Assert-True ($bySequence[2].Status -eq "Modified") "a same-size byte change must be reported as Modified"
+    Assert-True ($bySequence[3].Status -eq "SizeMismatch") "a size change must be reported as SizeMismatch"
+    Assert-True ($bySequence[4].Status -eq "Missing") "an absent preserved file must be reported as Missing"
+    Assert-True ($bySequence[5].Status -eq "ExternalMissing") "an absent linked file must be reported as ExternalMissing"
+    Assert-True ($bySequence[1].EvidenceClass -eq "Preserved") "campaign-owned evidence must be classified Preserved"
+    Assert-True ($bySequence[5].EvidenceClass -eq "External") "linked TPPA evidence must be classified External"
+    Assert-True ($bySequence[2].ActualSha256 -ne $bySequence[2].ExpectedSha256) "the verifier must report the actual hash it computed"
+
+    # The verifier's own facts must drive the evaluator to the same conclusion.
+    $verifierDriven = Invoke-IPolarCampaignEvaluation -Campaign $numerical -Policy (New-TestPolicy) -EvaluatedUtc $EvaluationUtc -ArtifactIntegrity $facts
+    Register-Level $verifierDriven
+    Assert-Level $verifierDriven "Rejected" "facts produced by the real verifier must reject a campaign with broken evidence"
+    Assert-True (-not $verifierDriven.IntegrityValid) "facts produced by the real verifier must invalidate integrity"
+} finally {
+    if (Test-Path -LiteralPath $verifierRoot) { Remove-Item -LiteralPath $verifierRoot -Recurse -Force }
+}
+
 # --- Forbidden verdicts are unreachable --------------------------------------------------------------------------------------
 
 foreach ($level in $allLevels) {

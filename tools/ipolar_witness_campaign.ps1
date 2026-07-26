@@ -124,7 +124,11 @@ param(
     # Evaluate / Finalize
     [string]$PolicyPath = "",
     [string]$OutputPath = "",
-    [string]$ReportDirectory = ""
+    [string]$ReportDirectory = "",
+
+    # Concurrency
+    [ValidateRange(1.0, 600.0)]
+    [double]$LockTimeoutSeconds = 30.0
 )
 
 Set-StrictMode -Version 2.0
@@ -192,6 +196,81 @@ function Write-Utf8NoBom {
     [IO.File]::WriteAllText($LiteralPath, $Content, [Text.UTF8Encoding]::new($false))
 }
 
+<#
+.SYNOPSIS
+    Appends one UTF-8 line without a BOM and flushes it to the storage device.
+.DESCRIPTION
+    Bytes are written directly rather than through AppendAllText so the encoding
+    can never acquire a BOM, and Flush($true) forces the write past the OS cache
+    so a crash cannot leave a torn event line behind.
+#>
+function Add-Utf8LineDurable {
+    param([Parameter(Mandatory)] [string]$LiteralPath, [Parameter(Mandatory)] [string]$Line)
+
+    $bytes = [Text.UTF8Encoding]::new($false).GetBytes($Line + "`n")
+    $stream = [IO.File]::Open($LiteralPath, [IO.FileMode]::Append, [IO.FileAccess]::Write, [IO.FileShare]::Read)
+    try {
+        $stream.Write($bytes, 0, $bytes.Length)
+        $stream.Flush($true)
+    } finally {
+        $stream.Dispose()
+    }
+}
+
+function Get-CampaignLockPath {
+    param([Parameter(Mandatory)] [string]$Root)
+    return (Join-Path $Root ".campaign.lock")
+}
+
+<#
+.SYNOPSIS
+    Acquires the campaign-scoped interprocess mutation lock.
+.DESCRIPTION
+    Opening the lock file with FileShare::None gives a lock that is honoured across
+    processes and is released by the operating system even if a writer is killed,
+    which a marker file could not guarantee. Acquisition is bounded; a writer that
+    cannot get in fails with a clear error rather than corrupting the chain.
+#>
+function Enter-CampaignLock {
+    param([Parameter(Mandatory)] [string]$Root, [double]$TimeoutSeconds = 30.0)
+
+    [void][IO.Directory]::CreateDirectory($Root)
+    $lockPath = Get-CampaignLockPath -Root $Root
+    $deadline = [datetime]::UtcNow.AddSeconds($TimeoutSeconds)
+    $attempt = 0
+    while ($true) {
+        try {
+            return [IO.File]::Open($lockPath, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+        } catch [IO.IOException] {
+            if ([datetime]::UtcNow -ge $deadline) {
+                throw "Timed out after $TimeoutSeconds seconds waiting for the campaign lock at $lockPath. Another campaign command is still running. Retry, or raise -LockTimeoutSeconds."
+            }
+            $attempt++
+            # Small randomised backoff so many contenders do not retry in lockstep.
+            Start-Sleep -Milliseconds (15 + (Get-Random -Minimum 0 -Maximum 40))
+        }
+    }
+}
+
+<#
+.SYNOPSIS
+    Runs one campaign mutation under the campaign lock.
+.DESCRIPTION
+    Every state change - artifact reservation, artifact copy, event append, and
+    finalization - runs inside a single lock scope, so campaign state read at the
+    start of the scope is still authoritative at the moment of append.
+#>
+function Invoke-CampaignMutation {
+    param([Parameter(Mandatory)] [string]$Root, [Parameter(Mandatory)] [scriptblock]$Body)
+
+    $lock = Enter-CampaignLock -Root $Root -TimeoutSeconds $LockTimeoutSeconds
+    try {
+        return (& $Body)
+    } finally {
+        $lock.Dispose()
+    }
+}
+
 function Write-Utf8NoBomOnce {
     param([Parameter(Mandatory)] [string]$LiteralPath, [Parameter(Mandatory)] [string]$Content)
 
@@ -240,19 +319,59 @@ function Get-CampaignState {
 
 <#
 .SYNOPSIS
+    Validates campaign state and rejects an append that must not happen.
+.DESCRIPTION
+    Callers run this before committing any preserved evidence, so a rejected event
+    never leaves a partially imported artifact behind. Must be called under the
+    campaign lock; the state it returns is only authoritative while the lock is
+    held.
+#>
+function Assert-AppendableCampaignState {
+    param(
+        [Parameter(Mandatory)] [string]$Root,
+        [Parameter(Mandatory)] [string]$EventType,
+        [Parameter(Mandatory)] [datetime]$EventUtc
+    )
+
+    $state = Get-CampaignState -Root $Root
+
+    $finalized = @(Get-IPolarEventsOfType -Events $state.Campaign.Events -EventType "CampaignFinalized")
+    if ($finalized.Count -gt 0 -and $EventType -ne "CampaignFinalized") {
+        $finalizedUtc = Format-IPolarUtc -Value (Get-IPolarProperty -InputObject $finalized[0] -Name "RecordedUtc")
+        throw "Campaign was finalized at $finalizedUtc (sequence $(Get-IPolarProperty -InputObject $finalized[0] -Name 'Sequence')). Finalization is terminal: '$EventType' and every other command is refused afterwards."
+    }
+    if ($finalized.Count -gt 0 -and $EventType -eq "CampaignFinalized") {
+        throw "Campaign already contains a CampaignFinalized event. Finalization may occur exactly once."
+    }
+
+    if ($null -ne $state.LastRecordedUtc -and $EventUtc -lt $state.LastRecordedUtc) {
+        throw "Refusing to append '$EventType' at $(Format-IPolarUtc -Value $EventUtc): the previous event is timestamped $(Format-IPolarUtc -Value $state.LastRecordedUtc). Campaign event time must not move backwards."
+    }
+
+    return $state
+}
+
+<#
+.SYNOPSIS
     Appends one hash-chained event to the campaign log.
+.DESCRIPTION
+    Must be called under the campaign lock. Re-reads and revalidates campaign state
+    immediately before the append so the sequence number and predecessor hash are
+    the live ones, never a stale snapshot.
 #>
 function Add-CampaignEvent {
     param(
         [Parameter(Mandatory)] [string]$Root,
         [Parameter(Mandatory)] [string]$EventType,
         [Parameter(Mandatory)] $Payload,
-        [Parameter(Mandatory)] [datetime]$EventUtc
+        [Parameter(Mandatory)] [datetime]$EventUtc,
+        [nullable[int]]$ExpectedSequence = $null
     )
 
-    $state = Get-CampaignState -Root $Root
-    if ($null -ne $state.LastRecordedUtc -and $EventUtc -lt $state.LastRecordedUtc) {
-        throw "Refusing to append '$EventType' at $(Format-IPolarUtc -Value $EventUtc): the previous event is timestamped $(Format-IPolarUtc -Value $state.LastRecordedUtc). Campaign event time must not move backwards."
+    $state = Assert-AppendableCampaignState -Root $Root -EventType $EventType -EventUtc $EventUtc
+
+    if ($null -ne $ExpectedSequence -and $state.NextSequence -ne [int]$ExpectedSequence) {
+        throw "Campaign state changed between artifact reservation (sequence $([int]$ExpectedSequence)) and append (sequence $($state.NextSequence)). Refusing to append."
     }
 
     $storedPayload = ConvertTo-StoredPayload -Payload $Payload
@@ -266,20 +385,26 @@ function Add-CampaignEvent {
     $record.EventHash = Get-IPolarEventHash -Event $record
 
     $line = $record | ConvertTo-Json -Depth 12 -Compress
-    $logPath = Get-IPolarCampaignEventLogPath -CampaignPath $Root
-    [IO.File]::AppendAllText($logPath, $line + "`n", [Text.UTF8Encoding]::new($false))
+    Add-Utf8LineDurable -LiteralPath (Get-IPolarCampaignEventLogPath -CampaignPath $Root) -Line $line
     return $record
 }
 
 <#
 .SYNOPSIS
-    Validates, hashes, and preserves an evidence file inside the campaign.
+    Validates and stages an evidence file without committing it.
 .DESCRIPTION
     Rejects a missing, empty, duplicated, reused, or stale file, and refuses to
-    overwrite an existing preserved copy. The preserved copy is the campaign's
-    own evidence; the operator's original is left untouched.
+    overwrite an existing preserved copy. The operator's original is left
+    untouched.
+
+    The preserved copy is written to a private staging file whose name is unique to
+    this invocation, and the staged bytes are rehashed and restatted before the
+    reservation is returned. Nothing appears at the committed 000N path until
+    Complete-CampaignArtifactReservation promotes it, which happens only after the
+    event has been appended. A rejected or interrupted import therefore leaves no
+    file at the committed path and never blocks a corrected retry.
 #>
-function Import-CampaignArtifact {
+function New-CampaignArtifactReservation {
     param(
         [Parameter(Mandatory)] [string]$Root,
         [Parameter(Mandatory)] [string]$SourcePath,
@@ -335,6 +460,7 @@ function Import-CampaignArtifact {
     }
 
     $storedPath = $full
+    $stagingPath = $null
     if ($PreserveCopy.IsPresent) {
         $artifactDirectory = Join-Path $Root "artifacts"
         [void][IO.Directory]::CreateDirectory($artifactDirectory)
@@ -342,16 +468,82 @@ function Import-CampaignArtifact {
         if (Test-Path -LiteralPath $destination) {
             throw "Preserved evidence already exists at $destination. Campaign evidence is never overwritten."
         }
-        Copy-Item -LiteralPath $full -Destination $destination
+
+        $stagingPath = Join-Path $artifactDirectory (".staging-" + [guid]::NewGuid().ToString("N") + ".part")
+        Copy-Item -LiteralPath $full -Destination $stagingPath
+        Assert-PreservedBytes -LiteralPath $stagingPath -ExpectedSha256 $sha -ExpectedSizeBytes ([long]$info.Length) -Stage "staged copy"
         $storedPath = $destination
     }
 
-    return [ordered]@{
+    return [pscustomobject]@{
         SourcePath = $full
         StoredPath = $storedPath
+        StagingPath = $stagingPath
         Sha256 = $sha
         SizeBytes = [long]$info.Length
         CreatedUtc = Format-IPolarUtc -Value $createdUtc
+        Promoted = $false
+    }
+}
+
+<#
+.SYNOPSIS
+    Confirms that bytes at a path match an expected SHA256 and size.
+#>
+function Assert-PreservedBytes {
+    param(
+        [Parameter(Mandatory)] [string]$LiteralPath,
+        [Parameter(Mandatory)] [string]$ExpectedSha256,
+        [Parameter(Mandatory)] [long]$ExpectedSizeBytes,
+        [Parameter(Mandatory)] [string]$Stage
+    )
+
+    if (-not (Test-Path -LiteralPath $LiteralPath -PathType Leaf)) {
+        throw "Preserved evidence verification failed: the $Stage at $LiteralPath does not exist."
+    }
+    $actualSize = [long](Get-Item -LiteralPath $LiteralPath).Length
+    if ($actualSize -ne $ExpectedSizeBytes) {
+        throw "Preserved evidence verification failed: the $Stage at $LiteralPath is $actualSize bytes but the source is $ExpectedSizeBytes bytes."
+    }
+    $actualSha = Get-FileSha256 -LiteralPath $LiteralPath
+    if ($actualSha -ne $ExpectedSha256) {
+        throw "Preserved evidence verification failed: the $Stage at $LiteralPath hashes to $actualSha but the source hashes to $ExpectedSha256."
+    }
+}
+
+<#
+.SYNOPSIS
+    Promotes a staged evidence copy to its committed path and reverifies it.
+.DESCRIPTION
+    Called only after the corresponding event has been appended, so the committed
+    000N path is created only for evidence that a recorded event refers to.
+#>
+function Complete-CampaignArtifactReservation {
+    param([Parameter(Mandatory)] $Reservation)
+
+    if ([string]::IsNullOrEmpty($Reservation.StagingPath)) { return }
+    if (Test-Path -LiteralPath $Reservation.StoredPath) {
+        throw "Preserved evidence already exists at $($Reservation.StoredPath). Campaign evidence is never overwritten."
+    }
+    [IO.File]::Move($Reservation.StagingPath, $Reservation.StoredPath)
+    $Reservation.Promoted = $true
+    Assert-PreservedBytes -LiteralPath $Reservation.StoredPath -ExpectedSha256 $Reservation.Sha256 -ExpectedSizeBytes $Reservation.SizeBytes -Stage "preserved copy"
+}
+
+<#
+.SYNOPSIS
+    Discards this invocation's staging file, and only that file.
+.DESCRIPTION
+    Committed evidence is never touched. Once a reservation has been promoted this
+    is a no-op, because the file is then real campaign evidence.
+#>
+function Remove-CampaignArtifactReservation {
+    param([Parameter(Mandatory)] $Reservation)
+
+    if ($Reservation.Promoted) { return }
+    if ([string]::IsNullOrEmpty($Reservation.StagingPath)) { return }
+    if (Test-Path -LiteralPath $Reservation.StagingPath) {
+        Remove-Item -LiteralPath $Reservation.StagingPath -Force -ErrorAction SilentlyContinue
     }
 }
 
@@ -475,6 +667,10 @@ function Invoke-InitCommand {
     $eventUtc = Resolve-EventUtc
     [void][IO.Directory]::CreateDirectory($root)
 
+    return (Invoke-CampaignMutation -Root $root -Body {
+    # Re-checked under the lock: two concurrent Init calls must not both create it.
+    if (Test-Path -LiteralPath $headerPath) { throw "Campaign already exists at $headerPath. A campaign is never re-initialized in place." }
+
     $header = [ordered]@{
         SchemaVersion = Get-IPolarSchemaVersion
         CampaignId = $safeCampaignId
@@ -501,6 +697,7 @@ function Invoke-InitCommand {
         Notes = $Notes
     }
     return (Add-CampaignEvent -Root $root -EventType "CampaignInitialized" -Payload $payload -EventUtc $eventUtc)
+    })
 }
 
 function Invoke-RecordEnvironmentCommand {
@@ -531,28 +728,40 @@ function Invoke-RecordEnvironmentCommand {
         }
         Notes = $Notes
     }
-    return (Add-CampaignEvent -Root $root -EventType "Environment" -Payload $payload -EventUtc $eventUtc)
+    return (Invoke-CampaignMutation -Root $root -Body {
+        Add-CampaignEvent -Root $root -EventType "Environment" -Payload $payload -EventUtc $eventUtc
+    })
 }
 
 function Invoke-RecordDarkFrameCommand {
     $root = Assert-ExistingCampaign
     if ([string]::IsNullOrWhiteSpace($Path)) { throw "-Path to the dark frame is required." }
     $eventUtc = Resolve-EventUtc
-    $state = Get-CampaignState -Root $root
-
     $declaredCreated = if (Test-SuppliedDate -Value $CapturedUtc) { $CapturedUtc } else { [datetime]::MinValue }
-    $artifact = Import-CampaignArtifact -Root $root -SourcePath $Path -Sequence $state.NextSequence -EventUtc $eventUtc -DeclaredCreatedUtc $declaredCreated -PreserveCopy
 
-    $payload = [ordered]@{
-        SourcePath = $artifact.SourcePath
-        StoredPath = $artifact.StoredPath
-        Sha256 = $artifact.Sha256
-        SizeBytes = $artifact.SizeBytes
-        CreatedUtc = $artifact.CreatedUtc
-        CapturedUtc = $artifact.CreatedUtc
-        Notes = $Notes
-    }
-    return (Add-CampaignEvent -Root $root -EventType "DarkFrame" -Payload $payload -EventUtc $eventUtc)
+    return (Invoke-CampaignMutation -Root $root -Body {
+        # Every reason to refuse this event is evaluated before the preserved copy
+        # is committed, so a rejection leaves nothing behind at the 000N path.
+        $state = Assert-AppendableCampaignState -Root $root -EventType "DarkFrame" -EventUtc $eventUtc
+        $reservation = New-CampaignArtifactReservation -Root $root -SourcePath $Path -Sequence $state.NextSequence `
+            -EventUtc $eventUtc -DeclaredCreatedUtc $declaredCreated -PreserveCopy
+        try {
+            $payload = [ordered]@{
+                SourcePath = $reservation.SourcePath
+                StoredPath = $reservation.StoredPath
+                Sha256 = $reservation.Sha256
+                SizeBytes = $reservation.SizeBytes
+                CreatedUtc = $reservation.CreatedUtc
+                CapturedUtc = $reservation.CreatedUtc
+                Notes = $Notes
+            }
+            $record = Add-CampaignEvent -Root $root -EventType "DarkFrame" -Payload $payload -EventUtc $eventUtc -ExpectedSequence $state.NextSequence
+            Complete-CampaignArtifactReservation -Reservation $reservation
+            return $record
+        } finally {
+            Remove-CampaignArtifactReservation -Reservation $reservation
+        }
+    })
 }
 
 function Invoke-RecordSolveAttemptCommand {
@@ -560,19 +769,21 @@ function Invoke-RecordSolveAttemptCommand {
     if ([string]::IsNullOrWhiteSpace($SolveOutcome)) { throw "-SolveOutcome must be Success or Failure. A solve attempt is never recorded with an assumed outcome." }
     $eventUtc = Resolve-EventUtc
 
-    $state = Get-CampaignState -Root $root
-    $existing = @(Get-IPolarEventsOfType -Events $state.Campaign.Events -EventType "SolveAttempt")
-    $attemptIndex = if ($null -ne $CycleIndex) { [int]$CycleIndex } else { $existing.Count + 1 }
+    return (Invoke-CampaignMutation -Root $root -Body {
+        $state = Assert-AppendableCampaignState -Root $root -EventType "SolveAttempt" -EventUtc $eventUtc
+        $existing = @(Get-IPolarEventsOfType -Events $state.Campaign.Events -EventType "SolveAttempt")
+        $attemptIndex = if ($null -ne $CycleIndex) { [int]$CycleIndex } else { $existing.Count + 1 }
 
-    $payload = [ordered]@{
-        AttemptIndex = $attemptIndex
-        Succeeded = ($SolveOutcome -eq "Success")
-        AvailableStarCount = $AvailableStarCount
-        Reason = $Reason
-        ManualObservation = $ManualObservation
-        Notes = $Notes
-    }
-    return (Add-CampaignEvent -Root $root -EventType "SolveAttempt" -Payload $payload -EventUtc $eventUtc)
+        $payload = [ordered]@{
+            AttemptIndex = $attemptIndex
+            Succeeded = ($SolveOutcome -eq "Success")
+            AvailableStarCount = $AvailableStarCount
+            Reason = $Reason
+            ManualObservation = $ManualObservation
+            Notes = $Notes
+        }
+        Add-CampaignEvent -Root $root -EventType "SolveAttempt" -Payload $payload -EventUtc $eventUtc -ExpectedSequence $state.NextSequence
+    })
 }
 
 function Invoke-RecordCalibrationCommand {
@@ -582,71 +793,83 @@ function Invoke-RecordCalibrationCommand {
         throw "A fixed-mount calibration cycle must leave the camera untouched. Record a removal with -Command RecordReseat instead."
     }
 
-    $state = Get-CampaignState -Root $root
-    $existing = @(Get-IPolarEventsOfType -Events $state.Campaign.Events -EventType "FixedMountCalibration")
-    $index = if ($null -ne $CycleIndex) { [int]$CycleIndex } else { $existing.Count + 1 }
-
     foreach ($position in $RaPositionsDegrees) {
         if ($null -eq (Get-IPolarFiniteNumber $position)) { throw "-RaPositionsDegrees contains a non-finite value." }
     }
 
-    $payload = [ordered]@{
-        CycleIndex = $index
-        MountingStateId = if ([string]::IsNullOrWhiteSpace($MountingStateId)) { $null } else { $MountingStateId }
-        RaPositionsDegrees = @($RaPositionsDegrees)
-        CameraRemovedOrReseated = $false
-        Residual = New-ResidualRecord
-        ManualObservation = $ManualObservation
-        Notes = $Notes
-    }
-    return (Add-CampaignEvent -Root $root -EventType "FixedMountCalibration" -Payload $payload -EventUtc $eventUtc)
+    return (Invoke-CampaignMutation -Root $root -Body {
+        $state = Assert-AppendableCampaignState -Root $root -EventType "FixedMountCalibration" -EventUtc $eventUtc
+        $existing = @(Get-IPolarEventsOfType -Events $state.Campaign.Events -EventType "FixedMountCalibration")
+        $index = if ($null -ne $CycleIndex) { [int]$CycleIndex } else { $existing.Count + 1 }
+
+        $payload = [ordered]@{
+            CycleIndex = $index
+            MountingStateId = if ([string]::IsNullOrWhiteSpace($MountingStateId)) { $null } else { $MountingStateId }
+            RaPositionsDegrees = @($RaPositionsDegrees)
+            CameraRemovedOrReseated = $false
+            Residual = New-ResidualRecord
+            ManualObservation = $ManualObservation
+            Notes = $Notes
+        }
+        Add-CampaignEvent -Root $root -EventType "FixedMountCalibration" -Payload $payload -EventUtc $eventUtc -ExpectedSequence $state.NextSequence
+    })
 }
 
 function Invoke-RecordReseatCommand {
     $root = Assert-ExistingCampaign
     $eventUtc = Resolve-EventUtc
 
-    $state = Get-CampaignState -Root $root
-    $existing = @(Get-IPolarEventsOfType -Events $state.Campaign.Events -EventType "Reseat")
-    $index = if ($null -ne $CycleIndex) { [int]$CycleIndex } else { $existing.Count + 1 }
+    return (Invoke-CampaignMutation -Root $root -Body {
+        $state = Assert-AppendableCampaignState -Root $root -EventType "Reseat" -EventUtc $eventUtc
+        $existing = @(Get-IPolarEventsOfType -Events $state.Campaign.Events -EventType "Reseat")
+        $index = if ($null -ne $CycleIndex) { [int]$CycleIndex } else { $existing.Count + 1 }
 
-    $payload = [ordered]@{
-        ReseatIndex = $index
-        MountingStateIdBefore = if ([string]::IsNullOrWhiteSpace($MountingStateIdBefore)) { $null } else { $MountingStateIdBefore }
-        MountingStateIdAfter = if ([string]::IsNullOrWhiteSpace($MountingStateIdAfter)) { $null } else { $MountingStateIdAfter }
-        CameraRemovedOrReseated = $true
-        RecalibrationPerformed = $RecalibrationPerformed.IsPresent
-        RaPositionsDegrees = @($RaPositionsDegrees)
-        Residual = New-ResidualRecord
-        ManualObservation = $ManualObservation
-        Notes = $Notes
-    }
-    return (Add-CampaignEvent -Root $root -EventType "Reseat" -Payload $payload -EventUtc $eventUtc)
+        $payload = [ordered]@{
+            ReseatIndex = $index
+            MountingStateIdBefore = if ([string]::IsNullOrWhiteSpace($MountingStateIdBefore)) { $null } else { $MountingStateIdBefore }
+            MountingStateIdAfter = if ([string]::IsNullOrWhiteSpace($MountingStateIdAfter)) { $null } else { $MountingStateIdAfter }
+            CameraRemovedOrReseated = $true
+            RecalibrationPerformed = $RecalibrationPerformed.IsPresent
+            RaPositionsDegrees = @($RaPositionsDegrees)
+            Residual = New-ResidualRecord
+            ManualObservation = $ManualObservation
+            Notes = $Notes
+        }
+        Add-CampaignEvent -Root $root -EventType "Reseat" -Payload $payload -EventUtc $eventUtc -ExpectedSequence $state.NextSequence
+    })
 }
 
 function Invoke-RecordArtifactCommand {
     $root = Assert-ExistingCampaign
     if ([string]::IsNullOrWhiteSpace($Path)) { throw "-Path to the screenshot or raw frame is required." }
     $eventUtc = Resolve-EventUtc
-    $state = Get-CampaignState -Root $root
-
     $declaredCreated = if (Test-SuppliedDate -Value $CreatedUtc) { $CreatedUtc } else { [datetime]::MinValue }
-    $artifact = Import-CampaignArtifact -Root $root -SourcePath $Path -Sequence $state.NextSequence -EventUtc $eventUtc -DeclaredCreatedUtc $declaredCreated -PreserveCopy
 
-    $payload = [ordered]@{
-        ArtifactKind = $ArtifactKind
-        SourcePath = $artifact.SourcePath
-        StoredPath = $artifact.StoredPath
-        Sha256 = $artifact.Sha256
-        SizeBytes = $artifact.SizeBytes
-        CreatedUtc = $artifact.CreatedUtc
-        # A cross/circle reading is the only thing a vendor screenshot supports.
-        # No numeric value is inferred from it.
-        QualitativeVerdict = $QualitativeVerdict
-        ManualObservation = $ManualObservation
-        Notes = $Notes
-    }
-    return (Add-CampaignEvent -Root $root -EventType "Artifact" -Payload $payload -EventUtc $eventUtc)
+    return (Invoke-CampaignMutation -Root $root -Body {
+        $state = Assert-AppendableCampaignState -Root $root -EventType "Artifact" -EventUtc $eventUtc
+        $reservation = New-CampaignArtifactReservation -Root $root -SourcePath $Path -Sequence $state.NextSequence `
+            -EventUtc $eventUtc -DeclaredCreatedUtc $declaredCreated -PreserveCopy
+        try {
+            $payload = [ordered]@{
+                ArtifactKind = $ArtifactKind
+                SourcePath = $reservation.SourcePath
+                StoredPath = $reservation.StoredPath
+                Sha256 = $reservation.Sha256
+                SizeBytes = $reservation.SizeBytes
+                CreatedUtc = $reservation.CreatedUtc
+                # A cross/circle reading is the only thing a vendor screenshot supports.
+                # No numeric value is inferred from it.
+                QualitativeVerdict = $QualitativeVerdict
+                ManualObservation = $ManualObservation
+                Notes = $Notes
+            }
+            $record = Add-CampaignEvent -Root $root -EventType "Artifact" -Payload $payload -EventUtc $eventUtc -ExpectedSequence $state.NextSequence
+            Complete-CampaignArtifactReservation -Reservation $reservation
+            return $record
+        } finally {
+            Remove-CampaignArtifactReservation -Reservation $reservation
+        }
+    })
 }
 
 function Invoke-LinkTppaArtifactCommand {
@@ -669,7 +892,9 @@ function Invoke-LinkTppaArtifactCommand {
         Description = $Description
         Notes = $Notes
     }
-    return (Add-CampaignEvent -Root $root -EventType "TppaArtifactLink" -Payload $payload -EventUtc $eventUtc)
+    return (Invoke-CampaignMutation -Root $root -Body {
+        Add-CampaignEvent -Root $root -EventType "TppaArtifactLink" -Payload $payload -EventUtc $eventUtc
+    })
 }
 
 function Invoke-RecordBlockCommand {
@@ -700,7 +925,9 @@ function Invoke-RecordBlockCommand {
         Legs = $legs.ToArray()
         Notes = $Notes
     }
-    return (Add-CampaignEvent -Root $root -EventType "NoMotionBlock" -Payload $payload -EventUtc $eventUtc)
+    return (Invoke-CampaignMutation -Root $root -Body {
+        Add-CampaignEvent -Root $root -EventType "NoMotionBlock" -Payload $payload -EventUtc $eventUtc
+    })
 }
 
 function Get-CampaignEvaluation {
@@ -717,7 +944,11 @@ function Get-CampaignEvaluation {
     } elseif (Test-SuppliedDate -Value $RecordedUtc) {
         ConvertTo-IPolarUtc -Value $RecordedUtc
     } else { [datetime]::UtcNow }
-    return (Invoke-IPolarCampaignEvaluation -Campaign $campaign -Policy $policy -EvaluatedUtc $evaluatedUtc)
+
+    # The CLI is the filesystem boundary: it verifies the preserved bytes and hands
+    # the resulting facts to the pure evaluator, which never touches a disk itself.
+    $artifactIntegrity = Test-IPolarPreservedEvidence -Campaign $campaign
+    return (Invoke-IPolarCampaignEvaluation -Campaign $campaign -Policy $policy -EvaluatedUtc $evaluatedUtc -ArtifactIntegrity $artifactIntegrity)
 }
 
 function Invoke-EvaluateCommand {
@@ -732,6 +963,22 @@ function Invoke-EvaluateCommand {
 
 function Invoke-FinalizeCommand {
     $root = Assert-ExistingCampaign
+    return (Invoke-CampaignMutation -Root $root -Body { Invoke-FinalizeUnderLock -Root $root })
+}
+
+<#
+.SYNOPSIS
+    Finalization body. Must run under the campaign lock.
+.DESCRIPTION
+    Appending the CampaignFinalized event and writing the reports is one mutation.
+    Re-running Finalize on an already finalized campaign is the single permitted
+    post-finalization operation: it appends nothing and reconstructs any report
+    that a previous interrupted run did not write, byte for byte.
+#>
+function Invoke-FinalizeUnderLock {
+    param([Parameter(Mandatory)] [string]$Root)
+
+    $root = $Root
     $state = Get-CampaignState -Root $root
     $alreadyFinalized = @(Get-IPolarEventsOfType -Events $state.Campaign.Events -EventType "CampaignFinalized")
     if ($alreadyFinalized.Count -gt 1) {
@@ -743,6 +990,18 @@ function Invoke-FinalizeCommand {
         ConvertTo-IPolarUtc -Value (Get-IPolarProperty -InputObject $alreadyFinalized[0] -Name "RecordedUtc")
     } else { Resolve-EventUtc }
     $preliminary = Get-CampaignEvaluation -Root $root -EvaluationUtc $eventUtc
+
+    # A campaign may legitimately finalize as Rejected - a documented rejection is a
+    # real result. Evidence that no longer matches what was recorded is different:
+    # finalization mints an immutable manifest of hashes, and stamping that over
+    # bytes known to have changed would enshrine a false record. Refuse outright.
+    # An external TPPA artifact that is merely absent is a recorded limitation, not
+    # a failure, and does not block finalization.
+    if ($preliminary.ArtifactIntegrity.Failures.Count -gt 0) {
+        $failureText = ($preliminary.ArtifactIntegrity.Failures -join "; ")
+        throw "Refusing to finalize: recorded evidence no longer matches the bytes on disk. $failureText"
+    }
+
     $campaignSlug = Assert-IPolarCampaignId -Value ([string]$preliminary.CampaignId)
 
     # Validate the complete report destination before appending the immutable

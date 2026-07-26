@@ -255,6 +255,93 @@ provably newer than the preceding one. Content already recorded under another
 event is refused, so one capture cannot be presented twice as two independent
 observations.
 
+### The preserved bytes are what count
+
+Hashing the operator's source file proves nothing about the copy the campaign
+keeps. Both are verified:
+
+- **At record time.** The copy is written to a private staging file, and the
+  staged bytes are rehashed and restatted against the source before the event is
+  appended. After the event is appended the staging file is promoted to its
+  committed `000N-` path and verified once more. A copy that does not match its
+  source never becomes campaign evidence.
+- **At every filesystem-aware evaluation.** `Evaluate` and `Finalize` rehash and
+  restat every recorded evidence file and compare it to what the event log says.
+  Missing, modified, size-changed, or unreadable evidence raises the
+  `ArtifactIntegrity` gate, forces `IntegrityValid` to false, and rejects the
+  campaign.
+
+`Finalize` additionally refuses to run at all while any evidence fails
+verification. A campaign may legitimately finalize as `Rejected` - a documented
+rejection is a real result - but finalization mints an immutable manifest of
+hashes, and stamping that over bytes known to have changed would enshrine a false
+record.
+
+### Preserved evidence versus external evidence
+
+Two classes are treated differently, deliberately:
+
+- **Preserved** evidence is a dark frame or an artifact. The campaign copied it,
+  owns its lifetime, and requires it to be present and byte-identical forever.
+  Absence or alteration fails closed.
+- **External** evidence is a linked TPPA run artifact. The campaign records its
+  path, hash, and size but never copies it and does not own its lifetime. If it
+  later disappears, that is reported as a recorded limitation rather than a
+  campaign defect. If it is still present but no longer matches its recorded
+  hash, the evidence the comparison rests on has changed, and that does fail
+  closed.
+
+The filesystem check lives in `Test-IPolarPreservedEvidence`, which reads files
+and reaches no verdict. `Invoke-IPolarCampaignEvaluation` stays pure: it consumes
+the resulting facts through `-ArtifactIntegrity` and never touches a disk. An
+evaluation performed without those facts reports
+`ArtifactIntegrity.Source = NotSupplied` and says plainly that the recorded
+hashes were not compared against the bytes on disk.
+
+### Finalization is terminal
+
+`CampaignFinalized` may occur exactly once and must be the last event in the
+chain. Every recording command is refused after it, and a refused command does
+not change the event log by a single byte. Evaluation independently rejects a
+campaign whose `CampaignFinalized` is duplicated or is followed by any other
+event, so a hand-edited log cannot smuggle events past finalization.
+
+Re-running `Finalize` on an already finalized campaign is the one permitted
+post-finalization operation. It appends nothing and reconstructs any report a
+previous interrupted run did not write, byte for byte, refusing to overwrite a
+report whose content differs.
+
+### Recording is transactional
+
+All validation happens before any evidence is committed. The preserved copy is
+staged under a name unique to that invocation, and nothing appears at the
+committed `000N-` path until the corresponding event has been appended. A
+rejected timestamp, a duplicate capture, or an interrupted import therefore
+leaves no file at the committed path and never blocks a corrected retry. On
+failure only that invocation's staging file is removed; committed evidence is
+never deleted or overwritten. A genuine collision at a committed path still fails
+closed.
+
+### Concurrent writers
+
+Every mutation - artifact reservation, artifact copy, event append, and
+finalization - runs inside a single campaign-scoped interprocess lock held on
+`<campaign>/.campaign.lock`. Campaign state is re-read and revalidated under that
+lock immediately before the append, so the sequence number and predecessor hash
+are always live rather than a stale snapshot. Lock acquisition is bounded by
+`-LockTimeoutSeconds` (default 30) and fails with a clear message rather than
+waiting forever.
+
+Without the lock, parallel writers read the same next sequence number and append
+duplicate sequences; a regression test runs six barrier-synchronised writers and
+requires a contiguous, unique, hash-valid chain with no orphan staging files.
+Event lines are written as UTF-8 bytes without a BOM and flushed to the storage
+device, so a crash cannot leave a torn line.
+
+`Evaluate` is read-only and takes no lock. It reads a campaign that a writer is
+actively appending to only as a whole-line parse, and a partial line fails closed
+with a parse error rather than being silently accepted.
+
 Hashes are computed over a canonical JSON rendering with ordinally sorted keys,
 invariant number formatting, and a single UTC timestamp form. This is required
 because Windows PowerShell 5.1 and PowerShell 7 disagree about whether an ISO

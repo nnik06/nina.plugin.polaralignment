@@ -483,6 +483,142 @@ function Read-IPolarPolicy {
     return ([IO.File]::ReadAllText($full) | ConvertFrom-Json)
 }
 
+# --- Filesystem evidence verifier ------------------------------------------------
+#
+# This section is the ONLY filesystem-aware part of the evidence model, and it is
+# deliberately separate from Invoke-IPolarCampaignEvaluation, which stays pure.
+# Callers run Test-IPolarPreservedEvidence and hand the resulting facts to the
+# evaluator, so the evaluator never touches a disk and stays deterministic.
+
+<#
+.SYNOPSIS
+    Evidence classes the campaign distinguishes.
+.DESCRIPTION
+    Preserved evidence lives inside the campaign directory and the campaign owns
+    its lifetime, so it must always be present and byte-identical.
+
+    External evidence is a linked TPPA run artifact. The campaign records its path
+    and hash but never copies it and does not own its lifetime, so its later
+    absence is a recorded limitation rather than a campaign defect. A linked file
+    that is still present but no longer matches its recorded hash is a different
+    matter: the evidence the comparison rests on has changed, and that fails
+    closed.
+#>
+function Get-IPolarPreservedEvidenceTypes { return @("Artifact", "DarkFrame") }
+function Get-IPolarExternalEvidenceTypes { return @("TppaArtifactLink") }
+
+function Get-IPolarFileSha256 {
+    param([Parameter(Mandatory)] [string]$LiteralPath)
+    return (Get-FileHash -LiteralPath $LiteralPath -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+
+<#
+.SYNOPSIS
+    Verifies recorded evidence against the bytes actually on disk.
+.DESCRIPTION
+    Returns the artifact-integrity facts that Invoke-IPolarCampaignEvaluation
+    consumes through its -ArtifactIntegrity parameter. Performs no evaluation and
+    reaches no verdict; it only reports what it found.
+#>
+function Test-IPolarPreservedEvidence {
+    param([Parameter(Mandatory)] $Campaign)
+
+    $entries = New-Object System.Collections.Generic.List[object]
+    $events = @(Get-IPolarProperty -InputObject $Campaign -Name "Events" -Default @())
+    $preservedFailures = 0
+    $externalMismatches = 0
+    $externalMissing = 0
+    $verified = 0
+
+    foreach ($campaignEvent in $events) {
+        $eventType = [string](Get-IPolarProperty -InputObject $campaignEvent -Name "EventType")
+        $isPreserved = (Get-IPolarPreservedEvidenceTypes) -contains $eventType
+        $isExternal = (Get-IPolarExternalEvidenceTypes) -contains $eventType
+        if (-not $isPreserved -and -not $isExternal) { continue }
+
+        $sequence = Get-IPolarProperty -InputObject $campaignEvent -Name "Sequence"
+        $payload = Get-IPolarProperty -InputObject $campaignEvent -Name "Payload"
+        $expectedSha = [string](Get-IPolarProperty -InputObject $payload -Name "Sha256")
+        $expectedSize = Get-IPolarFiniteNumber (Get-IPolarProperty -InputObject $payload -Name "SizeBytes")
+        $path = [string](Get-IPolarProperty -InputObject $payload -Name "StoredPath")
+        if ([string]::IsNullOrWhiteSpace($path)) { $path = [string](Get-IPolarProperty -InputObject $payload -Name "ArtifactPath") }
+
+        $entry = [ordered]@{
+            Sequence = $sequence
+            EventType = $eventType
+            EvidenceClass = if ($isPreserved) { "Preserved" } else { "External" }
+            Path = $path
+            ExpectedSha256 = $expectedSha
+            ActualSha256 = $null
+            ExpectedSizeBytes = $expectedSize
+            ActualSizeBytes = $null
+            Status = "Unknown"
+            Reason = ""
+        }
+
+        if ([string]::IsNullOrWhiteSpace($path)) {
+            $entry.Status = "NoRecordedPath"
+            $entry.Reason = "The event records no evidence path, so its bytes cannot be verified."
+        } elseif ([string]::IsNullOrWhiteSpace($expectedSha)) {
+            $entry.Status = "NoRecordedHash"
+            $entry.Reason = "The event records no SHA256, so its bytes cannot be verified."
+        } elseif (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+            $entry.Status = if ($isPreserved) { "Missing" } else { "ExternalMissing" }
+            $entry.Reason = if ($isPreserved) {
+                "Preserved evidence is missing from $path."
+            } else {
+                "Linked external evidence is no longer present at $path. The campaign never preserved this file and does not own its lifetime."
+            }
+        } else {
+            $actualSize = $null
+            $actualSha = $null
+            $readFailure = ""
+            try {
+                $info = Get-Item -LiteralPath $path
+                $actualSize = [long]$info.Length
+                $actualSha = Get-IPolarFileSha256 -LiteralPath $path
+            } catch {
+                $readFailure = $_.Exception.Message
+            }
+            $entry.ActualSizeBytes = $actualSize
+            $entry.ActualSha256 = $actualSha
+
+            if (-not [string]::IsNullOrEmpty($readFailure)) {
+                $entry.Status = "Unreadable"
+                $entry.Reason = "Evidence at $path could not be read: $readFailure"
+            } elseif ($null -ne $expectedSize -and $actualSize -ne [long]$expectedSize) {
+                $entry.Status = "SizeMismatch"
+                $entry.Reason = "Evidence at $path is $actualSize bytes but was recorded as $([long]$expectedSize) bytes."
+            } elseif ($actualSha -ne $expectedSha) {
+                $entry.Status = "Modified"
+                $entry.Reason = "Evidence at $path hashes to $actualSha but was recorded as $expectedSha."
+            } else {
+                $entry.Status = "Verified"
+                $entry.Reason = "Bytes on disk match the recorded SHA256 and size."
+            }
+        }
+
+        switch ($entry.Status) {
+            "Verified" { $verified++ }
+            "ExternalMissing" { $externalMissing++ }
+            default {
+                if ($isPreserved) { $preservedFailures++ } else { $externalMismatches++ }
+            }
+        }
+        [void]$entries.Add($entry)
+    }
+
+    return [pscustomobject]@{
+        Source = "FilesystemVerified"
+        CheckedCount = $entries.Count
+        VerifiedCount = $verified
+        PreservedFailureCount = $preservedFailures
+        ExternalMismatchCount = $externalMismatches
+        ExternalMissingCount = $externalMissing
+        Entries = $entries.ToArray()
+    }
+}
+
 # --- Evaluation ------------------------------------------------------------------
 
 function Add-IPolarGate {
@@ -564,7 +700,8 @@ function Invoke-IPolarCampaignEvaluation {
         [Parameter(Mandatory)] $Campaign,
         $Policy = $null,
         $ScreeningPolicy = $null,
-        [Parameter(Mandatory)] [datetime]$EvaluatedUtc
+        [Parameter(Mandatory)] [datetime]$EvaluatedUtc,
+        $ArtifactIntegrity = $null
     )
 
     if ($null -eq $ScreeningPolicy) { $ScreeningPolicy = Get-IPolarDefaultScreeningPolicy }
@@ -807,6 +944,80 @@ function Invoke-IPolarCampaignEvaluation {
             $artifactCount++
             $verdict = [string](Get-IPolarProperty -InputObject $payload -Name "QualitativeVerdict")
             if ((Get-IPolarQualitativeVerdicts) -contains $verdict) { $qualitativeVerdictCounts[$verdict] = $qualitativeVerdictCounts[$verdict] + 1 }
+        }
+    }
+
+    # --- Byte-level evidence verification -----------------------------------
+    # Facts are supplied by the caller through Test-IPolarPreservedEvidence. This
+    # function never reads a file itself.
+    $artifactIntegritySummary = [ordered]@{
+        Source = "NotSupplied"
+        CheckedCount = 0
+        VerifiedCount = 0
+        PreservedFailureCount = 0
+        ExternalMismatchCount = 0
+        ExternalMissingCount = 0
+        Failures = @()
+        ExternalLimitations = @()
+        Note = "No byte-level evidence verification was supplied to this evaluation. Recorded hashes were not compared against the bytes on disk, so this verdict rests on the event chain alone."
+    }
+    if ($null -ne $ArtifactIntegrity) {
+        $integrityFailures = New-Object System.Collections.Generic.List[string]
+        $externalLimitations = New-Object System.Collections.Generic.List[string]
+        $artifactIntegritySummary.Source = [string](Get-IPolarProperty -InputObject $ArtifactIntegrity -Name "Source" -Default "FilesystemVerified")
+        $artifactIntegritySummary.CheckedCount = [int](Get-IPolarProperty -InputObject $ArtifactIntegrity -Name "CheckedCount" -Default 0)
+        $artifactIntegritySummary.VerifiedCount = [int](Get-IPolarProperty -InputObject $ArtifactIntegrity -Name "VerifiedCount" -Default 0)
+        $artifactIntegritySummary.PreservedFailureCount = [int](Get-IPolarProperty -InputObject $ArtifactIntegrity -Name "PreservedFailureCount" -Default 0)
+        $artifactIntegritySummary.ExternalMismatchCount = [int](Get-IPolarProperty -InputObject $ArtifactIntegrity -Name "ExternalMismatchCount" -Default 0)
+        $artifactIntegritySummary.ExternalMissingCount = [int](Get-IPolarProperty -InputObject $ArtifactIntegrity -Name "ExternalMissingCount" -Default 0)
+        $artifactIntegritySummary.Note = "Recorded hashes and sizes were compared against the bytes on disk."
+
+        foreach ($entry in @(Get-IPolarProperty -InputObject $ArtifactIntegrity -Name "Entries" -Default @())) {
+            $status = [string](Get-IPolarProperty -InputObject $entry -Name "Status")
+            if ($status -eq "Verified") { continue }
+            $entrySequence = Get-IPolarProperty -InputObject $entry -Name "Sequence"
+            $entryType = [string](Get-IPolarProperty -InputObject $entry -Name "EventType")
+            $entryClass = [string](Get-IPolarProperty -InputObject $entry -Name "EvidenceClass")
+            $entryReason = [string](Get-IPolarProperty -InputObject $entry -Name "Reason")
+            $text = "sequence $entrySequence ($entryType): $entryReason"
+
+            if ($status -eq "ExternalMissing") {
+                [void]$externalLimitations.Add($text)
+                continue
+            }
+            [void]$integrityFailures.Add($text)
+            if ($entryClass -eq "External") {
+                Add-IPolarGate $gates "ArtifactIntegrity" "Linked external evidence at $text no longer matches what was recorded. The comparison rests on evidence that has changed."
+            } else {
+                Add-IPolarGate $gates "ArtifactIntegrity" "Preserved evidence failed byte-level verification at $text"
+            }
+        }
+        $artifactIntegritySummary.Failures = $integrityFailures.ToArray()
+        $artifactIntegritySummary.ExternalLimitations = $externalLimitations.ToArray()
+    }
+
+    # --- Finalization must be terminal --------------------------------------
+    $finalizedEvents = @(Get-IPolarEventsOfType -Events $events -EventType "CampaignFinalized")
+    $finalizationSummary = [ordered]@{
+        Finalized = ($finalizedEvents.Count -ge 1)
+        FinalizedEventCount = $finalizedEvents.Count
+        IsTerminal = $false
+        FinalizedUtc = $null
+    }
+    if ($finalizedEvents.Count -gt 1) {
+        Add-IPolarGate $gates "Finalization" "Campaign contains $($finalizedEvents.Count) CampaignFinalized events. Finalization is terminal and may occur exactly once."
+    } elseif ($finalizedEvents.Count -eq 1) {
+        $finalizationSummary.FinalizedUtc = [string](Get-IPolarProperty -InputObject $finalizedEvents[0] -Name "RecordedUtc")
+        $finalizedSequence = Get-IPolarFiniteNumber (Get-IPolarProperty -InputObject $finalizedEvents[0] -Name "Sequence")
+        if ($events.Count -gt 0) {
+            $lastEvent = $events[$events.Count - 1]
+            $lastType = [string](Get-IPolarProperty -InputObject $lastEvent -Name "EventType")
+            if ($lastType -eq "CampaignFinalized") {
+                $finalizationSummary.IsTerminal = $true
+            } else {
+                $trailing = $events.Count - [int]$finalizedSequence
+                Add-IPolarGate $gates "Finalization" "CampaignFinalized is at sequence $([int]$finalizedSequence) but $trailing event(s) follow it. Finalization is terminal: nothing may be appended afterwards."
+            }
         }
     }
 
@@ -1089,7 +1300,10 @@ function Invoke-IPolarCampaignEvaluation {
         CampaignId = [string](Get-IPolarProperty -InputObject $header -Name "CampaignId")
         EvaluatedUtc = Format-IPolarUtc -Value $EvaluatedUtc
         QualificationLevel = $level
-        IntegrityValid = ($chainValid -and -not (@($gates | Where-Object { @("HashChain", "EventSequence", "EventTimestamp", "GenesisHash", "EventType") -contains $_.Gate }).Count -gt 0))
+        # Byte-level evidence failure and a non-terminal finalization are integrity
+        # failures, not merely qualification failures: the stored campaign no longer
+        # describes what is actually on disk.
+        IntegrityValid = ($chainValid -and -not (@($gates | Where-Object { @("HashChain", "EventSequence", "EventTimestamp", "GenesisHash", "EventType", "ArtifactIntegrity", "Finalization") -contains $_.Gate }).Count -gt 0))
         ChainHeadHash = $expectedPrevious
         Provenance = [ordered]@{
             RepositoryCommit = [string](Get-IPolarProperty -InputObject $header -Name "RepositoryCommit")
@@ -1116,6 +1330,8 @@ function Invoke-IPolarCampaignEvaluation {
             Count = $artifactCount
             DuplicateSha256 = @($duplicateHashes | Sort-Object -Unique)
         }
+        ArtifactIntegrity = $artifactIntegritySummary
+        Finalization = $finalizationSummary
         NoMotionBlocks = $blockSummaries.ToArray()
         TppaArtifactLinks = $tppaLinks.ToArray()
         UncertaintyPolicy = $policySummary
@@ -1194,6 +1410,29 @@ function New-IPolarCampaignReportMarkdown {
     }
     [void]$lines.Add("| Integrity valid | $($Evaluation.IntegrityValid) |")
     [void]$lines.Add("| Pole convention | $(Format-IPolarReportText $Evaluation.PoleConvention) |")
+    [void]$lines.Add("")
+    [void]$lines.Add("## Evidence integrity")
+    [void]$lines.Add("")
+    [void]$lines.Add("- Verification source: $(Format-IPolarReportText $Evaluation.ArtifactIntegrity.Source)")
+    [void]$lines.Add("- Evidence files checked: $($Evaluation.ArtifactIntegrity.CheckedCount)")
+    [void]$lines.Add("- Byte-identical: $($Evaluation.ArtifactIntegrity.VerifiedCount)")
+    [void]$lines.Add("- Preserved evidence failures: $($Evaluation.ArtifactIntegrity.PreservedFailureCount)")
+    [void]$lines.Add("- Linked external evidence mismatches: $($Evaluation.ArtifactIntegrity.ExternalMismatchCount)")
+    [void]$lines.Add("- Linked external evidence no longer present: $($Evaluation.ArtifactIntegrity.ExternalMissingCount)")
+    [void]$lines.Add("- $(Format-IPolarReportText $Evaluation.ArtifactIntegrity.Note)")
+    if ($Evaluation.ArtifactIntegrity.Failures.Count -gt 0) {
+        [void]$lines.Add("")
+        [void]$lines.Add("Evidence that failed verification:")
+        foreach ($failure in $Evaluation.ArtifactIntegrity.Failures) { [void]$lines.Add("- $failure") }
+    }
+    if ($Evaluation.ArtifactIntegrity.ExternalLimitations.Count -gt 0) {
+        [void]$lines.Add("")
+        [void]$lines.Add("Linked TPPA artifacts are external evidence. The campaign records their path and hash but never copied them and does not own their lifetime, so absence is a recorded limitation rather than a campaign defect. A linked file that is still present but no longer matches its recorded hash does fail closed.")
+        [void]$lines.Add("")
+        foreach ($limitation in $Evaluation.ArtifactIntegrity.ExternalLimitations) { [void]$lines.Add("- $limitation") }
+    }
+    [void]$lines.Add("")
+    [void]$lines.Add("Finalized: $($Evaluation.Finalization.Finalized). Terminal: $($Evaluation.Finalization.IsTerminal). Finalization events: $($Evaluation.Finalization.FinalizedEventCount).")
     [void]$lines.Add("")
     [void]$lines.Add("## Site and atmosphere")
     [void]$lines.Add("")
@@ -1336,6 +1575,10 @@ function New-IPolarCouncilPacketMarkdown {
     [void]$lines.Add("| Authoritative numeric residuals | $($Evaluation.NumericEvidence.AuthoritativeResidualCount) |")
     [void]$lines.Add("| Qualitative verdicts | $($Evaluation.QualitativeEvidence.TotalVerdicts) |")
     [void]$lines.Add("| Uncertainty policy satisfied | $($Evaluation.UncertaintyPolicy.Satisfied) |")
+    [void]$lines.Add("| Evidence verification | $(Format-IPolarReportText $Evaluation.ArtifactIntegrity.Source) |")
+    [void]$lines.Add("| Evidence byte-identical / checked | $($Evaluation.ArtifactIntegrity.VerifiedCount) / $($Evaluation.ArtifactIntegrity.CheckedCount) |")
+    [void]$lines.Add("| Preserved evidence failures | $($Evaluation.ArtifactIntegrity.PreservedFailureCount) |")
+    [void]$lines.Add("| Finalization terminal | $($Evaluation.Finalization.IsTerminal) |")
     [void]$lines.Add("| Failed gates | $($Evaluation.FailedGates.Count) |")
     [void]$lines.Add("")
     [void]$lines.Add("## Failed gates")

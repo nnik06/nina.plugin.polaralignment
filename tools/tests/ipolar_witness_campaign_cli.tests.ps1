@@ -341,6 +341,227 @@ try {
     $eventCountAfterMismatch = @([IO.File]::ReadAllLines((Join-Path $campaign "events.jsonl"))).Count
     Assert-True ($eventCountAfterMismatch -eq $eventCountBeforeResume) "a mismatched finalized report must not mutate the event chain"
 
+    # --- Preserved evidence is verified byte for byte ----------------------------
+    #
+    # Recording an artifact hashes the source. These tests prove the preserved copy
+    # is what actually gets trusted afterwards: the bytes on disk are rehashed at
+    # record time and again at every filesystem-aware evaluation.
+
+    function Get-PreservedPath {
+        param([string]$Campaign, [string]$EventType)
+        $line = @([IO.File]::ReadAllLines((Join-Path $Campaign "events.jsonl")) | Where-Object { $_ } |
+            Where-Object { ($_ | ConvertFrom-Json).EventType -eq $EventType } | Select-Object -First 1)
+        return ($line[0] | ConvertFrom-Json).Payload.StoredPath
+    }
+
+    function Get-RecordedSha {
+        param([string]$Campaign, [string]$EventType)
+        $line = @([IO.File]::ReadAllLines((Join-Path $Campaign "events.jsonl")) | Where-Object { $_ } |
+            Where-Object { ($_ | ConvertFrom-Json).EventType -eq $EventType } | Select-Object -First 1)
+        return ($line[0] | ConvertFrom-Json).Payload.Sha256
+    }
+
+    # Destination bytes are verified immediately after the copy: the preserved file
+    # exists, matches the recorded hash, and no staging file survives the import.
+    $bytesCampaign = New-CompleteCampaign -Name "preserved-bytes"
+    foreach ($evidenceType in @("Artifact", "DarkFrame")) {
+        $preservedPath = Get-PreservedPath -Campaign $bytesCampaign -EventType $evidenceType
+        $recordedSha = Get-RecordedSha -Campaign $bytesCampaign -EventType $evidenceType
+        Assert-True (Test-Path -LiteralPath $preservedPath) "$evidenceType must leave a preserved copy at its recorded StoredPath"
+        $onDisk = (Get-FileHash -LiteralPath $preservedPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        Assert-True ($onDisk -eq $recordedSha) "$evidenceType preserved bytes must match the recorded SHA256 immediately after the copy"
+    }
+    $staging = @(Get-ChildItem -LiteralPath (Join-Path $bytesCampaign "artifacts") -File -Force | Where-Object { $_.Name -like ".staging-*" })
+    Assert-True ($staging.Count -eq 0) "a successful import must leave no staging file behind"
+
+    $bytesBaseline = & $ToolPath -Command Evaluate -CampaignPath $bytesCampaign -PolicyPath $policy -RecordedUtc $BaseUtc.AddMinutes(95)
+    Assert-True ($bytesBaseline.QualificationLevel -eq "QualifiedCorroboratingWitness") "the byte-verification fixture must start qualified"
+    Assert-True ($bytesBaseline.ArtifactIntegrity.Source -eq "FilesystemVerified") "a CLI evaluation must verify evidence against the filesystem"
+    Assert-True ($bytesBaseline.ArtifactIntegrity.PreservedFailureCount -eq 0) "an untouched campaign must report no preserved-evidence failure"
+    Assert-True ($bytesBaseline.ArtifactIntegrity.VerifiedCount -ge 3) "the dark frame, the screenshot, and the linked TPPA artifact must all be verified"
+
+    # A modified preserved artifact must destroy qualification and integrity.
+    $modifiedCampaign = New-CompleteCampaign -Name "artifact-modified"
+    $modifiedBefore = & $ToolPath -Command Evaluate -CampaignPath $modifiedCampaign -PolicyPath $policy -RecordedUtc $BaseUtc.AddMinutes(95)
+    Assert-True ($modifiedBefore.QualificationLevel -eq "QualifiedCorroboratingWitness") "the tamper fixture must start qualified"
+    Assert-True ($modifiedBefore.IntegrityValid) "the tamper fixture must start with valid integrity"
+    $modifiedPath = Get-PreservedPath -Campaign $modifiedCampaign -EventType "Artifact"
+    $originalBytes = [IO.File]::ReadAllBytes($modifiedPath)
+    # Same length, different bytes: proves the hash is checked, not just the size.
+    $sameLength = New-Object byte[] $originalBytes.Length
+    for ($index = 0; $index -lt $originalBytes.Length; $index++) { $sameLength[$index] = [byte](($originalBytes[$index] + 1) % 256) }
+    [IO.File]::WriteAllBytes($modifiedPath, $sameLength)
+    $modifiedAfter = & $ToolPath -Command Evaluate -CampaignPath $modifiedCampaign -PolicyPath $policy -RecordedUtc $BaseUtc.AddMinutes(95)
+    Assert-True ($modifiedAfter.QualificationLevel -eq "Rejected") "a modified preserved artifact must reject the campaign (was $($modifiedAfter.QualificationLevel))"
+    Assert-True (-not $modifiedAfter.IntegrityValid) "a modified preserved artifact must invalidate integrity"
+    Assert-True (@($modifiedAfter.FailedGates | Where-Object { $_.Gate -eq "ArtifactIntegrity" }).Count -ge 1) "the artifact integrity gate must fire on modification"
+    Assert-True ($modifiedAfter.ArtifactIntegrity.PreservedFailureCount -eq 1) "exactly one preserved artifact must be reported as failing"
+    Assert-Throws { & $ToolPath -Command Finalize -CampaignPath $modifiedCampaign -PolicyPath $policy -RecordedUtc $BaseUtc.AddMinutes(96) -ReportDirectory (Join-Path $TestRoot "modified-reports") } "" "finalization must fail closed while evidence is modified"
+
+    # A deleted preserved dark frame must be detected the same way.
+    $deletedCampaign = New-CompleteCampaign -Name "artifact-deleted"
+    $deletedDark = Get-PreservedPath -Campaign $deletedCampaign -EventType "DarkFrame"
+    Remove-Item -LiteralPath $deletedDark -Force
+    $deletedAfter = & $ToolPath -Command Evaluate -CampaignPath $deletedCampaign -PolicyPath $policy -RecordedUtc $BaseUtc.AddMinutes(95)
+    Assert-True ($deletedAfter.QualificationLevel -eq "Rejected") "a deleted preserved dark frame must reject the campaign"
+    Assert-True (-not $deletedAfter.IntegrityValid) "a deleted preserved dark frame must invalidate integrity"
+    Assert-True ((($deletedAfter.ArtifactIntegrity.Failures) -join " ").Contains("missing")) "the missing dark frame must be named in the failures"
+
+    # A size-changed preserved artifact must be detected.
+    $sizeCampaign = New-CompleteCampaign -Name "artifact-resized"
+    $sizePath = Get-PreservedPath -Campaign $sizeCampaign -EventType "Artifact"
+    [IO.File]::AppendAllText($sizePath, "extra bytes appended after recording")
+    $sizeAfter = & $ToolPath -Command Evaluate -CampaignPath $sizeCampaign -PolicyPath $policy -RecordedUtc $BaseUtc.AddMinutes(95)
+    Assert-True ($sizeAfter.QualificationLevel -eq "Rejected") "a size-changed preserved artifact must reject the campaign"
+    Assert-True (-not $sizeAfter.IntegrityValid) "a size-changed preserved artifact must invalidate integrity"
+    Assert-True ((($sizeAfter.ArtifactIntegrity.Failures) -join " ").Contains("bytes but was recorded as")) "the size mismatch must be reported explicitly"
+
+    # A linked TPPA artifact is external evidence: absence is a recorded limitation,
+    # but a file that is still present and no longer matches fails closed.
+    $externalCampaign = New-CompleteCampaign -Name "external-link"
+    $externalLine = @([IO.File]::ReadAllLines((Join-Path $externalCampaign "events.jsonl")) | Where-Object { $_ } |
+        Where-Object { ($_ | ConvertFrom-Json).EventType -eq "TppaArtifactLink" } | Select-Object -First 1)
+    $externalPath = ($externalLine[0] | ConvertFrom-Json).Payload.ArtifactPath
+    $externalOriginal = [IO.File]::ReadAllText($externalPath)
+    Remove-Item -LiteralPath $externalPath -Force
+    $externalMissing = & $ToolPath -Command Evaluate -CampaignPath $externalCampaign -PolicyPath $policy -RecordedUtc $BaseUtc.AddMinutes(95)
+    Assert-True ($externalMissing.QualificationLevel -eq "QualifiedCorroboratingWitness") "an absent external TPPA artifact is a limitation, not a campaign defect"
+    Assert-True ($externalMissing.ArtifactIntegrity.ExternalMissingCount -eq 1) "the absent external artifact must be counted"
+    Assert-True ($externalMissing.ArtifactIntegrity.ExternalLimitations.Count -eq 1) "the absent external artifact must be reported as a limitation"
+    [IO.File]::WriteAllText($externalPath, $externalOriginal + " altered")
+    $externalAltered = & $ToolPath -Command Evaluate -CampaignPath $externalCampaign -PolicyPath $policy -RecordedUtc $BaseUtc.AddMinutes(95)
+    Assert-True ($externalAltered.QualificationLevel -eq "Rejected") "an altered external TPPA artifact must fail closed"
+    Assert-True (-not $externalAltered.IntegrityValid) "an altered external TPPA artifact must invalidate integrity"
+
+    # --- Finalization is terminal ------------------------------------------------
+    $terminalCampaign = New-CompleteCampaign -Name "terminal"
+    $terminalFinal = & $ToolPath -Command Finalize -CampaignPath $terminalCampaign -PolicyPath $policy -RecordedUtc $BaseUtc.AddMinutes(96)
+    Assert-True ($terminalFinal.QualificationLevel -eq "QualifiedCorroboratingWitness") "the terminal fixture must finalize"
+    $terminalLogPath = Join-Path $terminalCampaign "events.jsonl"
+    $terminalBytesBefore = [IO.File]::ReadAllBytes($terminalLogPath)
+
+    $postFinalizationAttempts = @(
+        @{ Command = "RecordSolveAttempt"; Arguments = @{ SolveOutcome = "Success"; Reason = "after finalize" } },
+        @{ Command = "RecordEnvironment"; Arguments = @{ LatitudeDegrees = 25.2; LongitudeDegrees = 55.27; ElevationMeters = 12; SiteSource = "after" } },
+        @{ Command = "RecordCalibration"; Arguments = @{ RaPositionsDegrees = @(0.0) } },
+        @{ Command = "RecordReseat"; Arguments = @{ RecalibrationPerformed = $true } },
+        @{ Command = "RecordBlock"; Arguments = @{ BlockId = "after"; BlockStartUtc = $BaseUtc.AddMinutes(97); BlockEndUtc = $BaseUtc.AddMinutes(98); BlockLegs = @("iPolar", "TPPA-A", "TPPA-B", "TPPA-A", "iPolar") } },
+        @{ Command = "RecordArtifact"; Arguments = @{ Path = (New-EvidenceFile); CreatedUtc = $BaseUtc.AddMinutes(96); QualitativeVerdict = "CrossInsideCircle" } },
+        @{ Command = "RecordDarkFrame"; Arguments = @{ Path = (New-EvidenceFile); CapturedUtc = $BaseUtc.AddMinutes(96) } },
+        @{ Command = "LinkTppaArtifact"; Arguments = @{ Path = (New-EvidenceFile); TppaRunId = "after" } }
+    )
+    foreach ($attempt in $postFinalizationAttempts) {
+        $arguments = @{ Command = $attempt.Command; CampaignPath = $terminalCampaign; RecordedUtc = $BaseUtc.AddMinutes(97) }
+        foreach ($key in $attempt.Arguments.Keys) { $arguments[$key] = $attempt.Arguments[$key] }
+        Assert-Throws { & $ToolPath @arguments } "Finalization is terminal" "$($attempt.Command) must be refused after finalization"
+    }
+    $terminalBytesAfter = [IO.File]::ReadAllBytes($terminalLogPath)
+    Assert-True ([Convert]::ToBase64String($terminalBytesBefore) -eq [Convert]::ToBase64String($terminalBytesAfter)) "a refused post-finalization command must not mutate the event log by even one byte"
+    $terminalStaging = @(Get-ChildItem -LiteralPath (Join-Path $terminalCampaign "artifacts") -File -Force | Where-Object { $_.Name -like ".staging-*" })
+    Assert-True ($terminalStaging.Count -eq 0) "a refused post-finalization artifact command must leave no staging file"
+
+    # Resuming Finalize is the one permitted post-finalization operation, and it
+    # reconstructs a missing report byte for byte.
+    $terminalMarkdown = [IO.File]::ReadAllText($terminalFinal.ReportMarkdownPath)
+    Remove-Item -LiteralPath $terminalFinal.ReportMarkdownPath -Force
+    $terminalResume = & $ToolPath -Command Finalize -CampaignPath $terminalCampaign -PolicyPath $policy -RecordedUtc $BaseUtc.AddMinutes(99)
+    Assert-True (Test-Path -LiteralPath $terminalResume.ReportMarkdownPath) "resume must reconstruct the missing report"
+    Assert-True ([IO.File]::ReadAllText($terminalResume.ReportMarkdownPath) -ceq $terminalMarkdown) "the reconstructed report must be byte identical to the original"
+    $terminalBytesAfterResume = [IO.File]::ReadAllBytes($terminalLogPath)
+    Assert-True ([Convert]::ToBase64String($terminalBytesAfterResume) -eq [Convert]::ToBase64String($terminalBytesBefore)) "resume must not append another event"
+
+    # --- Transactional artifact recording ----------------------------------------
+    $orphanCampaign = New-CompleteCampaign -Name "orphan-recovery"
+    $orphanEvidence = New-EvidenceFile -Name "orphan-candidate.png"
+    $orphanArtifactDir = Join-Path $orphanCampaign "artifacts"
+    $orphanBefore = @(Get-ChildItem -LiteralPath $orphanArtifactDir -File -Force).Count
+    # The artifact's own CreatedUtc is acceptable, but the event timestamp regresses
+    # against the last recorded event, so the rejection happens at append time.
+    Assert-Throws { & $ToolPath -Command RecordArtifact -CampaignPath $orphanCampaign -RecordedUtc $BaseUtc.AddMinutes(50) `
+        -Path $orphanEvidence -CreatedUtc $BaseUtc.AddMinutes(49) -QualitativeVerdict CrossInsideCircle } "must not move backwards" "a backdated artifact event must be refused"
+    $orphanAfter = @(Get-ChildItem -LiteralPath $orphanArtifactDir -File -Force)
+    Assert-True ($orphanAfter.Count -eq $orphanBefore) "a refused artifact import must leave no file in the artifacts directory"
+    Assert-True (@($orphanAfter | Where-Object { $_.Name -like "*orphan-candidate*" }).Count -eq 0) "a refused artifact import must not leave a committed 000N copy"
+    Assert-True (@($orphanAfter | Where-Object { $_.Name -like ".staging-*" }).Count -eq 0) "a refused artifact import must clean up its staging file"
+
+    $orphanRetry = & $ToolPath -Command RecordArtifact -CampaignPath $orphanCampaign -RecordedUtc $BaseUtc.AddMinutes(92) `
+        -Path $orphanEvidence -CreatedUtc $BaseUtc.AddMinutes(91) -QualitativeVerdict CrossInsideCircle
+    Assert-True ($orphanRetry.EventType -eq "Artifact") "the corrected retry must succeed without manual cleanup"
+    Assert-True (Test-Path -LiteralPath $orphanRetry.Payload.StoredPath) "the corrected retry must preserve its evidence"
+    $retryOnDisk = (Get-FileHash -LiteralPath $orphanRetry.Payload.StoredPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    Assert-True ($retryOnDisk -eq $orphanRetry.Payload.Sha256) "the retried preserved copy must match its recorded hash"
+
+    # A genuine committed collision must still fail closed.
+    $collisionEvidence = New-EvidenceFile -Name "collision.png"
+    $nextSequence = @([IO.File]::ReadAllLines((Join-Path $orphanCampaign "events.jsonl")) | Where-Object { $_ }).Count + 1
+    $squatted = Join-Path $orphanArtifactDir ("{0:D4}-collision.png" -f $nextSequence)
+    [IO.File]::WriteAllText($squatted, "pre-existing committed evidence")
+    Assert-Throws { & $ToolPath -Command RecordArtifact -CampaignPath $orphanCampaign -RecordedUtc $BaseUtc.AddMinutes(93) `
+        -Path $collisionEvidence -CreatedUtc $BaseUtc.AddMinutes(92) -QualitativeVerdict CrossInsideCircle } "already exists" "a committed destination collision must fail closed"
+    Assert-True ([IO.File]::ReadAllText($squatted) -eq "pre-existing committed evidence") "a collision must never overwrite committed evidence"
+
+    # --- Concurrent append safety ------------------------------------------------
+    $raceCampaign = New-CompleteCampaign -Name "race"
+    $raceBarrier = Join-Path $TestRoot "race-barrier.txt"
+    $raceChild = Join-Path $TestRoot "race-child.ps1"
+    @'
+param($Tool, $Campaign, $Barrier, $Utc, $Evidence, $Created)
+while (-not (Test-Path -LiteralPath $Barrier)) { Start-Sleep -Milliseconds 5 }
+try {
+    & $Tool -Command RecordArtifact -CampaignPath $Campaign -RecordedUtc ([datetime]::Parse($Utc).ToUniversalTime()) `
+        -Path $Evidence -CreatedUtc ([datetime]::Parse($Created).ToUniversalTime()) -QualitativeVerdict CrossInsideCircle | Out-Null
+} catch { }
+'@ | Set-Content -LiteralPath $raceChild -Encoding utf8
+
+    $writerCount = 6
+    $raceHost = if ($PSVersionTable.PSVersion.Major -ge 6) { "pwsh" } else { "powershell" }
+    $raceProcesses = @()
+    for ($index = 1; $index -le $writerCount; $index++) {
+        $raceEvidence = New-EvidenceFile -Name "race-$index.png"
+        $raceProcesses += Start-Process -FilePath $raceHost -PassThru -WindowStyle Hidden -ArgumentList @(
+            "-NoProfile", "-File", $raceChild, $ToolPath, $raceCampaign, $raceBarrier,
+            $BaseUtc.AddMinutes(92).ToString("o"), $raceEvidence, $BaseUtc.AddMinutes(91 + $index).ToString("o"))
+    }
+    Start-Sleep -Seconds 6
+    [IO.File]::WriteAllText($raceBarrier, "go")
+    foreach ($raceProcess in $raceProcesses) { $null = $raceProcess.WaitForExit(240000) }
+
+    $raceLines = @([IO.File]::ReadAllLines((Join-Path $raceCampaign "events.jsonl")) | Where-Object { $_ })
+    $raceEvents = @()
+    foreach ($raceLine in $raceLines) { $raceEvents += ($raceLine | ConvertFrom-Json) }
+    Assert-True ($raceEvents.Count -eq $raceLines.Count) "every event line must be complete, parseable JSON after concurrent writers"
+    $raceSequences = @($raceEvents | ForEach-Object { $_.Sequence })
+    Assert-True (@($raceSequences | Sort-Object -Unique).Count -eq $raceSequences.Count) "concurrent writers must never reuse a sequence number"
+    for ($index = 0; $index -lt $raceSequences.Count; $index++) {
+        Assert-True ($raceSequences[$index] -eq ($index + 1)) "concurrent writers must produce a contiguous ordered sequence"
+    }
+    $raceStaging = @(Get-ChildItem -LiteralPath (Join-Path $raceCampaign "artifacts") -File -Force | Where-Object { $_.Name -like ".staging-*" })
+    Assert-True ($raceStaging.Count -eq 0) "losing contenders must leave no orphan staging file"
+    $raceEvaluation = & $ToolPath -Command Evaluate -CampaignPath $raceCampaign -PolicyPath $policy -RecordedUtc $BaseUtc.AddMinutes(120)
+    Assert-True ($raceEvaluation.IntegrityValid) "the hash chain must remain valid after concurrent writers"
+    Assert-True (@($raceEvaluation.FailedGates | Where-Object { $_.Gate -eq "HashChain" -or $_.Gate -eq "EventSequence" }).Count -eq 0) "concurrent writers must not corrupt the chain"
+    Assert-True ($raceEvaluation.ArtifactIntegrity.PreservedFailureCount -eq 0) "every artifact committed under contention must verify byte for byte"
+
+    # --- Cross-host consistency ---------------------------------------------------
+    # A campaign written by one PowerShell host must verify under the other, with
+    # the same chain head hash and the same verdict.
+    $otherHost = if ($PSVersionTable.PSVersion.Major -ge 6) { "powershell" } else { "pwsh" }
+    $otherHostPath = (Get-Command $otherHost -ErrorAction SilentlyContinue)
+    if ($null -ne $otherHostPath) {
+        $crossEvaluation = & $ToolPath -Command Evaluate -CampaignPath $bytesCampaign -PolicyPath $policy -RecordedUtc $BaseUtc.AddMinutes(95)
+        $crossOutput = Join-Path $TestRoot "cross-host-evaluation.json"
+        & $otherHostPath.Source -NoProfile -File $ToolPath -Command Evaluate -CampaignPath $bytesCampaign `
+            -PolicyPath $policy -RecordedUtc $BaseUtc.AddMinutes(95) -OutputPath $crossOutput *> $null
+        Assert-True (Test-Path -LiteralPath $crossOutput) "the other PowerShell host must produce an evaluation"
+        $crossOther = [IO.File]::ReadAllText($crossOutput) | ConvertFrom-Json
+        Assert-True ($crossOther.ChainHeadHash -eq $crossEvaluation.ChainHeadHash) "both PowerShell hosts must compute the same chain head hash"
+        Assert-True ($crossOther.QualificationLevel -eq $crossEvaluation.QualificationLevel) "both PowerShell hosts must reach the same verdict"
+        Assert-True ($crossOther.IntegrityValid -eq $crossEvaluation.IntegrityValid) "both PowerShell hosts must agree on integrity"
+        Assert-True ($crossOther.ArtifactIntegrity.PreservedFailureCount -eq 0) "the other host must verify the preserved bytes too"
+    } else {
+        Write-Host "  (skipped cross-host check: $otherHost is not available)"
+    }
+
     # --- Rejected campaigns exit non-zero ---------------------------------------
     & $ToolPath -Command Evaluate -CampaignPath $eightOfTen -PolicyPath $policy -RecordedUtc $BaseUtc.AddMinutes(95) *> $null
     Assert-True ($LASTEXITCODE -eq 2) "a rejected evaluation must exit 2 (was $LASTEXITCODE)"

@@ -1,3 +1,13 @@
+## Version 2.2.6.36
+
+- Verify iPolar preserved evidence byte for byte: rehash and restat the staged and promoted copies at record time, and recheck every recorded dark frame and artifact against the bytes on disk during filesystem-aware evaluation and finalization.
+- Reject a campaign and force `IntegrityValid` false when preserved evidence is missing, modified, size-changed, or unreadable, and refuse to finalize while any evidence fails verification.
+- Classify linked TPPA run artifacts as external unpreserved evidence: later absence is a recorded limitation, while a still-present file that no longer matches its recorded hash fails closed.
+- Keep `Invoke-IPolarCampaignEvaluation` pure by moving the filesystem check into a separate `Test-IPolarPreservedEvidence` verifier whose facts the evaluator consumes through `-ArtifactIntegrity`.
+- Make finalization terminal: refuse every recording command once `CampaignFinalized` exists without mutating the log, and reject a duplicated or non-tail finalization during evaluation. Finalize resume remains the only permitted post-finalization operation and stays byte identical.
+- Record artifacts transactionally through a per-invocation staging file promoted only after the event is appended, so a rejected timestamp or interrupted import leaves no orphan at the committed path and a corrected retry succeeds without manual cleanup.
+- Serialize every campaign mutation with a bounded campaign-scoped interprocess lock, revalidate state under the lock immediately before append, and write event lines as durable UTF-8 without a BOM.
+
 ## Version 2.2.6.35
 
 - Add a fail-closed external UPAS supervisor boundary shared by automated pre-seat and correction movement.
