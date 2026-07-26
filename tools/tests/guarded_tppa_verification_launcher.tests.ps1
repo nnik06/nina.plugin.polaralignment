@@ -23,6 +23,13 @@ Describe 'guarded TPPA verification launcher static safety contract' {
         $text.Contains('settled pointing') | Should Be $true
     }
 
+    It 'confirms a settled envelope violation against immediate follow-up telemetry' {
+        $text.Contains('Confirm-SettledBalconyViolation') | Should Be $true
+        $text.Contains('foreach ($attempt in 1..2)') | Should Be $true
+        $text.Contains('Ignored one transient out-of-envelope Advanced API sample') | Should Be $true
+        $text.Contains('Confirmed settled balcony violation') | Should Be $true
+    }
+
     It 'uses the supported GET stop endpoint' {
         $text.Contains("Invoke-Nina -Path '/sequence/stop'") | Should Be $true
         $text.Contains("-Method Post") | Should Be $false

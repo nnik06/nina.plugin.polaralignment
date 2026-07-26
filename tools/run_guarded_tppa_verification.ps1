@@ -92,6 +92,49 @@ function Test-BalconyPoint([double]$Azimuth, [double]$Altitude) {
     $insideAzimuth -and $Altitude -ge $MinimumAltitudeDegrees -and $Altitude -le $MaximumAltitudeDegrees
 }
 
+function Confirm-SettledBalconyViolation(
+    [double]$InitialAzimuth,
+    [double]$InitialAltitude) {
+    $samples = [Collections.Generic.List[string]]::new()
+    $samples.Add(("Az={0:F6},Alt={1:F6}" -f $InitialAzimuth, $InitialAltitude))
+
+    # A July 2026 field run observed one Advanced API Alt=0 sample while NINA's
+    # own mount telemetry remained near Alt=30. Confirm a settled violation
+    # promptly without turning one transport/update dropout into a false abort.
+    foreach ($attempt in 1..2) {
+        Start-Sleep -Milliseconds 250
+        $response = Invoke-Nina -Path '/equipment/mount/info' -TimeoutSeconds 3
+        if (-not $response.Success -or -not $response.Response.Connected) {
+            throw 'Connected mount status is unavailable while confirming a balcony violation.'
+        }
+
+        $mount = $response.Response
+        if ([bool]$mount.Slewing) {
+            Write-RunLog (
+                "Balcony violation confirmation deferred because the mount resumed slewing; samples=" +
+                ($samples -join ';'))
+            return $false
+        }
+
+        $azimuth = ConvertTo-NormalizedAzimuth ([double]$mount.Azimuth)
+        $altitude = [double]$mount.Altitude
+        if (-not [double]::IsFinite($azimuth) -or -not [double]::IsFinite($altitude)) {
+            throw 'Mount coordinates are non-finite while confirming a balcony violation.'
+        }
+
+        $samples.Add(("Az={0:F6},Alt={1:F6}" -f $azimuth, $altitude))
+        if (Test-BalconyPoint $azimuth $altitude) {
+            Write-RunLog (
+                "Ignored one transient out-of-envelope Advanced API sample after immediate telemetry recovery; samples=" +
+                ($samples -join ';'))
+            return $false
+        }
+    }
+
+    Write-RunLog ("Confirmed settled balcony violation; samples=" + ($samples -join ';'))
+    return $true
+}
+
 function Find-VerificationInstruction([object]$Node) {
     if ($null -eq $Node -or $Node -is [string]) { return $null }
     if ($Node.PSObject.Properties['VerificationOnly'] -and
@@ -306,8 +349,11 @@ try {
                     $guardArmed = $true
                     Write-RunLog "Balcony guard armed at Az=$azimuth Alt=$altitude."
                 }
-            } elseif (-not (Test-BalconyPoint $azimuth $altitude)) {
-                throw "Balcony guard violated at a settled pointing: Az=$azimuth Alt=$altitude."
+            } elseif (-not (Test-BalconyPoint $azimuth $altitude) -and
+                    (Confirm-SettledBalconyViolation $azimuth $altitude)) {
+                throw (
+                    "Balcony guard confirmed a persistent violation at a settled pointing: " +
+                    "Az=$azimuth Alt=$altitude.")
             }
         }
         if (-not $guardArmed -and (Get-Date) -ge $armDeadline) {
