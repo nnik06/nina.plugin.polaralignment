@@ -265,6 +265,7 @@ function Invoke-CampaignMutation {
 
     $lock = Enter-CampaignLock -Root $Root -TimeoutSeconds $LockTimeoutSeconds
     try {
+        Repair-CampaignArtifactReservations -Root $Root
         return (& $Body)
     } finally {
         $lock.Dispose()
@@ -450,8 +451,9 @@ function Add-CampaignEvent {
     this invocation, and the staged bytes are rehashed and restatted before the
     reservation is returned. Nothing appears at the committed 000N path until
     Complete-CampaignArtifactReservation promotes it, which happens only after the
-    event has been appended. A rejected or interrupted import therefore leaves no
-    file at the committed path and never blocks a corrected retry.
+    event has been appended. A rejection before append leaves no committed copy;
+    if the process stops after append, the next locked command promotes the unique
+    staged copy whose hash and size match the durable event.
 #>
 function New-CampaignArtifactReservation {
     param(
@@ -601,6 +603,96 @@ function Remove-CampaignArtifactReservation {
     if ([string]::IsNullOrEmpty($Reservation.StagingPath)) { return }
     if (Test-Path -LiteralPath $Reservation.StagingPath) {
         Remove-Item -LiteralPath $Reservation.StagingPath -Force -ErrorAction SilentlyContinue
+    }
+}
+
+<#
+.SYNOPSIS
+    Repairs or discards artifact staging left by an interrupted recorder process.
+.DESCRIPTION
+    Artifact bytes are staged before the hash-chained event is appended and
+    promoted immediately afterwards. A process or power failure can therefore
+    leave one of two recoverable states:
+
+    * no event and an unreferenced staging file: discard the staging file;
+    * a durable event, a missing StoredPath, and one byte-identical staging file:
+      promote and reverify the staged bytes.
+
+    Recovery runs only while the campaign mutation lock is held and only after
+    the immutable event chain passes structural validation. Ambiguous matching
+    staging files are retained and refused for manual investigation.
+#>
+function Repair-CampaignArtifactReservations {
+    param([Parameter(Mandatory)] [string]$Root)
+
+    $artifactDirectory = Join-Path $Root "artifacts"
+    if (-not (Test-Path -LiteralPath $artifactDirectory -PathType Container)) { return }
+
+    $stagingFiles = @(Get-ChildItem -LiteralPath $artifactDirectory -File -Force |
+        Where-Object { $_.Name -like ".staging-*.part" })
+    if ($stagingFiles.Count -eq 0) { return }
+
+    $campaign = Read-IPolarCampaign -CampaignPath $Root
+    $structural = Invoke-IPolarCampaignEvaluation -Campaign $campaign `
+        -EvaluatedUtc ([datetime]::UtcNow) `
+        -ArtifactIntegrity ([pscustomobject]@{ Source = "RecoveryPreflight"; Entries = @() })
+    $structuralGateNames = @(
+        "HashChain",
+        "EventSequence",
+        "EventTimestamp",
+        "GenesisHash",
+        "EventType",
+        "Finalization"
+    )
+    $structuralFailures = @($structural.FailedGates |
+        Where-Object { $structuralGateNames -contains $_.Gate })
+    if ($structuralFailures.Count -gt 0) {
+        $reason = ($structuralFailures | ForEach-Object { "$($_.Gate): $($_.Reason)" }) -join "; "
+        throw "Refusing artifact recovery because the campaign event chain is not structurally valid. $reason"
+    }
+
+    foreach ($campaignEvent in $campaign.Events) {
+        $eventType = [string](Get-IPolarProperty -InputObject $campaignEvent -Name "EventType")
+        if ($eventType -ne "Artifact" -and $eventType -ne "DarkFrame") { continue }
+
+        $payload = Get-IPolarProperty -InputObject $campaignEvent -Name "Payload"
+        $storedPath = [string](Get-IPolarProperty -InputObject $payload -Name "StoredPath")
+        if ([string]::IsNullOrWhiteSpace($storedPath)) { continue }
+        if (-not (Test-PathWithinDirectory -DirectoryPath $artifactDirectory -CandidatePath $storedPath)) {
+            throw "Refusing artifact recovery because sequence $(Get-IPolarProperty -InputObject $campaignEvent -Name 'Sequence') records a StoredPath outside the campaign artifacts directory: $storedPath"
+        }
+        if (Test-Path -LiteralPath $storedPath -PathType Leaf) { continue }
+
+        $expectedSha = [string](Get-IPolarProperty -InputObject $payload -Name "Sha256")
+        $expectedSize = Get-IPolarFiniteNumber (Get-IPolarProperty -InputObject $payload -Name "SizeBytes")
+        if ([string]::IsNullOrWhiteSpace($expectedSha) -or $null -eq $expectedSize) { continue }
+
+        $matches = @()
+        foreach ($staging in $stagingFiles) {
+            if (-not (Test-Path -LiteralPath $staging.FullName -PathType Leaf)) { continue }
+            if ([long]$staging.Length -ne [long]$expectedSize) { continue }
+            if ((Get-FileSha256 -LiteralPath $staging.FullName) -eq $expectedSha) {
+                $matches += $staging
+            }
+        }
+
+        if ($matches.Count -gt 1) {
+            $paths = ($matches.FullName | Sort-Object) -join ", "
+            throw "Artifact recovery is ambiguous for sequence $(Get-IPolarProperty -InputObject $campaignEvent -Name 'Sequence'): multiple staged files match the recorded bytes: $paths"
+        }
+        if ($matches.Count -eq 1) {
+            [IO.File]::Move($matches[0].FullName, $storedPath)
+            Assert-PreservedBytes -LiteralPath $storedPath -ExpectedSha256 $expectedSha `
+                -ExpectedSizeBytes ([long]$expectedSize) -Stage "recovered preserved copy"
+        }
+    }
+
+    # Under the exclusive campaign lock, any staging file that did not match a
+    # durable missing event can only precede an append that never committed.
+    foreach ($staging in $stagingFiles) {
+        if (Test-Path -LiteralPath $staging.FullName -PathType Leaf) {
+            Remove-Item -LiteralPath $staging.FullName -Force
+        }
     }
 }
 
@@ -1030,7 +1122,9 @@ function Invoke-EvaluateCommand {
     if (-not [string]::IsNullOrWhiteSpace($OutputPath)) {
         $resolvedOutputPath = Assert-OutputPathOutsideCampaign -Root $root -CandidatePath $OutputPath
     }
-    $evaluation = Get-CampaignEvaluation -Root $root
+    $evaluation = Invoke-CampaignMutation -Root $root -Body {
+        Get-CampaignEvaluation -Root $root
+    }
     $json = $evaluation | ConvertTo-Json -Depth 12
     if (-not [string]::IsNullOrEmpty($resolvedOutputPath)) {
         Write-Utf8NoBom -LiteralPath $resolvedOutputPath -Content $json

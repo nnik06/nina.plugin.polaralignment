@@ -491,6 +491,42 @@ try {
     $retryOnDisk = (Get-FileHash -LiteralPath $orphanRetry.Payload.StoredPath -Algorithm SHA256).Hash.ToLowerInvariant()
     Assert-True ($retryOnDisk -eq $orphanRetry.Payload.Sha256) "the retried preserved copy must match its recorded hash"
 
+    # Simulate a process loss after the event append but before staged evidence is
+    # promoted. Evaluation takes the campaign lock, matches the durable event by
+    # hash and size, promotes the only matching stage, and then verifies it.
+    $crashCampaign = New-CompleteCampaign -Name "post-append-crash"
+    $crashArtifactDir = Join-Path $crashCampaign "artifacts"
+    $crashStoredPath = Get-PreservedPath -Campaign $crashCampaign -EventType "Artifact"
+    $crashStagingPath = Join-Path $crashArtifactDir ".staging-post-append.part"
+    Move-Item -LiteralPath $crashStoredPath -Destination $crashStagingPath
+    $crashRecovered = & $ToolPath -Command Evaluate -CampaignPath $crashCampaign -PolicyPath $policy -RecordedUtc $BaseUtc.AddMinutes(95)
+    Assert-True (Test-Path -LiteralPath $crashStoredPath) "a durable artifact event must recover its byte-identical staged copy"
+    Assert-True (-not (Test-Path -LiteralPath $crashStagingPath)) "successful recovery must consume the staging file"
+    Assert-True ($crashRecovered.IntegrityValid) "the recovered campaign must pass byte-level integrity verification"
+
+    # Simulate a process loss before append. No durable event owns this stage, so
+    # the next locked evaluation discards it without changing the event chain.
+    $preAppendStaging = Join-Path $crashArtifactDir ".staging-pre-append.part"
+    [IO.File]::WriteAllText($preAppendStaging, "uncommitted staged evidence")
+    $preAppendEventBytes = [IO.File]::ReadAllBytes((Join-Path $crashCampaign "events.jsonl"))
+    $preAppendRecovered = & $ToolPath -Command Evaluate -CampaignPath $crashCampaign -PolicyPath $policy -RecordedUtc $BaseUtc.AddMinutes(96)
+    Assert-True (-not (Test-Path -LiteralPath $preAppendStaging)) "an unreferenced pre-append stage must be discarded"
+    Assert-True ($preAppendRecovered.IntegrityValid) "discarding uncommitted staging must not damage campaign integrity"
+    Assert-True ([Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $crashCampaign "events.jsonl"))) -eq [Convert]::ToBase64String($preAppendEventBytes)) "artifact recovery must never rewrite the event chain"
+
+    # Two matching stages are ambiguous. Keep both files and require operator
+    # investigation rather than selecting one or deleting either copy.
+    $ambiguousCampaign = New-CompleteCampaign -Name "ambiguous-recovery"
+    $ambiguousStoredPath = Get-PreservedPath -Campaign $ambiguousCampaign -EventType "Artifact"
+    $ambiguousArtifactDir = Join-Path $ambiguousCampaign "artifacts"
+    $ambiguousOne = Join-Path $ambiguousArtifactDir ".staging-ambiguous-one.part"
+    $ambiguousTwo = Join-Path $ambiguousArtifactDir ".staging-ambiguous-two.part"
+    Move-Item -LiteralPath $ambiguousStoredPath -Destination $ambiguousOne
+    Copy-Item -LiteralPath $ambiguousOne -Destination $ambiguousTwo
+    Assert-Throws { & $ToolPath -Command Evaluate -CampaignPath $ambiguousCampaign -PolicyPath $policy -RecordedUtc $BaseUtc.AddMinutes(95) } "ambiguous" "multiple matching stages must fail closed"
+    Assert-True ((Test-Path -LiteralPath $ambiguousOne) -and (Test-Path -LiteralPath $ambiguousTwo)) "ambiguous recovery must retain every candidate staging file"
+    Assert-True (-not (Test-Path -LiteralPath $ambiguousStoredPath)) "ambiguous recovery must not invent a committed copy"
+
     # A genuine committed collision must still fail closed.
     $collisionEvidence = New-EvidenceFile -Name "collision.png"
     $nextSequence = @([IO.File]::ReadAllLines((Join-Path $orphanCampaign "events.jsonl")) | Where-Object { $_ }).Count + 1
