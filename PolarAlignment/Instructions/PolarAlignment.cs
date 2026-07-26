@@ -1538,6 +1538,17 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                             if (domeMediator.GetInfo().Connected) {
                                 await domeMediator.WaitForDomeSynchronization(arcToken);
                             }
+                            var returnSettleTimeSeconds = TppaVerificationSettlePolicy.Resolve(
+                                profileService.ActiveProfile.TelescopeSettings.SettleTime,
+                                VerificationPointSettleTimeSeconds);
+                            Logger.Info(
+                                $"TPPA verification-only return-to-A settle time: {returnSettleTimeSeconds:F3} seconds.");
+                            await CoreUtil.Wait(
+                                TimeSpan.FromSeconds(returnSettleTimeSeconds),
+                                arcToken,
+                                progress,
+                                "Settling at verification-only return to A");
+                            EnsureVerificationOnlyActualPositionSafe("return-to-A post-settle");
                             context.ActivateFirstVerificationStep();
                         },
                         operationToken);
