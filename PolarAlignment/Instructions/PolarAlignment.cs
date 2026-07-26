@@ -1482,25 +1482,38 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
 
                     cleanupPointing = telescopeMediator.GetCurrentPosition();
                     Logger.Info($"TPPA verification-only captured A/correction pointing {cleanupPointing} before solve A.");
+                    var waypointPlan = TppaVerificationWaypointPlan.Create(
+                        cleanupPointing,
+                        TargetDistance,
+                        originalEastDirection);
+                    var forwardDirection = originalEastDirection ? "East" : "West";
+                    var reciprocalDirection = originalEastDirection ? "West" : "East";
+                    foreach (var waypoint in waypointPlan.Forward) {
+                        EnsureVerificationOnlySlewDestinationSafe(waypoint);
+                    }
+                    Logger.Info("TPPA verification-only fixed A/B/C waypoint preflight passed before measurement.");
 
                     var runResult = await VerificationOnlyArcRunner.Run<Coordinates, PolarErrorDetermination>(
                         cleanupPointing,
                         async arcToken => {
                             progress?.Report(new ApplicationStatus() { Status = "Running verification-only initial three-point measurement" });
-                            var determination = await MeasureVerificationOnlyArc(context, originalEastDirection, progress, arcToken);
+                            var determination = await MeasureVerificationOnlyArc(
+                                context, waypointPlan.Forward, forwardDirection, progress, arcToken);
                             context.PolarErrorDetermination = determination;
                             return determination;
                         },
                         async arcToken => {
                             progress?.Report(new ApplicationStatus() { Status = "Running verification-only reciprocal three-point measurement" });
                             context.ActivateFirstVerificationStep();
-                            var determination = await MeasureVerificationOnlyArc(context, !originalEastDirection, progress, arcToken);
+                            var determination = await MeasureVerificationOnlyArc(
+                                context, waypointPlan.Reciprocal, reciprocalDirection, progress, arcToken);
                             context.PolarErrorDetermination = determination;
                             return determination;
                         },
                         async arcToken => {
                             progress?.Report(new ApplicationStatus() { Status = "Running verification-only repeat three-point measurement" });
-                            var determination = await MeasureVerificationOnlyArc(context, originalEastDirection, progress, arcToken);
+                            var determination = await MeasureVerificationOnlyArc(
+                                context, waypointPlan.Forward, forwardDirection, progress, arcToken);
                             context.PolarErrorDetermination = determination;
                             return determination;
                         },
@@ -1639,29 +1652,40 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
         }
 
         private async Task<PolarErrorDetermination> MeasureVerificationOnlyArc(TPAPAVM context,
-                                                                                bool eastDirection,
-                                                                                IProgress<ApplicationStatus> progress,
-                                                                                CancellationToken token) {
+                                                                               IReadOnlyList<Coordinates> waypoints,
+                                                                               string direction,
+                                                                               IProgress<ApplicationStatus> progress,
+                                                                               CancellationToken token) {
+            if (waypoints == null || waypoints.Count != 3) {
+                throw new SequenceEntityFailedException(
+                    "Verification-only measurement requires exactly three fixed waypoints.");
+            }
             var refractionParameter = RefractionParameters.GetRefractionParameters(weatherDataMediator.GetInfo());
             var solves = new PlateSolveResult[3];
             var positions = new Position[3];
             var mountConnected = new bool[3];
             var mountDeclinations = new double[3];
 
+            EnsureVerificationOnlyWaypointReached(
+                waypoints[0], $"verification-only {direction} point 1");
             solves[0] = await Solve(context, 5.0, progress, token);
             RecordVerificationOnlyPoint(0);
 
             context.ActivateSecondStep();
-            solves[1] = await AutomatedNextPoint(progress, token, eastDirection);
+            await SlewToVerificationWaypoint(
+                waypoints[1], TargetDistance, $"verification-only {direction} point 2", progress, token);
+            solves[1] = await Solve(context, 5.0, progress, token);
             RecordVerificationOnlyPoint(1);
 
             context.ActivateThirdStep();
-            solves[2] = await AutomatedNextPoint(progress, token, eastDirection);
+            await SlewToVerificationWaypoint(
+                waypoints[2], TargetDistance, $"verification-only {direction} point 3", progress, token);
+            solves[2] = await Solve(context, 5.0, progress, token);
             RecordVerificationOnlyPoint(2);
 
             var firstObservationUtc = solves[0].Coordinates.DateTime.UtcNow;
             var finalObservationUtc = solves[2].Coordinates.DateTime.UtcNow;
-            Logger.Info($"TPPA verification-only arc timing: direction={(eastDirection ? "East" : "West")}; " +
+            Logger.Info($"TPPA verification-only arc timing: direction={direction}; " +
                         $"point1Utc={firstObservationUtc:O}; point3Utc={finalObservationUtc:O}; " +
                         $"spanSeconds={(finalObservationUtc - firstObservationUtc).TotalSeconds:F3}; exposureSeconds={ExposureTime:F3}.");
             var decSpread = Angle.Zero;
@@ -1695,7 +1719,125 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 var mountInfoSuffix = mountInfo.Connected
                     ? $" - Mount RA: {mountInfo.RightAscensionString}; Mount Dec: {mountInfo.DeclinationString}"
                     : string.Empty;
-                Logger.Info($"TPPA verification-only point telemetry: direction={(eastDirection ? "East" : "West")}; point={index + 1}; observationUtc={solves[index].Coordinates.DateTime.UtcNow:O}; mountAz={mountInfo.Azimuth:F6}; mountAlt={mountInfo.Altitude:F6}; solveRa={solves[index].Coordinates.RADegrees:F9}; solveDec={solves[index].Coordinates.Dec:F9}; vector={positions[index].Vector}; positionAngle={positions[index].PositionAngle}{mountInfoSuffix}");
+                Logger.Info($"TPPA verification-only point telemetry: direction={direction}; point={index + 1}; observationUtc={solves[index].Coordinates.DateTime.UtcNow:O}; mountAz={mountInfo.Azimuth:F6}; mountAlt={mountInfo.Altitude:F6}; solveRa={solves[index].Coordinates.RADegrees:F9}; solveDec={solves[index].Coordinates.Dec:F9}; vector={positions[index].Vector}; positionAngle={positions[index].PositionAngle}{mountInfoSuffix}");
+            }
+        }
+
+        private void EnsureVerificationOnlyWaypointReached(Coordinates destination, string operation) {
+            EnsureVerificationOnlyActualPositionSafe(operation);
+            var currentPosition = telescopeMediator.GetCurrentPosition();
+            var mountInfo = telescopeMediator.GetInfo();
+            if (mountInfo.SideOfPier == PierSide.pierUnknown) {
+                throw new SequenceEntityFailedException(
+                    $"{operation} rejected because pier-side telemetry is unknown.");
+            }
+
+            var rightAscensionError = Distance(currentPosition.RADegrees, destination.RADegrees);
+            var declinationError = Math.Abs(currentPosition.Dec - destination.Dec);
+            if (rightAscensionError > 0.25 || declinationError > 0.05) {
+                throw new SequenceEntityFailedException(
+                    $"{operation} waypoint verification rejected: RA error {rightAscensionError:F3} deg, " +
+                    $"Dec error {declinationError:F3} deg.");
+            }
+
+            Logger.Info(
+                $"TPPA {operation} waypoint verification passed: RA error={rightAscensionError:F3} deg, " +
+                $"Dec error={declinationError:F3} deg, pier side={mountInfo.SideOfPier}.");
+        }
+        private async Task SlewToVerificationWaypoint(
+                Coordinates destination,
+                double expectedTravelDegrees,
+                string operation,
+                IProgress<ApplicationStatus> progress,
+                CancellationToken token) {
+            var startPosition = telescopeMediator.GetCurrentPosition();
+            var startInfo = telescopeMediator.GetInfo();
+            if (!startInfo.Connected || startInfo.Slewing) {
+                throw new SequenceEntityFailedException(
+                    $"{operation} rejected because connected stationary mount telemetry is unavailable.");
+            }
+
+            EnsureVerificationOnlySlewDestinationSafe(destination);
+            SetTrackingSidereal(true);
+            var trackingConfirmed = false;
+            for (var attempt = 0; attempt < 20; attempt++) {
+                if (telescopeMediator.GetInfo().TrackingEnabled) {
+                    trackingConfirmed = true;
+                    break;
+                }
+                await Task.Delay(TimeSpan.FromMilliseconds(100), token);
+            }
+            if (!trackingConfirmed) {
+                throw new SequenceEntityFailedException(
+                    $"{operation} rejected because sidereal tracking could not be confirmed within two seconds.");
+            }
+
+            progress?.Report(new ApplicationStatus() { Status = $"Slewing to {operation}" });
+            Logger.Info(
+                $"TPPA {operation} precise waypoint slew: from RA={startPosition.RADegrees:F6} deg, " +
+                $"Dec={startPosition.Dec:F6} deg to RA={destination.RADegrees:F6} deg, " +
+                $"Dec={destination.Dec:F6} deg; expected RA travel={expectedTravelDegrees:F3} deg.");
+            await telescopeMediator.SlewToCoordinatesAsync(destination, token);
+            EnsureVerificationOnlyActualPositionSafe(operation);
+
+            var firstPosition = telescopeMediator.GetCurrentPosition();
+            var firstInfo = telescopeMediator.GetInfo();
+            await Task.Delay(TimeSpan.FromSeconds(1), token);
+            EnsureVerificationOnlyActualPositionSafe($"{operation} fresh-telemetry confirmation");
+            var finalPosition = telescopeMediator.GetCurrentPosition();
+            var finalInfo = telescopeMediator.GetInfo();
+            VerifyTravel(firstPosition, firstInfo.SideOfPier, "first");
+            VerifyTravel(finalPosition, finalInfo.SideOfPier, "confirmed");
+            if (Distance(firstPosition.RADegrees, finalPosition.RADegrees) > 0.05
+                    || Math.Abs(firstPosition.Dec - finalPosition.Dec) > 0.05
+                    || firstInfo.SideOfPier != finalInfo.SideOfPier) {
+                throw new SequenceEntityFailedException(
+                    $"{operation} rejected because the two post-slew telemetry samples were not stable.");
+            }
+
+            var settleTimeSeconds = TppaVerificationSettlePolicy.Resolve(
+                profileService.ActiveProfile.TelescopeSettings.SettleTime,
+                VerificationPointSettleTimeSeconds);
+            Logger.Info($"TPPA precise waypoint settle time: {settleTimeSeconds:F3} seconds.");
+            await CoreUtil.Wait(TimeSpan.FromSeconds(settleTimeSeconds), token, progress, "Settling");
+            EnsureVerificationOnlyActualPositionSafe($"{operation} post-settle");
+            var settledPosition = telescopeMediator.GetCurrentPosition();
+            var settledInfo = telescopeMediator.GetInfo();
+            VerifyTravel(settledPosition, settledInfo.SideOfPier, "post-settle");
+
+            void VerifyTravel(Coordinates endPosition, PierSide endPierSide, string sample) {
+                if (startInfo.SideOfPier == PierSide.pierUnknown
+                        || endPierSide == PierSide.pierUnknown) {
+                    throw new SequenceEntityFailedException(
+                        $"{operation} {sample} travel verification rejected because pier-side telemetry is unknown.");
+                }
+                var result = TppaDriftMoveVerificationPolicy.Evaluate(
+                    startPosition.RADegrees,
+                    endPosition.RADegrees,
+                    startPosition.Dec,
+                    endPosition.Dec,
+                    expectedTravelDegrees,
+                    startInfo.SideOfPier,
+                    endPierSide,
+                    maximumUndertravelDegrees: 0.25,
+                    maximumOvershootDegrees: 0.25,
+                    maximumDeclinationTravelDegrees: 0.05);
+                if (!result.IsSafe) {
+                    throw new SequenceEntityFailedException(
+                        $"{operation} {sample} travel verification rejected: {result.Reason}.");
+                }
+                var destinationRaError = Distance(endPosition.RADegrees, destination.RADegrees);
+                var destinationDecError = Math.Abs(endPosition.Dec - destination.Dec);
+                if (destinationRaError > 0.25 || destinationDecError > 0.05) {
+                    throw new SequenceEntityFailedException(
+                        $"{operation} {sample} destination verification rejected: " +
+                        $"RA error {destinationRaError:F3} deg, Dec error {destinationDecError:F3} deg.");
+                }
+                Logger.Info(
+                    $"TPPA {operation} {sample} travel verification passed: " +
+                    $"RA={result.RightAscensionTravelDegrees:F3} deg, " +
+                    $"Dec={result.DeclinationTravelDegrees:F3} deg; destination RA error={destinationRaError:F3} deg; " +
+                    $"destination Dec error={destinationDecError:F3} deg; {result.Reason}.");
             }
         }
 
