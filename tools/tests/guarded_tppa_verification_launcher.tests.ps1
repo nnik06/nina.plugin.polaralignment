@@ -61,7 +61,46 @@ Describe 'guarded TPPA verification launcher static safety contract' {
         $text.Contains('reported a failed status') | Should Be $true
         $text.Contains('$instructionStatus -ne ''FINISHED''') | Should Be $true
         $text.Contains('Find-CompactSequenceLeafNodes') | Should Be $true
+        $text.Contains('Find-VerificationRuntimeStatuses') | Should Be $true
+        $text.Contains('TPPA runtime reported terminal verification failure') | Should Be $true
         $text.Contains('$stateJson -match') | Should Be $false
+    }
+}
+
+Describe 'guarded TPPA verification launcher runtime terminal parsing' {
+    BeforeAll {
+        . $scriptPath `
+            -SequencePath 'functions-only' `
+            -PluginDirectory 'functions-only' `
+            -ExpectedPluginSha256 ('A' * 64) `
+            -FunctionsOnly
+    }
+
+    It 'recognizes a current terminal failure only after current-run progress' {
+        $statuses = @('Verification-only measurements complete: failed')
+
+        (Get-VerificationTerminalOutcome $statuses) | Should Be 'failed'
+        (Test-CurrentVerificationTerminalFailure $true $true $statuses) | Should Be $true
+    }
+
+    It 'does not fail for a terminal pass' {
+        $statuses = @('Verification-only measurements complete: passed')
+
+        (Get-VerificationTerminalOutcome $statuses) | Should Be 'passed'
+        (Test-CurrentVerificationTerminalFailure $true $true $statuses) | Should Be $false
+    }
+
+    It 'does not accept stale terminal failure before current-run progress' {
+        $statuses = @('Verification-only measurements complete: failed')
+
+        (Test-CurrentVerificationTerminalFailure $true $false $statuses) | Should Be $false
+    }
+
+    It 'does not parse an incidental failed substring as the outcome' {
+        $statuses = @('Verification-only measurements complete: passed, 0 checks failed')
+
+        (Get-VerificationTerminalOutcome $statuses) | Should Be $null
+        (Test-CurrentVerificationTerminalFailure $true $true $statuses) | Should Be $false
     }
 }
 

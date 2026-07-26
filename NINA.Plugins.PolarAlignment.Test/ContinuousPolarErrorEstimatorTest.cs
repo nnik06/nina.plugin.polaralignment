@@ -467,6 +467,27 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public void TPAPAErrorOverlay_RejectsNonFiniteGeometryBeforeWpfBinding() {
+            var vm = new TPAPAVM(null, null);
+
+            vm.ErrorDetail = new ErrorDetail(
+                new Point(100, 100),
+                new Point(double.NaN, 120),
+                new Point(130, 100),
+                new Point(130, 120));
+
+            vm.ErrorDetail.Should().BeNull();
+
+            vm.ErrorDetail2 = new ErrorDetail(
+                new Point(100, 100),
+                new Point(100, 120),
+                new Point(double.PositiveInfinity, 100),
+                new Point(130, 120));
+
+            vm.ErrorDetail2.Should().BeNull();
+        }
+
+        [Test]
         public void Vector3_ToTopocentric_HandlesExactAxisDirections() {
             // Low-level geometry regression: exact axis-aligned vectors used to produce incorrect
             // azimuth/altitude values in edge cases. The continuous estimator relies on this inverse

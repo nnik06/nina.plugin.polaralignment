@@ -827,10 +827,32 @@ namespace NINA.Plugins.PolarAlignment {
         private IRenderedImage image;
 
         private ErrorDetail erorLines;
-        public ErrorDetail ErrorDetail { get => erorLines; set { erorLines = value; RaisePropertyChanged(); } }
+        public ErrorDetail ErrorDetail {
+            get => erorLines;
+            set {
+                erorLines = SanitizeErrorDetail(value, nameof(ErrorDetail));
+                RaisePropertyChanged();
+            }
+        }
 
         private ErrorDetail erorLines2;
-        public ErrorDetail ErrorDetail2 { get => erorLines2; set { erorLines2 = value; RaisePropertyChanged(); } }
+        public ErrorDetail ErrorDetail2 {
+            get => erorLines2;
+            set {
+                erorLines2 = SanitizeErrorDetail(value, nameof(ErrorDetail2));
+                RaisePropertyChanged();
+            }
+        }
+
+        private static ErrorDetail SanitizeErrorDetail(ErrorDetail value, string propertyName) {
+            if (value != null && !value.IsFinite) {
+                Logger.Warning($"Discarding non-finite TPPA overlay geometry before binding {propertyName}: " +
+                               value.ToDiagnosticString());
+                return null;
+            }
+
+            return value;
+        }
         public Angle Latitude {
             get => Angle.ByDegree(profileService.ActiveProfile.AstrometrySettings.Latitude);
         }
@@ -884,6 +906,19 @@ namespace NINA.Plugins.PolarAlignment {
         public Point Altitude { get; set; }
         public Point Azimuth { get; set; }
         public Point Total { get; set; }
+
+        internal bool IsFinite =>
+            IsFinitePoint(Origin)
+            && IsFinitePoint(Altitude)
+            && IsFinitePoint(Azimuth)
+            && IsFinitePoint(Total);
+
+        private static bool IsFinitePoint(Point point) =>
+            double.IsFinite(point.X) && double.IsFinite(point.Y);
+
+        internal string ToDiagnosticString() =>
+            $"Origin=({Origin.X:R},{Origin.Y:R}); Altitude=({Altitude.X:R},{Altitude.Y:R}); " +
+            $"Azimuth=({Azimuth.X:R},{Azimuth.Y:R}); Total=({Total.X:R},{Total.Y:R})";
 
         public PointCollection Rectangle {
             get => new PointCollection  {

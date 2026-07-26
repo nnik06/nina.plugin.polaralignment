@@ -21,11 +21,41 @@ param(
     [ValidateRange(60, 1800)]
     [int]$MaximumRuntimeSeconds = 600,
     [string]$LogPath = '',
-    [switch]$PreflightOnly
+    [switch]$PreflightOnly,
+    [switch]$FunctionsOnly
 )
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
+
+function Get-VerificationTerminalOutcome([string[]]$RuntimeStatuses) {
+    $outcomes = @(@(
+        foreach ($runtimeStatus in @($RuntimeStatuses)) {
+            if ($runtimeStatus -match '^Verification-only measurements complete:\s*(passed|failed)\s*$') {
+                $Matches[1].ToLowerInvariant()
+            }
+        }
+    ) | Select-Object -Unique)
+
+    if ($outcomes.Count -eq 1) {
+        return [string]$outcomes[0]
+    }
+
+    return $null
+}
+
+function Test-CurrentVerificationTerminalFailure(
+    [bool]$SeenRunning,
+    [bool]$SeenCurrentRuntimeProgress,
+    [string[]]$RuntimeStatuses) {
+    return $SeenRunning `
+        -and $SeenCurrentRuntimeProgress `
+        -and (Get-VerificationTerminalOutcome $RuntimeStatuses) -eq 'failed'
+}
+
+if ($FunctionsOnly) {
+    return
+}
 
 if (-not $LogPath) {
     $LogPath = Join-Path $env:USERPROFILE 'Documents\TPPA-PHD2-tests\guarded-verification.log'
@@ -207,6 +237,30 @@ function Find-CompactSequenceLeafNodes([object]$Node) {
         Write-Output -NoEnumerate $Node
     }
 }
+
+function Find-VerificationRuntimeStatuses([object]$Node) {
+    if ($null -eq $Node -or $Node -is [string]) { return }
+    if ($Node -is [Collections.IEnumerable]) {
+        foreach ($item in $Node) { Find-VerificationRuntimeStatuses $item }
+        return
+    }
+
+    $tppaProperty = $Node.PSObject.Properties['TPAPAVM']
+    if ($tppaProperty -and $tppaProperty.Value) {
+        $statusProperty = $tppaProperty.Value.PSObject.Properties['Status']
+        if ($statusProperty -and $statusProperty.Value) {
+            $runtimeStatusProperty = $statusProperty.Value.PSObject.Properties['Status']
+            if ($runtimeStatusProperty -and $runtimeStatusProperty.Value) {
+                Write-Output ([string]$runtimeStatusProperty.Value)
+            }
+        }
+    }
+
+    foreach ($property in $Node.PSObject.Properties) {
+        Find-VerificationRuntimeStatuses $property.Value
+    }
+}
+
 function ConvertFrom-DegreesMinutesSeconds([double]$Degrees, [double]$Minutes, [double]$Seconds) {
     $sign = if ($Degrees -lt 0 -or $Minutes -lt 0 -or $Seconds -lt 0) { -1.0 } else { 1.0 }
     $sign * ([Math]::Abs($Degrees) + [Math]::Abs($Minutes) / 60.0 + [Math]::Abs($Seconds) / 3600.0)
@@ -315,6 +369,7 @@ Write-RunLog 'Verification-only sequence started.'
 $deadline = (Get-Date).AddSeconds($MaximumRuntimeSeconds)
 $armDeadline = (Get-Date).AddSeconds([Math]::Min(120, $MaximumRuntimeSeconds))
 $seenRunning = $false
+$seenCurrentRuntimeProgress = $false
 $guardArmed = $false
 try {
     while ((Get-Date) -lt $deadline) {
@@ -332,6 +387,21 @@ try {
         $isRunning = $instructionStatus -eq 'RUNNING'
         $isFailed = $instructionStatus -eq 'FAILED'
         if ($isRunning) { $seenRunning = $true }
+        $runtimeStatuses = @(Find-VerificationRuntimeStatuses $state.Response |
+            Select-Object -Unique)
+        $terminalOutcome = Get-VerificationTerminalOutcome $runtimeStatuses
+        if ($seenRunning -and -not $terminalOutcome -and $runtimeStatuses.Count -gt 0) {
+            $seenCurrentRuntimeProgress = $true
+        }
+        if (Test-CurrentVerificationTerminalFailure `
+                -SeenRunning $seenRunning `
+                -SeenCurrentRuntimeProgress $seenCurrentRuntimeProgress `
+                -RuntimeStatuses $runtimeStatuses) {
+            $terminalRuntimeStatus = $runtimeStatuses |
+                Where-Object { $_ -match '^Verification-only measurements complete:\s*failed\s*$' } |
+                Select-Object -First 1
+            throw "TPPA runtime reported terminal verification failure while the sequencer status was $instructionStatus`: $terminalRuntimeStatus"
+        }
 
         $mountResponse = Invoke-Nina -Path '/equipment/mount/info'
         if (-not $mountResponse.Success -or -not $mountResponse.Response.Connected) {
