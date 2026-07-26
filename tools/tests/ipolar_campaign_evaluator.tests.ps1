@@ -212,9 +212,42 @@ function New-TestCampaign {
     }
 }
 
+<#
+.SYNOPSIS
+    Builds "everything verified" integrity facts covering every evidence event.
+.DESCRIPTION
+    The evaluator now fails closed when byte-level verification is absent or does
+    not cover every recorded evidence file, so the default for a test that is not
+    specifically about evidence integrity is a complete clean fact set.
+#>
+function New-CleanIntegrityFactsFor {
+    param($Campaign)
+
+    $entries = New-Object System.Collections.Generic.List[object]
+    foreach ($campaignEvent in @(Get-IPolarProperty -InputObject $Campaign -Name "Events" -Default @())) {
+        $type = [string](Get-IPolarProperty -InputObject $campaignEvent -Name "EventType")
+        $isPreserved = (Get-IPolarPreservedEvidenceTypes) -contains $type
+        $isExternal = (Get-IPolarExternalEvidenceTypes) -contains $type
+        if (-not $isPreserved -and -not $isExternal) { continue }
+        [void]$entries.Add([ordered]@{
+            Sequence = Get-IPolarProperty -InputObject $campaignEvent -Name "Sequence"
+            EventType = $type
+            EvidenceClass = if ($isPreserved) { "Preserved" } else { "External" }
+            Status = "Verified"
+            Reason = "test fixture: bytes match"
+        })
+    }
+    return (ConvertTo-TestObject ([ordered]@{ Source = "FilesystemVerified"; Entries = $entries.ToArray() }))
+}
+
 function Invoke-TestEvaluation {
-    param($Campaign, $Policy = $null)
-    return (Invoke-IPolarCampaignEvaluation -Campaign $Campaign -Policy $Policy -EvaluatedUtc $EvaluationUtc)
+    param($Campaign, $Policy = $null, [switch]$WithoutIntegrityFacts)
+
+    if ($WithoutIntegrityFacts) {
+        return (Invoke-IPolarCampaignEvaluation -Campaign $Campaign -Policy $Policy -EvaluatedUtc $EvaluationUtc)
+    }
+    return (Invoke-IPolarCampaignEvaluation -Campaign $Campaign -Policy $Policy -EvaluatedUtc $EvaluationUtc `
+        -ArtifactIntegrity (New-CleanIntegrityFactsFor -Campaign $Campaign))
 }
 
 function New-TestPolicy {
@@ -259,6 +292,35 @@ $expectedFixtureSha = "25ddcd065128e217755116d425458342d5c5df8b8492f75213eda1e3b
 Assert-True ((ConvertTo-IPolarCanonicalJson $fixture) -eq $expectedCanonical) "the canonical wire format must not change"
 Assert-True ((ConvertTo-IPolarCanonicalJson (ConvertTo-TestObject $fixture)) -eq $expectedCanonical) "the canonical wire format must survive a JSON round trip"
 Assert-True ((Get-IPolarTextSha256 -Text $expectedCanonical) -eq $expectedFixtureSha) "the fixture hash must not change"
+
+# Timestamp shapes other than the Z form must normalize identically too. PowerShell 7
+# coerces offset-bearing and zoneless ISO strings into [datetime] while Windows
+# PowerShell 5.1 leaves them as strings; normalizing only the Z form made the same
+# campaign hash differently per host whenever an operator pasted such a timestamp
+# into a free-text field, which surfaced as a false tamper rejection.
+$timestampShapes = [ordered]@{
+    "2026-07-26T21:30:00Z" = '{"Notes":"2026-07-26T21:30:00.0000000Z"}'
+    "2026-07-26T21:30:00+04:00" = '{"Notes":"2026-07-26T17:30:00.0000000Z"}'
+    "2026-07-26T21:30:00-05:30" = '{"Notes":"2026-07-27T03:00:00.0000000Z"}'
+    "2026-07-26T21:30:00" = '{"Notes":"2026-07-26T21:30:00.0000000Z"}'
+    "2026-07-26T21:30:00.1234567Z" = '{"Notes":"2026-07-26T21:30:00.1234567Z"}'
+}
+foreach ($shape in $timestampShapes.Keys) {
+    $expectedShape = $timestampShapes[$shape]
+    $direct = ConvertTo-IPolarCanonicalJson ([ordered]@{ Notes = $shape })
+    $roundTrip = ConvertTo-IPolarCanonicalJson (ConvertTo-TestObject ([ordered]@{ Notes = $shape }))
+    Assert-True ($direct -eq $expectedShape) "timestamp shape '$shape' must canonicalize to $expectedShape (was $direct)"
+    Assert-True ($roundTrip -eq $expectedShape) "timestamp shape '$shape' must canonicalize identically after a JSON round trip (was $roundTrip)"
+}
+
+# Ordinary free text must canonicalize identically on both hosts. Anything the JSON
+# readers disagree about must be normalized rather than passed through, so this
+# asserts host-stable output rather than assuming a particular representation.
+foreach ($freeText in @("2026-07-26", "not a date 2026", "26/07/2026 21:30", "2026-07-26T21:30", "reseat at 21:30 local")) {
+    $direct = ConvertTo-IPolarCanonicalJson ([ordered]@{ Notes = $freeText })
+    $roundTrip = ConvertTo-IPolarCanonicalJson (ConvertTo-TestObject ([ordered]@{ Notes = $freeText }))
+    Assert-True ($direct -eq $roundTrip) "free text '$freeText' must canonicalize the same before and after a JSON round trip (direct=$direct roundTrip=$roundTrip)"
+}
 
 # A non-terminating binary64 value catches the .NET Framework versus modern
 # .NET difference in the older "R" formatter. G17 must remain byte-identical.
@@ -712,50 +774,68 @@ Assert-True (-not $result.IntegrityValid) "a duplicate finalization must invalid
 
 # --- Byte-level evidence facts ---------------------------------------------------------------------------------------------------
 
-$unverified = Invoke-TestEvaluation -Campaign $numerical -Policy (New-TestPolicy)
+# Withholding verification is no longer merely disclosed: it fails closed.
+$unverified = Invoke-TestEvaluation -Campaign $numerical -Policy (New-TestPolicy) -WithoutIntegrityFacts
+Register-Level $unverified
+Assert-Level $unverified "Rejected" "an evaluation with no byte-level verification must be rejected, not merely annotated"
+Assert-Gate $unverified "ArtifactIntegrity" "the integrity gate must fire when verification is withheld"
+Assert-True (-not $unverified.IntegrityValid) "withheld verification must not yield valid integrity"
 Assert-True ($unverified.ArtifactIntegrity.Source -eq "NotSupplied") "an evaluation without supplied facts must say so"
 Assert-True ($unverified.ArtifactIntegrity.Note.Contains("were not compared")) "an unverified evaluation must disclose that bytes were not compared"
 
+# A campaign with no evidence events at all has nothing to verify, so the absence
+# of facts is not itself a failure there.
+$noEvidenceSpecs = New-Object System.Collections.Generic.List[object]
+foreach ($spec in (New-TestSpecs -WithoutDarkFrame)) { if ($spec.Type -ne "Artifact" -and $spec.Type -ne "TppaArtifactLink") { [void]$noEvidenceSpecs.Add($spec) } }
+$noEvidence = Invoke-TestEvaluation -Campaign (New-TestCampaign -Header (New-TestHeader) -Specs $noEvidenceSpecs.ToArray()) -WithoutIntegrityFacts
+Register-Level $noEvidence
+Assert-NoGate $noEvidence "ArtifactIntegrity" "a campaign with no evidence events must not raise the integrity gate for absent facts"
+
+# Facts are supplied WITHOUT counts on purpose: the evaluator must derive them.
 function New-IntegrityFacts {
     param([object[]]$Entries)
 
-    $preservedFailures = 0
-    $externalMismatches = 0
-    $externalMissing = 0
-    $verified = 0
-    foreach ($entry in $Entries) {
-        if ($entry.Status -eq "Verified") { $verified++ }
-        elseif ($entry.Status -eq "ExternalMissing") { $externalMissing++ }
-        elseif ($entry.EvidenceClass -eq "External") { $externalMismatches++ }
-        else { $preservedFailures++ }
-    }
     return (ConvertTo-TestObject ([ordered]@{
         Source = "FilesystemVerified"
-        CheckedCount = $Entries.Count
-        VerifiedCount = $verified
-        PreservedFailureCount = $preservedFailures
-        ExternalMismatchCount = $externalMismatches
-        ExternalMissingCount = $externalMissing
+        CheckedCount = 999
+        VerifiedCount = 999
+        PreservedFailureCount = 999
+        ExternalMismatchCount = 999
+        ExternalMissingCount = 999
         Entries = $Entries
     }))
 }
 
+# Sequence 3 = DarkFrame, 24 = Artifact, 25 = TppaArtifactLink in the standard campaign.
 $cleanFacts = New-IntegrityFacts -Entries @(
     [ordered]@{ Sequence = 3; EventType = "DarkFrame"; EvidenceClass = "Preserved"; Status = "Verified"; Reason = "ok" }
     [ordered]@{ Sequence = 24; EventType = "Artifact"; EvidenceClass = "Preserved"; Status = "Verified"; Reason = "ok" }
+    [ordered]@{ Sequence = 25; EventType = "TppaArtifactLink"; EvidenceClass = "External"; Status = "Verified"; Reason = "ok" }
 )
 $result = Invoke-IPolarCampaignEvaluation -Campaign $numerical -Policy (New-TestPolicy) -EvaluatedUtc $EvaluationUtc -ArtifactIntegrity $cleanFacts
 Register-Level $result
 Assert-Level $result "QualifiedCorroboratingWitness" "verified evidence must not disturb a qualified campaign"
 Assert-True ($result.ArtifactIntegrity.Source -eq "FilesystemVerified") "the evaluation must record that bytes were verified"
 Assert-True ($result.IntegrityValid) "verified evidence must keep integrity valid"
+# The fact set claims 999 for every count; the evaluator must ignore those and
+# derive its own from the entries.
+Assert-True ($result.ArtifactIntegrity.CheckedCount -eq 3) "checked count must be derived from entries, not trusted (was $($result.ArtifactIntegrity.CheckedCount))"
+Assert-True ($result.ArtifactIntegrity.VerifiedCount -eq 3) "verified count must be derived from entries"
+Assert-True ($result.ArtifactIntegrity.PreservedFailureCount -eq 0) "failure count must be derived from entries, not trusted"
+Assert-True ($result.ArtifactIntegrity.EvidenceEventCount -eq 3) "the evaluation must report how many evidence events the campaign holds"
+
+function New-StandardFacts {
+    param([string]$DarkFrameStatus = "Verified", [string]$ArtifactStatus = "Verified", [string]$LinkStatus = "Verified", [string]$LinkClass = "External")
+    return (New-IntegrityFacts -Entries @(
+        [ordered]@{ Sequence = 3; EventType = "DarkFrame"; EvidenceClass = "Preserved"; Status = $DarkFrameStatus; Reason = "dark frame status $DarkFrameStatus" }
+        [ordered]@{ Sequence = 24; EventType = "Artifact"; EvidenceClass = "Preserved"; Status = $ArtifactStatus; Reason = "artifact status $ArtifactStatus" }
+        [ordered]@{ Sequence = 25; EventType = "TppaArtifactLink"; EvidenceClass = $LinkClass; Status = $LinkStatus; Reason = "link status $LinkStatus" }
+    ))
+}
 
 foreach ($failingStatus in @("Modified", "Missing", "SizeMismatch", "Unreadable", "NoRecordedHash", "NoRecordedPath")) {
-    $facts = New-IntegrityFacts -Entries @(
-        [ordered]@{ Sequence = 3; EventType = "DarkFrame"; EvidenceClass = "Preserved"; Status = "Verified"; Reason = "ok" }
-        [ordered]@{ Sequence = 24; EventType = "Artifact"; EvidenceClass = "Preserved"; Status = $failingStatus; Reason = "evidence failed as $failingStatus" }
-    )
-    $result = Invoke-IPolarCampaignEvaluation -Campaign $numerical -Policy (New-TestPolicy) -EvaluatedUtc $EvaluationUtc -ArtifactIntegrity $facts
+    $result = Invoke-IPolarCampaignEvaluation -Campaign $numerical -Policy (New-TestPolicy) -EvaluatedUtc $EvaluationUtc `
+        -ArtifactIntegrity (New-StandardFacts -ArtifactStatus $failingStatus)
     Register-Level $result
     Assert-Level $result "Rejected" "preserved evidence with status '$failingStatus' must reject the campaign"
     Assert-Gate $result "ArtifactIntegrity" "the artifact integrity gate must fire for '$failingStatus'"
@@ -763,30 +843,67 @@ foreach ($failingStatus in @("Modified", "Missing", "SizeMismatch", "Unreadable"
 }
 
 # A DarkFrame failure must be treated exactly like an Artifact failure.
-$darkFacts = New-IntegrityFacts -Entries @(
-    [ordered]@{ Sequence = 3; EventType = "DarkFrame"; EvidenceClass = "Preserved"; Status = "Modified"; Reason = "dark frame bytes changed" }
-    [ordered]@{ Sequence = 24; EventType = "Artifact"; EvidenceClass = "Preserved"; Status = "Verified"; Reason = "ok" }
-)
-$result = Invoke-IPolarCampaignEvaluation -Campaign $numerical -Policy (New-TestPolicy) -EvaluatedUtc $EvaluationUtc -ArtifactIntegrity $darkFacts
+$result = Invoke-IPolarCampaignEvaluation -Campaign $numerical -Policy (New-TestPolicy) -EvaluatedUtc $EvaluationUtc `
+    -ArtifactIntegrity (New-StandardFacts -DarkFrameStatus "Modified")
 Register-Level $result
 Assert-Level $result "Rejected" "a modified dark frame must reject the campaign just like a modified artifact"
 Assert-True (-not $result.IntegrityValid) "a modified dark frame must invalidate integrity"
 
+# A preserved artifact must not escape the hard failure by being relabelled
+# External: the class comes from the campaign, not from the caller.
+$result = Invoke-IPolarCampaignEvaluation -Campaign $numerical -Policy (New-TestPolicy) -EvaluatedUtc $EvaluationUtc `
+    -ArtifactIntegrity (New-IntegrityFacts -Entries @(
+        [ordered]@{ Sequence = 3; EventType = "DarkFrame"; EvidenceClass = "Preserved"; Status = "Verified"; Reason = "ok" }
+        [ordered]@{ Sequence = 24; EventType = "Artifact"; EvidenceClass = "External"; Status = "ExternalMissing"; Reason = "mislabelled to dodge the gate" }
+        [ordered]@{ Sequence = 25; EventType = "TppaArtifactLink"; EvidenceClass = "External"; Status = "Verified"; Reason = "ok" }
+    ))
+Register-Level $result
+Assert-Level $result "Rejected" "a preserved artifact relabelled External must still fail closed"
+Assert-Gate $result "ArtifactIntegrity" "class must be derived from the campaign, not the supplied facts"
+
+# Partial coverage must be rejected: omitting the broken artifact must not pass.
+$result = Invoke-IPolarCampaignEvaluation -Campaign $numerical -Policy (New-TestPolicy) -EvaluatedUtc $EvaluationUtc `
+    -ArtifactIntegrity (New-IntegrityFacts -Entries @(
+        [ordered]@{ Sequence = 3; EventType = "DarkFrame"; EvidenceClass = "Preserved"; Status = "Verified"; Reason = "ok" }
+    ))
+Register-Level $result
+Assert-Level $result "Rejected" "facts that omit evidence events must be rejected"
+Assert-Gate $result "ArtifactIntegrity" "the coverage gate must fire when an evidence event is unverified"
+Assert-True ((($result.FailedGates | Where-Object { $_.Gate -eq "ArtifactIntegrity" } | ForEach-Object { $_.Reason }) -join " ").Contains("did not cover")) "the uncovered evidence event must be named"
+
+# Duplicate coverage of the same evidence event must be rejected.
+$result = Invoke-IPolarCampaignEvaluation -Campaign $numerical -Policy (New-TestPolicy) -EvaluatedUtc $EvaluationUtc `
+    -ArtifactIntegrity (New-IntegrityFacts -Entries @(
+        [ordered]@{ Sequence = 3; EventType = "DarkFrame"; EvidenceClass = "Preserved"; Status = "Verified"; Reason = "ok" }
+        [ordered]@{ Sequence = 24; EventType = "Artifact"; EvidenceClass = "Preserved"; Status = "Verified"; Reason = "ok" }
+        [ordered]@{ Sequence = 24; EventType = "Artifact"; EvidenceClass = "Preserved"; Status = "Verified"; Reason = "duplicate" }
+        [ordered]@{ Sequence = 25; EventType = "TppaArtifactLink"; EvidenceClass = "External"; Status = "Verified"; Reason = "ok" }
+    ))
+Register-Level $result
+Assert-Level $result "Rejected" "duplicate verification entries must be rejected"
+
+# An entry for a sequence that is not an evidence event must be rejected.
+$result = Invoke-IPolarCampaignEvaluation -Campaign $numerical -Policy (New-TestPolicy) -EvaluatedUtc $EvaluationUtc `
+    -ArtifactIntegrity (New-IntegrityFacts -Entries @(
+        [ordered]@{ Sequence = 3; EventType = "DarkFrame"; EvidenceClass = "Preserved"; Status = "Verified"; Reason = "ok" }
+        [ordered]@{ Sequence = 24; EventType = "Artifact"; EvidenceClass = "Preserved"; Status = "Verified"; Reason = "ok" }
+        [ordered]@{ Sequence = 25; EventType = "TppaArtifactLink"; EvidenceClass = "External"; Status = "Verified"; Reason = "ok" }
+        [ordered]@{ Sequence = 7; EventType = "SolveAttempt"; EvidenceClass = "Preserved"; Status = "Verified"; Reason = "not evidence" }
+    ))
+Register-Level $result
+Assert-Level $result "Rejected" "a verification entry for a non-evidence event must be rejected"
+
 # External evidence: absence is a limitation, alteration fails closed.
-$externalMissingFacts = New-IntegrityFacts -Entries @(
-    [ordered]@{ Sequence = 25; EventType = "TppaArtifactLink"; EvidenceClass = "External"; Status = "ExternalMissing"; Reason = "linked file is gone" }
-)
-$result = Invoke-IPolarCampaignEvaluation -Campaign $numerical -Policy (New-TestPolicy) -EvaluatedUtc $EvaluationUtc -ArtifactIntegrity $externalMissingFacts
+$result = Invoke-IPolarCampaignEvaluation -Campaign $numerical -Policy (New-TestPolicy) -EvaluatedUtc $EvaluationUtc `
+    -ArtifactIntegrity (New-StandardFacts -LinkStatus "ExternalMissing")
 Register-Level $result
 Assert-Level $result "QualifiedCorroboratingWitness" "an absent external artifact must not reject the campaign"
 Assert-True ($result.IntegrityValid) "an absent external artifact must not invalidate integrity"
 Assert-True ($result.ArtifactIntegrity.ExternalLimitations.Count -eq 1) "the absent external artifact must be recorded as a limitation"
 Assert-NoGate $result "ArtifactIntegrity" "an absent external artifact must raise no integrity gate"
 
-$externalAlteredFacts = New-IntegrityFacts -Entries @(
-    [ordered]@{ Sequence = 25; EventType = "TppaArtifactLink"; EvidenceClass = "External"; Status = "Modified"; Reason = "linked file changed" }
-)
-$result = Invoke-IPolarCampaignEvaluation -Campaign $numerical -Policy (New-TestPolicy) -EvaluatedUtc $EvaluationUtc -ArtifactIntegrity $externalAlteredFacts
+$result = Invoke-IPolarCampaignEvaluation -Campaign $numerical -Policy (New-TestPolicy) -EvaluatedUtc $EvaluationUtc `
+    -ArtifactIntegrity (New-StandardFacts -LinkStatus "Modified")
 Register-Level $result
 Assert-Level $result "Rejected" "an altered external artifact must fail closed"
 Assert-Gate $result "ArtifactIntegrity" "the integrity gate must fire for an altered external artifact"
@@ -849,10 +966,16 @@ try {
     Assert-True ($bySequence[2].ActualSha256 -ne $bySequence[2].ExpectedSha256) "the verifier must report the actual hash it computed"
 
     # The verifier's own facts must drive the evaluator to the same conclusion.
-    $verifierDriven = Invoke-IPolarCampaignEvaluation -Campaign $numerical -Policy (New-TestPolicy) -EvaluatedUtc $EvaluationUtc -ArtifactIntegrity $facts
+    # Evaluated against the campaign those facts actually describe, so the rejection
+    # comes from the broken evidence rather than from a coverage mismatch.
+    $verifierDriven = Invoke-IPolarCampaignEvaluation -Campaign $verifierCampaign -Policy (New-TestPolicy) -EvaluatedUtc $EvaluationUtc -ArtifactIntegrity $facts
     Register-Level $verifierDriven
     Assert-Level $verifierDriven "Rejected" "facts produced by the real verifier must reject a campaign with broken evidence"
     Assert-True (-not $verifierDriven.IntegrityValid) "facts produced by the real verifier must invalidate integrity"
+    Assert-Gate $verifierDriven "ArtifactIntegrity" "the real verifier's failures must raise the integrity gate"
+    $integrityReasons = (($verifierDriven.FailedGates | Where-Object { $_.Gate -eq "ArtifactIntegrity" } | ForEach-Object { $_.Reason }) -join " ")
+    Assert-True ($integrityReasons.Contains("Modified") -or $integrityReasons.Contains("hashes to")) "the modified file must be reported"
+    Assert-True ($verifierDriven.ArtifactIntegrity.PreservedFailureCount -eq 3) "all three broken preserved files must be counted"
 } finally {
     if (Test-Path -LiteralPath $verifierRoot) { Remove-Item -LiteralPath $verifierRoot -Recurse -Force }
 }

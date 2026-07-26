@@ -145,11 +145,22 @@ function Format-IPolarUtc {
     return (ConvertTo-IPolarUtc -Value $Value).ToString("o", [Globalization.CultureInfo]::InvariantCulture)
 }
 
+<#
+.SYNOPSIS
+    Detects a full ISO 8601 date-time string in any zone form.
+.DESCRIPTION
+    Must cover Z-form, explicit-offset, and zoneless shapes, because PowerShell 7's
+    ConvertFrom-Json coerces all three into [datetime] while Windows PowerShell 5.1
+    leaves all three as strings. Matching only the Z form made the same campaign
+    hash differently on the two hosts as soon as an operator pasted an
+    offset-bearing timestamp into any free-text field, which surfaced as a false
+    "event was edited after it was written" rejection.
+#>
 function Test-IPolarUtcText {
     param([string]$Text)
 
     if ([string]::IsNullOrEmpty($Text)) { return $false }
-    return $Text -match '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,7})?Z$'
+    return $Text -match '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,7})?(Z|[+-]\d{2}:\d{2})?$'
 }
 
 function ConvertTo-IPolarJsonString {
@@ -949,7 +960,19 @@ function Invoke-IPolarCampaignEvaluation {
 
     # --- Byte-level evidence verification -----------------------------------
     # Facts are supplied by the caller through Test-IPolarPreservedEvidence. This
-    # function never reads a file itself.
+    # function never reads a file itself, so it cannot verify evidence on its own -
+    # but it must not therefore treat "unverified" as "fine". Missing, partial, or
+    # mislabelled facts all gate rejection, and every reported count is derived from
+    # the supplied entries rather than trusted from the caller.
+    $evidenceEvents = @($events | Where-Object {
+        $candidateType = [string](Get-IPolarProperty -InputObject $_ -Name "EventType")
+        ((Get-IPolarPreservedEvidenceTypes) -contains $candidateType) -or ((Get-IPolarExternalEvidenceTypes) -contains $candidateType)
+    })
+    $evidenceEventTypeBySequence = @{}
+    foreach ($evidenceEvent in $evidenceEvents) {
+        $evidenceEventTypeBySequence[[string](Get-IPolarProperty -InputObject $evidenceEvent -Name "Sequence")] = [string](Get-IPolarProperty -InputObject $evidenceEvent -Name "EventType")
+    }
+
     $artifactIntegritySummary = [ordered]@{
         Source = "NotSupplied"
         CheckedCount = 0
@@ -957,41 +980,84 @@ function Invoke-IPolarCampaignEvaluation {
         PreservedFailureCount = 0
         ExternalMismatchCount = 0
         ExternalMissingCount = 0
+        EvidenceEventCount = $evidenceEvents.Count
         Failures = @()
         ExternalLimitations = @()
-        Note = "No byte-level evidence verification was supplied to this evaluation. Recorded hashes were not compared against the bytes on disk, so this verdict rests on the event chain alone."
+        Note = "No byte-level evidence verification was supplied to this evaluation. Recorded hashes were not compared against the bytes on disk."
     }
-    if ($null -ne $ArtifactIntegrity) {
+
+    if ($null -eq $ArtifactIntegrity) {
+        if ($evidenceEvents.Count -gt 0) {
+            Add-IPolarGate $gates "ArtifactIntegrity" "No byte-level evidence verification was supplied, but the campaign records $($evidenceEvents.Count) evidence event(s). Recorded hashes must be compared against the bytes on disk before any verdict is issued."
+        }
+    } else {
         $integrityFailures = New-Object System.Collections.Generic.List[string]
         $externalLimitations = New-Object System.Collections.Generic.List[string]
-        $artifactIntegritySummary.Source = [string](Get-IPolarProperty -InputObject $ArtifactIntegrity -Name "Source" -Default "FilesystemVerified")
-        $artifactIntegritySummary.CheckedCount = [int](Get-IPolarProperty -InputObject $ArtifactIntegrity -Name "CheckedCount" -Default 0)
-        $artifactIntegritySummary.VerifiedCount = [int](Get-IPolarProperty -InputObject $ArtifactIntegrity -Name "VerifiedCount" -Default 0)
-        $artifactIntegritySummary.PreservedFailureCount = [int](Get-IPolarProperty -InputObject $ArtifactIntegrity -Name "PreservedFailureCount" -Default 0)
-        $artifactIntegritySummary.ExternalMismatchCount = [int](Get-IPolarProperty -InputObject $ArtifactIntegrity -Name "ExternalMismatchCount" -Default 0)
-        $artifactIntegritySummary.ExternalMissingCount = [int](Get-IPolarProperty -InputObject $ArtifactIntegrity -Name "ExternalMissingCount" -Default 0)
+        $artifactIntegritySummary.Source = [string](Get-IPolarProperty -InputObject $ArtifactIntegrity -Name "Source" -Default "Unknown")
         $artifactIntegritySummary.Note = "Recorded hashes and sizes were compared against the bytes on disk."
 
-        foreach ($entry in @(Get-IPolarProperty -InputObject $ArtifactIntegrity -Name "Entries" -Default @())) {
+        $entries = @(Get-IPolarProperty -InputObject $ArtifactIntegrity -Name "Entries" -Default @())
+        $entrySequenceCounts = @{}
+        $verifiedCount = 0
+        $preservedFailureCount = 0
+        $externalMismatchCount = 0
+        $externalMissingCount = 0
+
+        foreach ($entry in $entries) {
             $status = [string](Get-IPolarProperty -InputObject $entry -Name "Status")
-            if ($status -eq "Verified") { continue }
-            $entrySequence = Get-IPolarProperty -InputObject $entry -Name "Sequence"
+            $entrySequence = [string](Get-IPolarProperty -InputObject $entry -Name "Sequence")
             $entryType = [string](Get-IPolarProperty -InputObject $entry -Name "EventType")
-            $entryClass = [string](Get-IPolarProperty -InputObject $entry -Name "EvidenceClass")
             $entryReason = [string](Get-IPolarProperty -InputObject $entry -Name "Reason")
             $text = "sequence $entrySequence ($entryType): $entryReason"
 
-            if ($status -eq "ExternalMissing") {
+            if ($entrySequenceCounts.ContainsKey($entrySequence)) {
+                $entrySequenceCounts[$entrySequence] = $entrySequenceCounts[$entrySequence] + 1
+            } else {
+                $entrySequenceCounts[$entrySequence] = 1
+            }
+
+            if (-not $evidenceEventTypeBySequence.ContainsKey($entrySequence)) {
+                Add-IPolarGate $gates "ArtifactIntegrity" "Evidence verification reports sequence $entrySequence, which is not an evidence event in this campaign."
+                continue
+            }
+
+            # The class is derived from the campaign, never taken from the caller.
+            # Otherwise a preserved artifact could be relabelled External to escape
+            # the hard failure and be downgraded to a mere limitation.
+            $actualType = $evidenceEventTypeBySequence[$entrySequence]
+            $isPreserved = (Get-IPolarPreservedEvidenceTypes) -contains $actualType
+
+            if ($status -eq "Verified") { $verifiedCount++; continue }
+
+            if ($status -eq "ExternalMissing" -and -not $isPreserved) {
+                $externalMissingCount++
                 [void]$externalLimitations.Add($text)
                 continue
             }
+
             [void]$integrityFailures.Add($text)
-            if ($entryClass -eq "External") {
-                Add-IPolarGate $gates "ArtifactIntegrity" "Linked external evidence at $text no longer matches what was recorded. The comparison rests on evidence that has changed."
-            } else {
+            if ($isPreserved) {
+                $preservedFailureCount++
                 Add-IPolarGate $gates "ArtifactIntegrity" "Preserved evidence failed byte-level verification at $text"
+            } else {
+                $externalMismatchCount++
+                Add-IPolarGate $gates "ArtifactIntegrity" "Linked external evidence at $text no longer matches what was recorded. The comparison rests on evidence that has changed."
             }
         }
+
+        foreach ($expectedSequence in $evidenceEventTypeBySequence.Keys) {
+            if (-not $entrySequenceCounts.ContainsKey($expectedSequence)) {
+                Add-IPolarGate $gates "ArtifactIntegrity" "Evidence verification did not cover sequence $expectedSequence ($($evidenceEventTypeBySequence[$expectedSequence])). Every recorded evidence file must be verified."
+            } elseif ($entrySequenceCounts[$expectedSequence] -gt 1) {
+                Add-IPolarGate $gates "ArtifactIntegrity" "Evidence verification reports sequence $expectedSequence more than once. Each evidence file must be verified exactly once."
+            }
+        }
+
+        $artifactIntegritySummary.CheckedCount = $entries.Count
+        $artifactIntegritySummary.VerifiedCount = $verifiedCount
+        $artifactIntegritySummary.PreservedFailureCount = $preservedFailureCount
+        $artifactIntegritySummary.ExternalMismatchCount = $externalMismatchCount
+        $artifactIntegritySummary.ExternalMissingCount = $externalMissingCount
         $artifactIntegritySummary.Failures = $integrityFailures.ToArray()
         $artifactIntegritySummary.ExternalLimitations = $externalLimitations.ToArray()
     }

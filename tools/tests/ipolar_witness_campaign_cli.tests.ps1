@@ -396,7 +396,7 @@ try {
     Assert-True (-not $modifiedAfter.IntegrityValid) "a modified preserved artifact must invalidate integrity"
     Assert-True (@($modifiedAfter.FailedGates | Where-Object { $_.Gate -eq "ArtifactIntegrity" }).Count -ge 1) "the artifact integrity gate must fire on modification"
     Assert-True ($modifiedAfter.ArtifactIntegrity.PreservedFailureCount -eq 1) "exactly one preserved artifact must be reported as failing"
-    Assert-Throws { & $ToolPath -Command Finalize -CampaignPath $modifiedCampaign -PolicyPath $policy -RecordedUtc $BaseUtc.AddMinutes(96) -ReportDirectory (Join-Path $TestRoot "modified-reports") } "" "finalization must fail closed while evidence is modified"
+    Assert-Throws { & $ToolPath -Command Finalize -CampaignPath $modifiedCampaign -PolicyPath $policy -RecordedUtc $BaseUtc.AddMinutes(96) -ReportDirectory (Join-Path $TestRoot "modified-reports") } "no longer matches the bytes on disk" "finalization must fail closed while evidence is modified"
 
     # A deleted preserved dark frame must be detected the same way.
     $deletedCampaign = New-CompleteCampaign -Name "artifact-deleted"
@@ -501,46 +501,209 @@ try {
     Assert-True ([IO.File]::ReadAllText($squatted) -eq "pre-existing committed evidence") "a collision must never overwrite committed evidence"
 
     # --- Concurrent append safety ------------------------------------------------
-    $raceCampaign = New-CompleteCampaign -Name "race"
-    $raceBarrier = Join-Path $TestRoot "race-barrier.txt"
+    #
+    # Children must REPORT their outcome. An earlier version of this test swallowed
+    # every child exception and never asserted that any writer committed, and it also
+    # gave writers 2..6 a CreatedUtc later than their event timestamp, so they were
+    # rejected before ever reaching the lock. It therefore passed with a single
+    # writer and would have passed with the lock deleted outright.
+    $raceHost = if ($PSVersionTable.PSVersion.Major -ge 6) { "pwsh" } else { "powershell" }
     $raceChild = Join-Path $TestRoot "race-child.ps1"
     @'
-param($Tool, $Campaign, $Barrier, $Utc, $Evidence, $Created)
+param($Tool, $Campaign, $Barrier, $ResultFile, $Utc, $Evidence, $Created)
 while (-not (Test-Path -LiteralPath $Barrier)) { Start-Sleep -Milliseconds 5 }
 try {
-    & $Tool -Command RecordArtifact -CampaignPath $Campaign -RecordedUtc ([datetime]::Parse($Utc).ToUniversalTime()) `
-        -Path $Evidence -CreatedUtc ([datetime]::Parse($Created).ToUniversalTime()) -QualitativeVerdict CrossInsideCircle | Out-Null
-} catch { }
+    # "NONE" means "no artifact". Windows PowerShell 5.1 rejects an empty string
+    # inside Start-Process -ArgumentList, and parses a bare "-" as a parameter
+    # name, so a word sentinel is used.
+    if ($Evidence -eq "NONE") {
+        & $Tool -Command RecordSolveAttempt -CampaignPath $Campaign -RecordedUtc ([datetime]::Parse($Utc).ToUniversalTime()) `
+            -SolveOutcome Success -Reason "parallel" | Out-Null
+    } else {
+        & $Tool -Command RecordArtifact -CampaignPath $Campaign -RecordedUtc ([datetime]::Parse($Utc).ToUniversalTime()) `
+            -Path $Evidence -CreatedUtc ([datetime]::Parse($Created).ToUniversalTime()) -QualitativeVerdict CrossInsideCircle | Out-Null
+    }
+    Set-Content -LiteralPath $ResultFile -Value "OK" -Encoding utf8
+} catch {
+    Set-Content -LiteralPath $ResultFile -Value ("FAIL:" + $_.Exception.Message) -Encoding utf8
+}
 '@ | Set-Content -LiteralPath $raceChild -Encoding utf8
 
-    $writerCount = 6
-    $raceHost = if ($PSVersionTable.PSVersion.Major -ge 6) { "pwsh" } else { "powershell" }
-    $raceProcesses = @()
-    for ($index = 1; $index -le $writerCount; $index++) {
-        $raceEvidence = New-EvidenceFile -Name "race-$index.png"
-        $raceProcesses += Start-Process -FilePath $raceHost -PassThru -WindowStyle Hidden -ArgumentList @(
-            "-NoProfile", "-File", $raceChild, $ToolPath, $raceCampaign, $raceBarrier,
-            $BaseUtc.AddMinutes(92).ToString("o"), $raceEvidence, $BaseUtc.AddMinutes(91 + $index).ToString("o"))
-    }
-    Start-Sleep -Seconds 6
-    [IO.File]::WriteAllText($raceBarrier, "go")
-    foreach ($raceProcess in $raceProcesses) { $null = $raceProcess.WaitForExit(240000) }
+    function Invoke-RaceWriters {
+        param([string]$Campaign, [int]$WriterCount, [string]$Tag, [scriptblock]$ArgumentFactory)
 
-    $raceLines = @([IO.File]::ReadAllLines((Join-Path $raceCampaign "events.jsonl")) | Where-Object { $_ })
-    $raceEvents = @()
-    foreach ($raceLine in $raceLines) { $raceEvents += ($raceLine | ConvertFrom-Json) }
-    Assert-True ($raceEvents.Count -eq $raceLines.Count) "every event line must be complete, parseable JSON after concurrent writers"
-    $raceSequences = @($raceEvents | ForEach-Object { $_.Sequence })
-    Assert-True (@($raceSequences | Sort-Object -Unique).Count -eq $raceSequences.Count) "concurrent writers must never reuse a sequence number"
-    for ($index = 0; $index -lt $raceSequences.Count; $index++) {
-        Assert-True ($raceSequences[$index] -eq ($index + 1)) "concurrent writers must produce a contiguous ordered sequence"
+        $barrier = Join-Path $TestRoot "race-barrier-$Tag.txt"
+        $processes = @()
+        $resultFiles = @()
+        for ($index = 1; $index -le $WriterCount; $index++) {
+            $resultFile = Join-Path $TestRoot "race-$Tag-$index.result"
+            $resultFiles += $resultFile
+            $extra = & $ArgumentFactory $index
+            $processes += Start-Process -FilePath $raceHost -PassThru -WindowStyle Hidden -ArgumentList (@(
+                "-NoProfile", "-File", $raceChild, $ToolPath, $Campaign, $barrier, $resultFile) + $extra)
+        }
+        Start-Sleep -Seconds 6
+        [IO.File]::WriteAllText($barrier, "go")
+        foreach ($process in $processes) { $null = $process.WaitForExit(300000) }
+
+        $succeeded = 0
+        $reported = 0
+        foreach ($resultFile in $resultFiles) {
+            if (-not (Test-Path -LiteralPath $resultFile)) { continue }
+            $reported++
+            if ([IO.File]::ReadAllText($resultFile).Trim() -eq "OK") { $succeeded++ }
+        }
+        return [pscustomobject]@{ Reported = $reported; Succeeded = $succeeded; Total = $WriterCount }
     }
-    $raceStaging = @(Get-ChildItem -LiteralPath (Join-Path $raceCampaign "artifacts") -File -Force | Where-Object { $_.Name -like ".staging-*" })
-    Assert-True ($raceStaging.Count -eq 0) "losing contenders must leave no orphan staging file"
+
+    function Assert-RaceChainIntact {
+        param([string]$Campaign, [int]$ExpectedEventCount, [string]$Label)
+
+        $lines = @([IO.File]::ReadAllLines((Join-Path $Campaign "events.jsonl")) | Where-Object { $_ })
+        $events = @()
+        foreach ($line in $lines) { $events += ($line | ConvertFrom-Json) }
+        Assert-True ($events.Count -eq $lines.Count) "$Label : every event line must be complete, parseable JSON"
+        Assert-True ($lines.Count -eq $ExpectedEventCount) "$Label : event count must equal pre-race count plus successful writers (expected $ExpectedEventCount, got $($lines.Count))"
+        $sequences = @($events | ForEach-Object { $_.Sequence })
+        Assert-True (@($sequences | Sort-Object -Unique).Count -eq $sequences.Count) "$Label : concurrent writers must never reuse a sequence number"
+        for ($index = 0; $index -lt $sequences.Count; $index++) {
+            Assert-True ($sequences[$index] -eq ($index + 1)) "$Label : sequences must be contiguous and ordered"
+        }
+        $staging = @(Get-ChildItem -LiteralPath (Join-Path $Campaign "artifacts") -File -Force -ErrorAction SilentlyContinue | Where-Object { $_.Name -like ".staging-*" })
+        Assert-True ($staging.Count -eq 0) "$Label : no orphan staging file may survive"
+    }
+
+    # Case 1 — every writer is eligible, so the lock must let ALL of them through.
+    # Identical event timestamps, and solve attempts carry no artifact-ordering rule.
+    $raceCampaign = New-CompleteCampaign -Name "race"
+    $raceBefore = @([IO.File]::ReadAllLines((Join-Path $raceCampaign "events.jsonl")) | Where-Object { $_ }).Count
+    $raceOutcome = Invoke-RaceWriters -Campaign $raceCampaign -WriterCount 6 -Tag "solve" -ArgumentFactory {
+        param($index)
+        @($BaseUtc.AddMinutes(92).ToString("o"), "NONE", "NONE")
+    }
+    Assert-True ($raceOutcome.Reported -eq 6) "all six writers must report an outcome (got $($raceOutcome.Reported))"
+    Assert-True ($raceOutcome.Succeeded -eq 6) "every eligible concurrent writer must commit (got $($raceOutcome.Succeeded) of 6)"
+    Assert-RaceChainIntact -Campaign $raceCampaign -ExpectedEventCount ($raceBefore + 6) -Label "solve-attempt race"
     $raceEvaluation = & $ToolPath -Command Evaluate -CampaignPath $raceCampaign -PolicyPath $policy -RecordedUtc $BaseUtc.AddMinutes(120)
     Assert-True ($raceEvaluation.IntegrityValid) "the hash chain must remain valid after concurrent writers"
     Assert-True (@($raceEvaluation.FailedGates | Where-Object { $_.Gate -eq "HashChain" -or $_.Gate -eq "EventSequence" }).Count -eq 0) "concurrent writers must not corrupt the chain"
-    Assert-True ($raceEvaluation.ArtifactIntegrity.PreservedFailureCount -eq 0) "every artifact committed under contention must verify byte for byte"
+
+    # Case 2 — concurrent artifact imports. Each carries a valid CreatedUtc that is
+    # before its event time, so every writer genuinely reaches staging and the lock.
+    # Artifact ordering means the surviving set depends on commit order, so assert
+    # the invariants that must hold for any interleaving.
+    $raceArtifactCampaign = New-CompleteCampaign -Name "race-artifacts"
+    $raceArtifactBefore = @([IO.File]::ReadAllLines((Join-Path $raceArtifactCampaign "events.jsonl")) | Where-Object { $_ }).Count
+    $raceArtifactFiles = @{}
+    for ($index = 1; $index -le 6; $index++) { $raceArtifactFiles[$index] = New-EvidenceFile -Name "race-artifact-$index.png" }
+    $artifactOutcome = Invoke-RaceWriters -Campaign $raceArtifactCampaign -WriterCount 6 -Tag "artifact" -ArgumentFactory {
+        param($index)
+        @($BaseUtc.AddMinutes(110).ToString("o"), $raceArtifactFiles[$index], $BaseUtc.AddMinutes(100 + $index).ToString("o"))
+    }
+    Assert-True ($artifactOutcome.Reported -eq 6) "all six artifact writers must report an outcome"
+    Assert-True ($artifactOutcome.Succeeded -ge 1) "at least one artifact writer must commit under contention"
+    Assert-RaceChainIntact -Campaign $raceArtifactCampaign -ExpectedEventCount ($raceArtifactBefore + $artifactOutcome.Succeeded) -Label "artifact race"
+    $artifactRaceEvaluation = & $ToolPath -Command Evaluate -CampaignPath $raceArtifactCampaign -PolicyPath $policy -RecordedUtc $BaseUtc.AddMinutes(130)
+    Assert-True ($artifactRaceEvaluation.ArtifactIntegrity.PreservedFailureCount -eq 0) "every artifact committed under contention must verify byte for byte"
+    Assert-True (@($artifactRaceEvaluation.FailedGates | Where-Object { $_.Gate -eq "HashChain" -or $_.Gate -eq "EventSequence" }).Count -eq 0) "artifact contention must not corrupt the chain"
+
+    # --- Report output must never be able to destroy campaign state ---------------
+    #
+    # Evaluate verifies the recorded evidence and THEN writes its report. If the
+    # report path could name campaign state, the write would destroy the very
+    # evidence the returned verdict had just certified as intact.
+    $outputGuardCampaign = New-CompleteCampaign -Name "output-guard"
+    $guardArtifactPath = Get-PreservedPath -Campaign $outputGuardCampaign -EventType "Artifact"
+    $guardDarkPath = Get-PreservedPath -Campaign $outputGuardCampaign -EventType "DarkFrame"
+    $guardLogPath = Join-Path $outputGuardCampaign "events.jsonl"
+    $guardHeaderPath = Join-Path $outputGuardCampaign "campaign.json"
+    $guardTargets = @{
+        "preserved artifact" = $guardArtifactPath
+        "preserved dark frame" = $guardDarkPath
+        "event log" = $guardLogPath
+        "campaign header" = $guardHeaderPath
+        "campaign root file" = (Join-Path $outputGuardCampaign "anything.json")
+        "artifacts directory file" = (Join-Path (Join-Path $outputGuardCampaign "artifacts") "report.json")
+    }
+    foreach ($guardLabel in $guardTargets.Keys) {
+        $guardTarget = $guardTargets[$guardLabel]
+        $before = if (Test-Path -LiteralPath $guardTarget) { (Get-FileHash -LiteralPath $guardTarget -Algorithm SHA256).Hash } else { "" }
+        Assert-Throws { & $ToolPath -Command Evaluate -CampaignPath $outputGuardCampaign -PolicyPath $policy `
+            -RecordedUtc $BaseUtc.AddMinutes(95) -OutputPath $guardTarget } "inside the campaign directory" "-OutputPath naming the $guardLabel must be refused"
+        if ($before -ne "") {
+            $after = (Get-FileHash -LiteralPath $guardTarget -Algorithm SHA256).Hash
+            Assert-True ($before -eq $after) "refusing -OutputPath must leave the $guardLabel byte-identical"
+        } else {
+            Assert-True (-not (Test-Path -LiteralPath $guardTarget)) "refusing -OutputPath must not create a file inside the campaign"
+        }
+    }
+    # The campaign must still be fully intact and qualified afterwards.
+    $afterGuard = & $ToolPath -Command Evaluate -CampaignPath $outputGuardCampaign -PolicyPath $policy -RecordedUtc $BaseUtc.AddMinutes(95)
+    Assert-True ($afterGuard.QualificationLevel -eq "QualifiedCorroboratingWitness") "the guarded campaign must remain qualified"
+    Assert-True ($afterGuard.IntegrityValid) "the guarded campaign must remain integrity-valid"
+    # A path outside the campaign is still accepted.
+    $outsideOutput = Join-Path $TestRoot "outside-evaluation.json"
+    & $ToolPath -Command Evaluate -CampaignPath $outputGuardCampaign -PolicyPath $policy -RecordedUtc $BaseUtc.AddMinutes(95) -OutputPath $outsideOutput | Out-Null
+    Assert-True (Test-Path -LiteralPath $outsideOutput) "-OutputPath outside the campaign must still be written"
+
+    # Finalize must not be able to drop reports onto evidence or campaign state.
+    $reportDirCampaign = New-CompleteCampaign -Name "report-dir-guard"
+    Assert-Throws { & $ToolPath -Command Finalize -CampaignPath $reportDirCampaign -PolicyPath $policy `
+        -RecordedUtc $BaseUtc.AddMinutes(96) -ReportDirectory (Join-Path $reportDirCampaign "artifacts") } "preserved evidence" "-ReportDirectory inside artifacts must be refused"
+    Assert-Throws { & $ToolPath -Command Finalize -CampaignPath $reportDirCampaign -PolicyPath $policy `
+        -RecordedUtc $BaseUtc.AddMinutes(96) -ReportDirectory $reportDirCampaign } "campaign root" "-ReportDirectory equal to the campaign root must be refused"
+    $reportDirLast = (@([IO.File]::ReadAllLines((Join-Path $reportDirCampaign "events.jsonl")) | Where-Object { $_ })[-1] | ConvertFrom-Json)
+    Assert-True ($reportDirLast.EventType -ne "CampaignFinalized") "a refused report directory must not finalize the campaign"
+
+    # --- Resume must be pinned to the sealed finalization ------------------------
+    $pinCampaign = New-CompleteCampaign -Name "resume-pinned"
+    $pinFinal = & $ToolPath -Command Finalize -CampaignPath $pinCampaign -PolicyPath $policy -RecordedUtc $BaseUtc.AddMinutes(96)
+    Assert-True ($pinFinal.QualificationLevel -eq "QualifiedCorroboratingWitness") "the pinning fixture must finalize qualified"
+    $pinMarkdownBytes = [IO.File]::ReadAllBytes($pinFinal.ReportMarkdownPath)
+
+    # Byte-level resume: a report re-encoded with a BOM has identical TEXT but
+    # different BYTES, and must be refused by the report comparison itself.
+    [IO.File]::WriteAllText($pinFinal.ReportMarkdownPath, [Text.Encoding]::UTF8.GetString($pinMarkdownBytes), [Text.UTF8Encoding]::new($true))
+    Assert-Throws { & $ToolPath -Command Finalize -CampaignPath $pinCampaign -PolicyPath $policy -RecordedUtc $BaseUtc.AddMinutes(97) } "byte for byte" "a re-encoded report must be refused on bytes, not accepted as identical text"
+    [IO.File]::WriteAllBytes($pinFinal.ReportMarkdownPath, $pinMarkdownBytes)
+
+    # Resuming under a different policy must be refused rather than minting reports
+    # whose verdict contradicts the sealed finalization event.
+    $otherPolicy = New-PolicyFile -Name "other-policy.json"
+    $otherPolicyText = [IO.File]::ReadAllText($otherPolicy) -replace 'ipolar-uncertainty-policy-1', 'a-different-policy'
+    [IO.File]::WriteAllText($otherPolicy, $otherPolicyText, [Text.UTF8Encoding]::new($false))
+    Remove-Item -LiteralPath $pinFinal.ReportMarkdownPath -Force
+    Assert-Throws { & $ToolPath -Command Finalize -CampaignPath $pinCampaign -PolicyPath $otherPolicy -RecordedUtc $BaseUtc.AddMinutes(98) } "records policy" "resuming under a different policy must be refused"
+    # With the original policy it reconstructs byte-identically.
+    $pinResume = & $ToolPath -Command Finalize -CampaignPath $pinCampaign -PolicyPath $policy -RecordedUtc $BaseUtc.AddMinutes(99)
+    $pinResumedBytes = [IO.File]::ReadAllBytes($pinResume.ReportMarkdownPath)
+    Assert-True ([Convert]::ToBase64String($pinResumedBytes) -eq [Convert]::ToBase64String($pinMarkdownBytes)) "resume must reconstruct the report byte for byte"
+
+    # A non-terminal chain must not be given fresh reports even with no baseline.
+    $nonTerminalCampaign = New-CompleteCampaign -Name "non-terminal-resume"
+    $nonTerminalFinal = & $ToolPath -Command Finalize -CampaignPath $nonTerminalCampaign -PolicyPath $policy -RecordedUtc $BaseUtc.AddMinutes(96)
+    $nonTerminalLog = Join-Path $nonTerminalCampaign "events.jsonl"
+    $nonTerminalLast = (@([IO.File]::ReadAllLines($nonTerminalLog) | Where-Object { $_ })[-1] | ConvertFrom-Json)
+    $forgedEvent = [ordered]@{
+        Sequence = $nonTerminalLast.Sequence + 1
+        RecordedUtc = "2026-07-26T19:40:00.0000000Z"
+        EventType = "SolveAttempt"
+        PreviousEventHash = $nonTerminalLast.EventHash
+        Payload = [ordered]@{ AttemptIndex = 99; Succeeded = $true; AvailableStarCount = 20; Reason = "forged"; ManualObservation = ""; Notes = "" }
+        EventHash = ("0" * 64)
+    }
+    [IO.File]::AppendAllText($nonTerminalLog, (($forgedEvent | ConvertTo-Json -Depth 12 -Compress) + "`n"))
+    Remove-Item -LiteralPath (Split-Path -Parent $nonTerminalFinal.ReportJsonPath) -Recurse -Force
+    Assert-Throws { & $ToolPath -Command Finalize -CampaignPath $nonTerminalCampaign -PolicyPath $policy -RecordedUtc $BaseUtc.AddMinutes(100) } "" "a non-terminal chain must not receive regenerated reports even with no baseline"
+    Assert-True (-not (Test-Path -LiteralPath $nonTerminalFinal.ReportJsonPath)) "no report may be minted for a mutated chain"
+
+    # --- A linked TPPA artifact cannot be double-counted -------------------------
+    $linkCampaign = New-CompleteCampaign -Name "link-duplicate"
+    $linkEvidence = New-EvidenceFile -Name "tppa-link-once.json"
+    & $ToolPath -Command LinkTppaArtifact -CampaignPath $linkCampaign -RecordedUtc $BaseUtc.AddMinutes(92) `
+        -Path $linkEvidence -TppaRunId "tppa-run-x" -Description "first link" | Out-Null
+    Assert-Throws { & $ToolPath -Command LinkTppaArtifact -CampaignPath $linkCampaign -RecordedUtc $BaseUtc.AddMinutes(93) `
+        -Path $linkEvidence -TppaRunId "tppa-run-y" -Description "same file again" } "same SHA256" "linking the same file twice must be refused"
 
     # --- Cross-host consistency ---------------------------------------------------
     # A campaign written by one PowerShell host must verify under the other, with

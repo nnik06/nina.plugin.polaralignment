@@ -1,3 +1,15 @@
+## Version 2.2.6.37
+
+- Refuse `Evaluate -OutputPath` anywhere inside the campaign directory. The report was written after verification, so naming a preserved artifact, the event log, or the header destroyed the evidence the returned verdict had just certified as intact while still reporting `IntegrityValid=true`.
+- Refuse `Finalize -ReportDirectory` when it is the campaign root or sits under `artifacts/`, so reports can never land on preserved evidence.
+- Normalize every ISO 8601 date-time shape PowerShell 7 coerces, not only the `Z` form. An offset-bearing or zoneless timestamp pasted into any free-text field previously hashed differently on Windows PowerShell 5.1 and PowerShell 7, surfacing as a false "event was edited after it was written" rejection.
+- Fail closed on evidence-verification facts: reject when facts are withheld while evidence exists, when they do not cover every recorded evidence event exactly once, and when a preserved artifact is relabelled external to escape the hard failure. Derive every reported count from the entries instead of trusting caller-supplied totals.
+- Compare finalized report output byte for byte rather than as decoded text, so a report re-encoded with a byte-order mark or as UTF-16 is no longer accepted as identical.
+- Pin finalization resume to the sealed `CampaignFinalized` event (qualification level, policy id, failed-gate count) and refuse resume on a non-terminal chain, so a lost report set cannot be rebuilt into reports that contradict the sealed result.
+- Refuse linking a TPPA artifact whose SHA256 already appears in the campaign, matching the rule already applied to recorded artifacts.
+- Remove a staging file when the copy or its verification throws inside the reservation, where the caller's cleanup could not yet run.
+- Repair the concurrent-append regression test, which gave writers 2-6 a creation time later than their event timestamp and so rejected them before they reached the lock, swallowed every child exception, and never asserted that any writer committed: it passed with one writer and would have passed with the lock removed. Writers now report outcomes, all six eligible writers must commit, and event growth must equal the reported successes.
+
 ## Version 2.2.6.36
 
 - Verify iPolar preserved evidence byte for byte: rehash and restat the staged and promoted copies at record time, and recheck every recorded dark frame and artifact against the bytes on disk during filesystem-aware evaluation and finalization.

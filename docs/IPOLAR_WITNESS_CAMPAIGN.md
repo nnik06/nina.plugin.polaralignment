@@ -293,10 +293,34 @@ Two classes are treated differently, deliberately:
 
 The filesystem check lives in `Test-IPolarPreservedEvidence`, which reads files
 and reaches no verdict. `Invoke-IPolarCampaignEvaluation` stays pure: it consumes
-the resulting facts through `-ArtifactIntegrity` and never touches a disk. An
-evaluation performed without those facts reports
-`ArtifactIntegrity.Source = NotSupplied` and says plainly that the recorded
-hashes were not compared against the bytes on disk.
+the resulting facts through `-ArtifactIntegrity` and never touches a disk.
+
+Being unable to verify is not the same as having verified. The evaluator therefore
+fails closed on the facts themselves:
+
+- Facts withheld while the campaign records evidence → `ArtifactIntegrity` gate.
+  An unverified evaluation cannot return a passing verdict. A campaign with no
+  evidence events has nothing to verify and is unaffected.
+- Facts that do not cover every recorded `Artifact`, `DarkFrame`, and
+  `TppaArtifactLink` exactly once → gate. Omitting the broken file is not a way to
+  pass, and neither is verifying it twice.
+- Preserved-versus-external classification is derived from the campaign, never
+  taken from the supplied facts, so a preserved artifact cannot be relabelled
+  external to have its failure downgraded to a limitation.
+- Every reported count is derived from the entries. Caller-supplied totals are
+  ignored, so a fact set cannot claim "all verified" beside failing entries.
+
+### Report output never touches campaign state
+
+Evaluation verifies the recorded evidence and then writes its report. If the report
+path could name campaign state, that write would destroy the very evidence the
+returned verdict had just certified as intact — and the verdict would still say
+`IntegrityValid = true`, because verification ran first.
+
+`Evaluate -OutputPath` is therefore rejected outright for any path inside the
+campaign directory; an evaluation report is always external. `Finalize
+-ReportDirectory` may live inside the campaign (`reports/` is the default) but is
+rejected if it is the campaign root or anywhere under `artifacts/`.
 
 ### Finalization is terminal
 
@@ -309,18 +333,44 @@ event, so a hand-edited log cannot smuggle events past finalization.
 Re-running `Finalize` on an already finalized campaign is the one permitted
 post-finalization operation. It appends nothing and reconstructs any report a
 previous interrupted run did not write, byte for byte, refusing to overwrite a
-report whose content differs.
+report whose bytes differ — bytes, not decoded text, so a report re-encoded with a
+byte-order mark or as UTF-16 is refused rather than accepted as identical.
+
+Resume is pinned to the sealed `CampaignFinalized` event. Because it re-derives the
+evaluation from the *current* policy file and the *current* filesystem, it refuses
+unless the recomputed qualification level, policy id, and failed-gate count all
+match what the finalization event recorded, and it refuses outright if the chain is
+no longer terminal. Without that pinning, resuming under a different policy — or
+after the reports were lost — would mint "immutable" reports whose verdict
+contradicts the hash-chained event that sealed the campaign.
 
 ### Recording is transactional
 
 All validation happens before any evidence is committed. The preserved copy is
 staged under a name unique to that invocation, and nothing appears at the
 committed `000N-` path until the corresponding event has been appended. A
-rejected timestamp, a duplicate capture, or an interrupted import therefore
-leaves no file at the committed path and never blocks a corrected retry. On
-failure only that invocation's staging file is removed; committed evidence is
-never deleted or overwritten. A genuine collision at a committed path still fails
-closed.
+rejected timestamp, a duplicate capture, or an import interrupted before the
+append therefore leaves no file at the committed path and does not block a
+corrected retry. On failure only that invocation's staging file is removed;
+committed evidence is never deleted or overwritten. A genuine collision at a
+committed path still fails closed.
+
+There is one window this does not cover, and it is not self-healing. The event is
+appended before the staged copy is promoted, so a process kill between those two
+steps leaves a committed event pointing at a `000N-` file that was never created.
+Every later evaluation then reports that evidence as `Missing` and rejects the
+campaign — correct, but permanent: a retry receives the next sequence number and
+cannot repair the earlier event, and re-importing the same bytes is refused by the
+reused-capture check. Recovery is manual and deliberate: copy the original source
+file to the exact `StoredPath` recorded in the stranded event, after which its
+hash and size verify and the campaign evaluates normally. Keep operator source
+files until a campaign is finalized.
+
+The opposite ordering was considered and rejected. Promoting before the append
+would mean a kill in the same window leaves a committed `000N-` file with no event
+referencing it, which then blocks every retry at that sequence — the failure this
+design exists to eliminate. Both orderings have a window; this one fails closed
+and is recoverable, the other bricks the campaign.
 
 ### Concurrent writers
 
@@ -348,6 +398,16 @@ because Windows PowerShell 5.1 and PowerShell 7 disagree about whether an ISO
 timestamp reads back as a string or a `DateTime` and whether `1.5` reads back as
 `Decimal` or `Double`. A regression fixture pins the canonical text and its hash
 so a campaign written on one host stays verifiable on the other.
+
+Normalization covers every ISO 8601 date-time shape PowerShell 7 coerces, not just
+the `Z` form: an explicit offset (`…T21:30:00+04:00`) and a zoneless
+(`…T21:30:00`) timestamp are normalized to the same UTC form on both hosts.
+Covering only the `Z` form meant that an operator pasting a local-offset timestamp
+into any free-text field — `-Notes`, `-Reason`, `-ManualObservation`, `-Source` —
+made the same campaign hash differently per host, which surfaced as a false
+"event was edited after it was written" rejection. Shapes neither reader coerces
+(a bare date, a time without seconds, ordinary prose) are passed through
+unchanged, identically on both hosts.
 
 ## Recording a campaign
 

@@ -271,18 +271,67 @@ function Invoke-CampaignMutation {
     }
 }
 
+<#
+.SYNOPSIS
+    Writes finalized output once, refusing to overwrite anything different.
+.DESCRIPTION
+    Compares raw BYTES, not decoded text. ReadAllText strips a byte-order mark and
+    honours detected encodings, so a report re-encoded as UTF-8-with-BOM or UTF-16
+    would have compared equal and been accepted as "byte identical" while the
+    manifest went on to hash the altered bytes.
+#>
 function Write-Utf8NoBomOnce {
     param([Parameter(Mandatory)] [string]$LiteralPath, [Parameter(Mandatory)] [string]$Content)
 
+    $expected = [Text.UTF8Encoding]::new($false).GetBytes($Content)
     if (Test-Path -LiteralPath $LiteralPath) {
-        $existing = [IO.File]::ReadAllText($LiteralPath)
-        if ($existing -cne $Content) {
-            throw "Existing finalized output does not match the reconstructed content at $LiteralPath. Refusing to overwrite it."
+        $existing = [IO.File]::ReadAllBytes($LiteralPath)
+        $identical = ($existing.Length -eq $expected.Length)
+        if ($identical) {
+            for ($index = 0; $index -lt $expected.Length; $index++) {
+                if ($existing[$index] -ne $expected[$index]) { $identical = $false; break }
+            }
+        }
+        if (-not $identical) {
+            throw "Existing finalized output does not match the reconstructed content byte for byte at $LiteralPath. Refusing to overwrite it."
         }
         return
     }
 
-    Write-Utf8NoBom -LiteralPath $LiteralPath -Content $Content
+    [IO.File]::WriteAllBytes($LiteralPath, $expected)
+}
+
+<#
+.SYNOPSIS
+    Tests whether a candidate path is the given directory or sits inside it.
+#>
+function Test-PathWithinDirectory {
+    param([Parameter(Mandatory)] [string]$DirectoryPath, [Parameter(Mandatory)] [string]$CandidatePath)
+
+    $parent = [IO.Path]::GetFullPath($DirectoryPath).TrimEnd([char]'\', [char]'/')
+    $candidate = [IO.Path]::GetFullPath($CandidatePath).TrimEnd([char]'\', [char]'/')
+    if ($candidate.Equals($parent, [StringComparison]::OrdinalIgnoreCase)) { return $true }
+    return $candidate.StartsWith($parent + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)
+}
+
+<#
+.SYNOPSIS
+    Refuses an operator-supplied report path that would land inside the campaign.
+.DESCRIPTION
+    Evaluation verifies the recorded evidence and then writes its report. If the
+    report path were allowed to name a preserved artifact, the event log, or the
+    header, the write would destroy the very evidence the returned verdict had just
+    certified as intact. An evaluation report is therefore always external to the
+    campaign.
+#>
+function Assert-OutputPathOutsideCampaign {
+    param([Parameter(Mandatory)] [string]$Root, [Parameter(Mandatory)] [string]$CandidatePath)
+
+    $full = [IO.Path]::GetFullPath($CandidatePath)
+    if (Test-PathWithinDirectory -DirectoryPath $Root -CandidatePath $full) {
+        throw "-OutputPath '$full' is inside the campaign directory '$Root'. An evaluation report must be written outside the campaign so it can never overwrite recorded evidence, the event log, or the header."
+    }
+    return $full
 }
 
 <#
@@ -470,8 +519,16 @@ function New-CampaignArtifactReservation {
         }
 
         $stagingPath = Join-Path $artifactDirectory (".staging-" + [guid]::NewGuid().ToString("N") + ".part")
-        Copy-Item -LiteralPath $full -Destination $stagingPath
-        Assert-PreservedBytes -LiteralPath $stagingPath -ExpectedSha256 $sha -ExpectedSizeBytes ([long]$info.Length) -Stage "staged copy"
+        # Clean up here as well as in the caller: if the copy or its verification
+        # throws, the caller never received a reservation and so its finally block
+        # never runs, which would leak this staging file.
+        try {
+            Copy-Item -LiteralPath $full -Destination $stagingPath
+            Assert-PreservedBytes -LiteralPath $stagingPath -ExpectedSha256 $sha -ExpectedSizeBytes ([long]$info.Length) -Stage "staged copy"
+        } catch {
+            if (Test-Path -LiteralPath $stagingPath) { Remove-Item -LiteralPath $stagingPath -Force -ErrorAction SilentlyContinue }
+            throw
+        }
         $storedPath = $destination
     }
 
@@ -882,11 +939,25 @@ function Invoke-LinkTppaArtifactCommand {
     if (-not (Test-Path -LiteralPath $full -PathType Leaf)) { throw "TPPA artifact not found: $full" }
     $info = Get-Item -LiteralPath $full
     if ($info.Length -le 0) { throw "TPPA artifact is empty: $full" }
+    $linkSha = Get-FileSha256 -LiteralPath $full
+
+    # Recording an Artifact whose SHA256 already appears is refused; a link must be
+    # held to the same standard, otherwise the CLI and the evaluator disagree about
+    # what counts as a distinct observation.
+    $existingCampaign = Read-IPolarCampaign -CampaignPath $root
+    foreach ($campaignEvent in $existingCampaign.Events) {
+        $type = [string](Get-IPolarProperty -InputObject $campaignEvent -Name "EventType")
+        if ($type -ne "Artifact" -and $type -ne "DarkFrame" -and $type -ne "TppaArtifactLink") { continue }
+        $payloadToCheck = Get-IPolarProperty -InputObject $campaignEvent -Name "Payload"
+        if ([string](Get-IPolarProperty -InputObject $payloadToCheck -Name "Sha256") -eq $linkSha) {
+            throw "TPPA artifact $full has the same SHA256 as the evidence already recorded at sequence $(Get-IPolarProperty -InputObject $campaignEvent -Name 'Sequence'). The same file cannot be linked or recorded twice as two independent observations."
+        }
+    }
 
     $payload = [ordered]@{
         TppaRunId = $TppaRunId
         ArtifactPath = $full
-        Sha256 = Get-FileSha256 -LiteralPath $full
+        Sha256 = $linkSha
         SizeBytes = [long]$info.Length
         CreatedUtc = Format-IPolarUtc -Value $info.LastWriteTimeUtc
         Description = $Description
@@ -953,10 +1024,16 @@ function Get-CampaignEvaluation {
 
 function Invoke-EvaluateCommand {
     $root = Assert-ExistingCampaign
+    # Validate the destination before evaluating, so an unsafe path is refused
+    # without having produced a verdict that its own write would then invalidate.
+    $resolvedOutputPath = ""
+    if (-not [string]::IsNullOrWhiteSpace($OutputPath)) {
+        $resolvedOutputPath = Assert-OutputPathOutsideCampaign -Root $root -CandidatePath $OutputPath
+    }
     $evaluation = Get-CampaignEvaluation -Root $root
     $json = $evaluation | ConvertTo-Json -Depth 12
-    if (-not [string]::IsNullOrWhiteSpace($OutputPath)) {
-        Write-Utf8NoBom -LiteralPath ([IO.Path]::GetFullPath($OutputPath)) -Content $json
+    if (-not [string]::IsNullOrEmpty($resolvedOutputPath)) {
+        Write-Utf8NoBom -LiteralPath $resolvedOutputPath -Content $json
     }
     return $evaluation
 }
@@ -1002,12 +1079,44 @@ function Invoke-FinalizeUnderLock {
         throw "Refusing to finalize: recorded evidence no longer matches the bytes on disk. $failureText"
     }
 
+    if ($isFinalizationResume) {
+        # Resume re-derives the evaluation from the CURRENT policy file and the
+        # CURRENT filesystem. Pin it to what the sealed CampaignFinalized event
+        # recorded, otherwise resuming with a different policy would mint
+        # "immutable" reports whose verdict contradicts the hash-chained event.
+        $sealed = Get-IPolarProperty -InputObject $alreadyFinalized[0] -Name "Payload"
+        $sealedLevel = [string](Get-IPolarProperty -InputObject $sealed -Name "QualificationLevelAtFinalization")
+        $sealedPolicyId = [string](Get-IPolarProperty -InputObject $sealed -Name "PolicyId")
+        $sealedGateCount = Get-IPolarFiniteNumber (Get-IPolarProperty -InputObject $sealed -Name "FailedGateCount")
+        $currentPolicyId = [string]$preliminary.UncertaintyPolicy.PolicyId
+
+        if (-not [string]::IsNullOrEmpty($sealedLevel) -and $sealedLevel -ne $preliminary.QualificationLevel) {
+            throw "Refusing to resume finalization: the sealed CampaignFinalized event records qualification level '$sealedLevel' but re-evaluating now yields '$($preliminary.QualificationLevel)'. Reports must reproduce the sealed result, not a new one."
+        }
+        if ($sealedPolicyId -ne $currentPolicyId) {
+            throw "Refusing to resume finalization: the sealed CampaignFinalized event records policy '$sealedPolicyId' but the supplied policy is '$currentPolicyId'. Resume with the policy the campaign was finalized under."
+        }
+        if ($null -ne $sealedGateCount -and [int]$sealedGateCount -ne $preliminary.FailedGates.Count) {
+            throw "Refusing to resume finalization: the sealed CampaignFinalized event records $([int]$sealedGateCount) failed gate(s) but re-evaluating now yields $($preliminary.FailedGates.Count)."
+        }
+        if (@($preliminary.FailedGates | Where-Object { $_.Gate -eq "Finalization" }).Count -gt 0) {
+            throw "Refusing to resume finalization: the event chain is no longer terminal at CampaignFinalized. A mutated chain must not be given fresh reports."
+        }
+    }
+
     $campaignSlug = Assert-IPolarCampaignId -Value ([string]$preliminary.CampaignId)
 
     # Validate the complete report destination before appending the immutable
     # finalization event. A path error or ordinary collision must remain
     # recoverable and must not brick a campaign without its reports.
     $reports = if ([string]::IsNullOrWhiteSpace($ReportDirectory)) { Join-Path $root "reports" } else { [IO.Path]::GetFullPath($ReportDirectory) }
+    # Reports may live inside the campaign, but never on top of its evidence or state.
+    if (Test-PathWithinDirectory -DirectoryPath (Join-Path $root "artifacts") -CandidatePath $reports) {
+        throw "-ReportDirectory '$reports' is inside the campaign artifacts directory. Reports must never be written over preserved evidence."
+    }
+    if ((([IO.Path]::GetFullPath($reports)).TrimEnd([char]'\', [char]'/')).Equals(([IO.Path]::GetFullPath($root)).TrimEnd([char]'\', [char]'/'), [StringComparison]::OrdinalIgnoreCase)) {
+        throw "-ReportDirectory must not be the campaign root itself, which holds the event log and header."
+    }
     [void][IO.Directory]::CreateDirectory($reports)
     $jsonPath = Join-Path $reports "$campaignSlug-report.json"
     $markdownPath = Join-Path $reports "$campaignSlug-report.md"
