@@ -1480,6 +1480,18 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         await domeMediator.WaitForDomeSynchronization(operationToken);
                     }
 
+                    var initialSettleTimeSeconds = TppaVerificationSettlePolicy.Resolve(
+                        profileService.ActiveProfile.TelescopeSettings.SettleTime,
+                        VerificationPointSettleTimeSeconds);
+                    Logger.Info(
+                        $"TPPA verification-only initial point settle time: {initialSettleTimeSeconds:F3} seconds.");
+                    await CoreUtil.Wait(
+                        TimeSpan.FromSeconds(initialSettleTimeSeconds),
+                        operationToken,
+                        progress,
+                        "Settling at verification-only point 1");
+                    EnsureVerificationOnlyActualPositionSafe("initial point post-settle");
+
                     cleanupPointing = telescopeMediator.GetCurrentPosition();
                     Logger.Info($"TPPA verification-only captured A/correction pointing {cleanupPointing} before solve A.");
                     var waypointPlan = TppaVerificationWaypointPlan.Create(
