@@ -67,6 +67,34 @@ namespace NINA.Plugins.PolarAlignment.Test {
             result.Reason.Should().Contain("changes pier side");
         }
 
+        [Test]
+        public void ReturnsOnlyTheRequestedRaDirectionForExecution() {
+            var positive = new TppaDriftArcSafetyResult(true, 35, "positive safe");
+            var negative = new TppaDriftArcSafetyResult(false, 10, "negative unsafe");
+            var result = new TppaDriftArcPreflightResult(positive, negative);
+
+            result.ForDirection(true).Should().Be(positive);
+            result.ForDirection(false).Should().Be(negative);
+            result.IsSafe.Should().BeFalse(
+                "the aggregate diagnostic remains conservative while execution selects one explicit direction");
+        }
+        [TestCase(true, 1)]
+        [TestCase(false, -1)]
+        public void DirectionSelectionMatchesExactWaypointSign(
+                bool eastDirection,
+                int expectedSign) {
+            var pointA = FromTopocentric(0, 65);
+            var plan = TppaVerificationWaypointPlan.Create(pointA, 15, eastDirection);
+            var positive = new TppaDriftArcSafetyResult(true, 35, "positive");
+            var negative = new TppaDriftArcSafetyResult(true, 35, "negative");
+            var preflight = new TppaDriftArcPreflightResult(positive, negative);
+
+            Math.Sign(SignedAngularDelta(
+                plan.Forward[0].RADegrees,
+                plan.Forward[1].RADegrees)).Should().Be(expectedSign);
+            preflight.ForDirection(eastDirection).Should().Be(
+                eastDirection ? positive : negative);
+        }
         [TestCase(0)]
         [TestCase(double.NaN)]
         [TestCase(90)]
@@ -103,5 +131,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
 
         private static double AngularDistance(double first, double second) =>
             180 - Math.Abs(Math.Abs(first - second) - 180);
-    }
+
+        private static double SignedAngularDelta(double first, double second) =>
+            ((second - first + 540) % 360) - 180;    }
 }

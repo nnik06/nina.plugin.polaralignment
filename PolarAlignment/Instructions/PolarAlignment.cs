@@ -1177,10 +1177,14 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 elevationMeters,
                 refraction,
                 destination => telescopeMediator.DestinationSideOfPier(destination));
-            if (!preflight.IsSafe) {
-                throw new InvalidOperationException(preflight.Reason);
+            var selectedPreflight = preflight.ForDirection(EastDirection);
+            var selectedDirection = EastDirection ? "+RA" : "-RA";
+            if (!selectedPreflight.IsSafe) {
+                throw new InvalidOperationException(
+                    $"drift arc preflight rejected for selected {selectedDirection} direction: {selectedPreflight.Reason}");
             }
-            Logger.Info($"TPPA drift-validation preflight passed: {preflight.Reason}.");
+            Logger.Info(
+                $"TPPA drift-validation selected-direction preflight passed for {selectedDirection}: {selectedPreflight.Reason}.");
 
             Coordinates pointA = null;
             TppaVerificationWaypointPlan driftWaypointPlan = null;

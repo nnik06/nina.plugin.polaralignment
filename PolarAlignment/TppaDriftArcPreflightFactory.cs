@@ -8,6 +8,8 @@ namespace NINA.Plugins.PolarAlignment {
         TppaDriftArcSafetyResult PositiveRaArc,
         TppaDriftArcSafetyResult NegativeRaArc) {
         public bool IsSafe => PositiveRaArc.IsSafe && NegativeRaArc.IsSafe;
+        public TppaDriftArcSafetyResult ForDirection(bool eastDirection) =>
+            eastDirection ? PositiveRaArc : NegativeRaArc;
         public string Reason => IsSafe
             ? $"both RA sign interpretations passed; minimum predicted altitudes +RA={PositiveRaArc.MinimumPredictedAltitudeDegrees:F2} deg, -RA={NegativeRaArc.MinimumPredictedAltitudeDegrees:F2} deg"
             : $"drift arc preflight rejected; +RA: {PositiveRaArc.Reason}; -RA: {NegativeRaArc.Reason}";
