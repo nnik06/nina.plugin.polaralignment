@@ -1804,12 +1804,16 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
         }
 
         private async Task<PlateSolveResult> Solve(TPAPAVM context, double searchRadiusIncrementOnFailure, IProgress<ApplicationStatus> progress, CancellationToken token) {
+            var retryPolicy = TppaSolveRetryPolicy.FieldDefault;
             PlateSolveResult result = new PlateSolveResult { Success = false };
             double usedSearchRadius = SearchRadius;
+            var attempt = 0;
             do {
+                attempt++;
                 token.ThrowIfCancellationRequested();
 
                 var solver = plateSolverFactory.GetPlateSolver(profileService.ActiveProfile.PlateSolveSettings);
+                var requestedCoordinates = telescopeMediator.GetCurrentPosition();
                 IPlateSolver blindSolver = null;
                 if (ManualMode && !telescopeMediator.GetInfo().Connected) {
                     Logger.Debug("Manual mode is enabled and no telescope is connected. Spawning the blind solver");
@@ -1818,30 +1822,50 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
 
                 var seq = new CaptureSequence() { Binning = Binning, Gain = Gain, ExposureTime = ExposureTime, Offset = Offset, FilterType = Filter, ImageType = ImageTypes.SNAPSHOT };
                 var captureStartedUtc = DateTime.UtcNow;
-                var observationTimeUtc = captureStartedUtc.AddSeconds(Math.Max(0, seq.ExposureTime) / 2.0);
+                DateTime? observationTimeUtc = null;
                 IRenderedImage image = null;
+                Exception captureException = null;
                 try {
                     progress.Report(new ApplicationStatus() { Status = $"Capturing new image to solve..." });
                     image = await imagingMediator.CaptureAndPrepareImage(seq,
                                                                          new PrepareImageParameters(true, false),
                                                                          token,
                                                                          progress).ConfigureAwait(false);
-                } catch (OperationCanceledException) {
+                } catch (OperationCanceledException ex) {
+                    Logger.Info("TPPA_SOLVE_ATTEMPT " + new TppaSolveAttemptProvenance(
+                        TppaSolveAttemptProvenance.CurrentSchemaVersion,
+                        attempt,
+                        retryPolicy.MaximumAttempts,
+                        captureStartedUtc,
+                        ObservationTimeUtc: null,
+                        seq.ExposureTime,
+                        usedSearchRadius,
+                        requestedCoordinates?.RADegrees,
+                        requestedCoordinates?.Dec,
+                        solver?.GetType().FullName,
+                        CaptureSucceeded: false,
+                        SolveSucceeded: false,
+                        SolvedRightAscensionDegrees: null,
+                        SolvedDeclinationDegrees: null,
+                        FailureKind: "capture-cancelled",
+                        FailureMessage: ex.Message).ToJson());
                     throw;
                 } catch (Exception ex) {
+                    captureException = ex;
                     Logger.Error(ex);
                 }
 
                 token.ThrowIfCancellationRequested();
 
                 if (image != null) {
+                    observationTimeUtc = captureStartedUtc.AddSeconds(Math.Max(0, seq.ExposureTime) / 2.0);
                     context.Image = image;
 
                     var imageSolver = plateSolverFactory.GetImageSolver(solver, blindSolver);
 
                     var parameter = new PlateSolveParameter() {
                         Binning = Binning?.X ?? 1,
-                        Coordinates = telescopeMediator.GetCurrentPosition(),
+                        Coordinates = requestedCoordinates,
                         DownSampleFactor = profileService.ActiveProfile.PlateSolveSettings.DownSampleFactor,
                         FocalLength = profileService.ActiveProfile.TelescopeSettings.FocalLength,
                         MaxObjects = profileService.ActiveProfile.PlateSolveSettings.MaxObjects,
@@ -1852,23 +1876,97 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     };
 
                     progress.Report(new ApplicationStatus() { Status = $"Solving image..." });
+                    Exception solverException = null;
                     try {
                         result = await imageSolver.Solve(image.RawImageData,
                                                          parameter,
                                                          progress,
                                                          token).ConfigureAwait(false);
-                        StampSolveObservationTime(result, observationTimeUtc);
+                        StampSolveObservationTime(result, observationTimeUtc.Value);
                     } catch (Exception ex) when (token.IsCancellationRequested) {
+                        Logger.Info("TPPA_SOLVE_ATTEMPT " + new TppaSolveAttemptProvenance(
+                            TppaSolveAttemptProvenance.CurrentSchemaVersion,
+                            attempt,
+                            retryPolicy.MaximumAttempts,
+                            captureStartedUtc,
+                            observationTimeUtc,
+                            seq.ExposureTime,
+                            usedSearchRadius,
+                            requestedCoordinates?.RADegrees,
+                            requestedCoordinates?.Dec,
+                            solver?.GetType().FullName,
+                            CaptureSucceeded: true,
+                            SolveSucceeded: false,
+                            SolvedRightAscensionDegrees: null,
+                            SolvedDeclinationDegrees: null,
+                            FailureKind: "solve-cancelled",
+                            FailureMessage: ex.Message).ToJson());
                         throw new OperationCanceledException("Plate solve was cancelled.", ex, token);
+                    } catch (Exception ex) {
+                        solverException = ex;
+                        result = new PlateSolveResult { Success = false };
+                        Logger.Error(ex);
                     }
+
+                    Logger.Info("TPPA_SOLVE_ATTEMPT " + new TppaSolveAttemptProvenance(
+                        TppaSolveAttemptProvenance.CurrentSchemaVersion,
+                        attempt,
+                        retryPolicy.MaximumAttempts,
+                        captureStartedUtc,
+                        observationTimeUtc,
+                        seq.ExposureTime,
+                        usedSearchRadius,
+                        requestedCoordinates?.RADegrees,
+                        requestedCoordinates?.Dec,
+                        solver?.GetType().FullName,
+                        CaptureSucceeded: true,
+                        SolveSucceeded: result.Success,
+                        SolvedRightAscensionDegrees: result.Coordinates?.RADegrees,
+                        SolvedDeclinationDegrees: result.Coordinates?.Dec,
+                        FailureKind: solverException != null ? "solver-exception" : result.Success ? null : "solve-unsuccessful",
+                        FailureMessage: solverException?.Message).ToJson());
+
                     if (!result.Success) {
-                        usedSearchRadius += searchRadiusIncrementOnFailure;
-                        await CoreUtil.Wait(TimeSpan.FromSeconds(1), token, progress, "Plate solve failed. Retrying...");
+                        usedSearchRadius = Math.Min(180, usedSearchRadius + Math.Max(0, searchRadiusIncrementOnFailure));
+                        if (retryPolicy.CanStartAttempt(attempt)) {
+                            await CoreUtil.Wait(
+                                TimeSpan.FromSeconds(1),
+                                token,
+                                progress,
+                                $"Plate solve failed. Starting attempt {attempt + 1}/{retryPolicy.MaximumAttempts}...");
+                        }
                     }
                 } else {
-                    await CoreUtil.Wait(TimeSpan.FromSeconds(1), token, progress, "Image capture failed. Retrying...");
+                    Logger.Info("TPPA_SOLVE_ATTEMPT " + new TppaSolveAttemptProvenance(
+                        TppaSolveAttemptProvenance.CurrentSchemaVersion,
+                        attempt,
+                        retryPolicy.MaximumAttempts,
+                        captureStartedUtc,
+                        ObservationTimeUtc: null,
+                        seq.ExposureTime,
+                        usedSearchRadius,
+                        requestedCoordinates?.RADegrees,
+                        requestedCoordinates?.Dec,
+                        solver?.GetType().FullName,
+                        CaptureSucceeded: false,
+                        SolveSucceeded: false,
+                        SolvedRightAscensionDegrees: null,
+                        SolvedDeclinationDegrees: null,
+                        FailureKind: captureException != null ? "capture-exception" : "capture-returned-null",
+                        FailureMessage: captureException?.Message).ToJson());
+                    if (retryPolicy.CanStartAttempt(attempt)) {
+                        await CoreUtil.Wait(
+                            TimeSpan.FromSeconds(1),
+                            token,
+                            progress,
+                            $"Image capture failed. Starting attempt {attempt + 1}/{retryPolicy.MaximumAttempts}...");
+                    }
                 }
-            } while (result.Success == false);
+            } while (result.Success == false && retryPolicy.CanStartAttempt(attempt));
+            if (!result.Success) {
+                throw new SequenceEntityFailedException(
+                    $"Plate solving failed after {retryPolicy.MaximumAttempts} attempts; TPPA cannot continue safely.");
+            }
             return result;
         }
 

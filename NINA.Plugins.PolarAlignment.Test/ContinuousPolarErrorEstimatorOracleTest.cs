@@ -9,10 +9,11 @@ namespace NINA.Plugins.PolarAlignment.Test {
     /// Oracle-style validation for the continuous correction path.
     ///
     /// The coordinate fixtures in this file were generated outside the production C# code using
-    /// Astropy 7.2.0 for the coordinate transforms plus a separate Python implementation of the
-    /// Rodrigues rotations in the plugin's local horizontal basis.
-    /// That makes these tests a real cross-check against an independent implementation instead of
-    /// another exercise of the production math helpers.
+    /// Astropy 7.2.0 for coordinate transforms plus a separate Python implementation of the same
+    /// Rodrigues-rotation model used by the plugin. These are valuable external model-conformance
+    /// fixtures: they catch implementation and serialization regressions without exercising the
+    /// production helpers. They are not an independent physical measurement and therefore do not
+    /// establish absolute polar-alignment accuracy.
     ///
     /// These scenarios validate three things:
     /// 1. The initial three-point solve recovers the oracle-defined initial polar error.

@@ -47,4 +47,6 @@ UI click automation is unsuitable for safety-critical unattended UPAS movement. 
 
 ## Notes
 
+Neither PDA nor TPPA is qualified ground truth. A third independent witness, the iOptron iPolar, is covered by `IPOLAR_WITNESS_CAMPAIGN.md`; it is a corroborating witness with no control authority, and it does not replace the qualified open-sky drift measurement that an absolute claim still requires.
+
 PHD2 Guiding Assistant DEC slope is not interchangeable with PDA. Near-pole geometry, camera orientation, RA periodic motion, and the chosen field all affect a raw slope. Use PDA's polar-region calculation for this comparison.

@@ -7,6 +7,52 @@ namespace NINA.Plugins.PolarAlignment.Test {
         private const double LatitudeDegrees = 25.2;
 
         [Test]
+        public void PositiveAzimuthErrorProducesPositiveFieldCentreDeclinationDriftOnMeridian() {
+            var drift = TppaDriftValidationEstimator.PredictDeclinationDriftArcsecondsPerMinute(
+                azimuthErrorArcMinutes: 1,
+                altitudeErrorArcMinutes: 0,
+                siteLatitudeDegrees: LatitudeDegrees,
+                hourAngleDegrees: 0);
+
+            drift.Should().BePositive(
+                "the plate-solved field-centre observable has the declared positive azimuth sign on the meridian");
+        }
+
+        [Test]
+        public void OneArcminuteAzimuthErrorMatchesExternalMeridianCoefficientFixture() {
+            var drift = TppaDriftValidationEstimator.PredictDeclinationDriftArcsecondsPerMinute(
+                azimuthErrorArcMinutes: 1,
+                altitudeErrorArcMinutes: 0,
+                siteLatitudeDegrees: 25.2,
+                hourAngleDegrees: 0);
+
+            drift.Should().BeApproximately(
+                0.23753176207226007,
+                1e-12,
+                "the hard-coded value was independently calculated from sidereal rate, radians per arcminute, and cos(latitude)");
+        }
+
+        [Test]
+        public void PositiveAltitudeErrorChangesFieldCentreDeclinationDriftSignAcrossMeridian() {
+            var eastDrift = TppaDriftValidationEstimator.PredictDeclinationDriftArcsecondsPerMinute(
+                azimuthErrorArcMinutes: 0,
+                altitudeErrorArcMinutes: 1,
+                siteLatitudeDegrees: LatitudeDegrees,
+                hourAngleDegrees: -90);
+            var westDrift = TppaDriftValidationEstimator.PredictDeclinationDriftArcsecondsPerMinute(
+                azimuthErrorArcMinutes: 0,
+                altitudeErrorArcMinutes: 1,
+                siteLatitudeDegrees: LatitudeDegrees,
+                hourAngleDegrees: 90);
+
+            eastDrift.Should().BePositive(
+                "positive altitude error raises the plate-solved field-centre declination drift east of the meridian");
+            westDrift.Should().BeNegative(
+                "positive altitude error lowers the plate-solved field-centre declination drift west of the meridian");
+            Math.Abs(eastDrift).Should().BeApproximately(Math.Abs(westDrift), 1e-9);
+        }
+
+        [Test]
         public void RecoversInjectedPolarErrorFromWellConditionedTracks() {
             var tracks = CreateTracks(azimuthErrorArcMinutes: -3.0, altitudeErrorArcMinutes: 2.0);
 

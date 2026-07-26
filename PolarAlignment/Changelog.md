@@ -1,3 +1,13 @@
+## Version 2.2.6.34
+
+- Add a report-only robust timestamped trend-span diagnostic and frozen replay test that catches the July 2026 75-arcsecond same-arc walk hidden by median/MAD repeatability; runtime movement authorization remains unchanged pending field qualification.
+- Bound each TPPA capture/plate-solve operation to five attempts and fail the sequence instead of retrying indefinitely.
+- Emit schema-versioned JSON provenance for completed, failed, and cancelled solve attempts, using null rather than a speculative observation time when capture fails.
+- Add physical field-centre drift sign invariants, correct stale drift-validation documentation, and classify Astropy/Rodrigues fixtures as model-conformance rather than independent absolute-accuracy evidence.
+- Freeze the ccc3720 legacy estimator baseline and document claim levels, experiment isolation, provenance, and the external-witness qualification boundary.
+- Add an offline, append-only iPolar corroborating-witness campaign recorder and evaluator with explicit no-actuation authority, hash-chained evidence, bounded qualification levels, and no ground-truth or absolute-certification claim.
+- Make iPolar campaign hashes byte-identical across Windows PowerShell 5.1 and PowerShell 7, reject unsafe and reserved campaign identifiers, preflight every report path before finalization, and safely resume missing report output without appending another immutable event.
+
 ## Version 2.2.6.33
 
 - Add a bounded, sequence-specific VerificationOnly point-settle override so directional-bias tests can change cadence without mutating the global mount profile.

@@ -10,9 +10,9 @@ namespace NINA.Plugins.PolarAlignment.Test {
     /// Broad oracle sweep for the continuous estimator and the initial three-point solve.
     ///
     /// Unlike the hand-picked oracle cases, this suite walks a dense grid of sky positions generated
-    /// externally with Astropy and independent Rodrigues rotations. The goal is not just to confirm
-    /// that the method works in a few good cases, but to map where it remains tight and where it
-    /// starts to drift.
+    /// externally with Astropy and a separate implementation of the same Rodrigues-rotation model.
+    /// The suite maps numerical model conformance across geometry; it is not an independent physical
+    /// accuracy qualification.
     /// </summary>
     public class ContinuousPolarErrorEstimatorOracleSweepTest {
         private sealed class FixedTime : ICustomDateTime {
@@ -89,7 +89,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
-        public void PolarAlignment_OracleSweep_ReportsMeasuredAccuracyEnvelope() {
+        public void PolarAlignment_OracleSweep_ReportsModelConformanceEnvelope() {
             var manifest = LoadManifest();
             var diagnostics = new List<SweepDiagnostic>();
 

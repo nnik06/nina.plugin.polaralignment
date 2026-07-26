@@ -21,7 +21,7 @@ Each track must:
 - remain at or above 30 degrees altitude;
 - begin after 20-30 seconds of post-slew settling;
 - span at least 300 seconds;
-- contain at least 30 timestamped plate solves;
+- contain at least 8 accepted timestamped plate solves;
 - report the fitted declination drift and its slope uncertainty;
 - record hour angle at the track midpoint;
 - record the computed apparent-declination drift caused by refraction.
@@ -71,7 +71,7 @@ revisited-position standardized residual.
    noise, changing refraction, and position-dependent disturbances.
 2. Add raw plate-solve track fitting with outlier and residual-autocorrelation
    gates.
-3. Wire the report-only acquisition session into TPPA's capture/solve path.
+3. Preserve the report-only runtime integration and keep it isolated from UPAS actuation.
 4. Run no-motion A-B-C-A acquisitions and compare five-, eight-, and
    ten-minute track fits.
 5. Compare repeated sessions on unchanged hardware and require agreement in
@@ -119,10 +119,8 @@ attempt a recovery slew after cancellation or failure because the telescope
 state may be uncertain. The outer runtime integration must restore
 tracking/guiding state without issuing an implicit slew.
 
-The next integration step is to connect the existing TPPA telescope movement
-and solve methods to these callbacks and attach the refraction calculator
-result to each track. That hook must initially remain diagnostic-only and
-explicitly enabled; its report must not alter TPPA completion or UPAS commands.
-The runtime path must reject a track when refraction calculation is
-unavailable; it must not guess, fit away, or silently replace refraction drift
-with zero.
+The runtime hook is now connected to TPPA's telescope movement and solve path.
+It remains diagnostic-only and explicitly enabled; its report does not alter
+TPPA completion or UPAS commands. The runtime rejects a track when refraction
+calculation is unavailable; it does not guess, fit away, or silently replace
+refraction drift with zero.
