@@ -1138,6 +1138,14 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     "Drift-validation mode requires a connected telescope for the A-B-C-A measurement arc.");
             }
 
+            var qualificationIssues = TppaVerificationSettlePolicy.GetQualificationIssues(
+                TargetDistance,
+                profileService.ActiveProfile.TelescopeSettings.SettleTime,
+                VerificationPointSettleTimeSeconds);
+            if (qualificationIssues.Count > 0) {
+                throw new InvalidOperationException(
+                    $"TPPA drift-validation qualification rejected: {string.Join(" ", qualificationIssues)}");
+            }
             var telescopeInfo = telescopeMediator.GetInfo();
             var initialTracking = TppaDriftTrackingStatePolicy.Capture(
                 telescopeInfo.TrackingEnabled,
@@ -1175,6 +1183,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             Logger.Info($"TPPA drift-validation preflight passed: {preflight.Reason}.");
 
             Coordinates pointA = null;
+            TppaVerificationWaypointPlan driftWaypointPlan = null;
             var pointAPierSide = NINA.Core.Enum.PierSide.pierUnknown;
             Coordinates solvedPointA = null;
             Coordinates previousSolvedArcPoint = null;
@@ -1195,7 +1204,6 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     });
                     switch (arrivalIndex++) {
                         case 0:
-                            var initialSettleTime = profileService.ActiveProfile.TelescopeSettings.SettleTime;
                             if (!StartFromCurrentPosition) {
                                 Logger.Info($"Slewing to drift-validation position A {Coordinates.Coordinates}.");
                                 SetTrackingSidereal(true);
@@ -1206,59 +1214,57 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                 Logger.Info(
                                     $"Using current telescope pointing as drift-validation position A: {telescopeMediator.GetCurrentPosition()}.");
                             }
-                            pointA = telescopeMediator.GetCurrentPosition();
-                            pointAPierSide = telescopeMediator.DestinationSideOfPier(pointA);
-                            if (initialSettleTime > 0) {
-                                await CoreUtil.Wait(
-                                    TimeSpan.FromSeconds(initialSettleTime),
-                                    movementToken,
-                                    progress,
-                                    "Settling at drift-validation position A");
+                            SetTrackingSidereal(true);
+                            var initialTrackingConfirmed = false;
+                            for (var attempt = 0; attempt < 20; attempt++) {
+                                var trackingInfo = telescopeMediator.GetInfo();
+                                if (trackingInfo.TrackingEnabled
+                                        && trackingInfo.TrackingRate.TrackingMode
+                                            == Equipment.Interfaces.TrackingMode.Sidereal) {
+                                    initialTrackingConfirmed = true;
+                                    break;
+                                }
+                                await Task.Delay(TimeSpan.FromMilliseconds(100), movementToken);
                             }
+                            if (!initialTrackingConfirmed) {
+                                throw new InvalidOperationException(
+                                    "TPPA drift-validation initial A rejected because sidereal tracking could not be confirmed within two seconds.");
+                            }
+                            var initialSettleTime = TppaVerificationSettlePolicy.Resolve(
+                                profileService.ActiveProfile.TelescopeSettings.SettleTime,
+                                VerificationPointSettleTimeSeconds);
+                            await CoreUtil.Wait(
+                                TimeSpan.FromSeconds(initialSettleTime),
+                                movementToken,
+                                progress,
+                                "Settling at drift-validation position A");
+                            EnsureVerificationOnlyActualPositionSafe(
+                                "drift-validation initial A post-settle");
+                            pointA = telescopeMediator.GetCurrentPosition();
+                            pointAPierSide = telescopeMediator.GetInfo().SideOfPier;
+                            driftWaypointPlan = TppaVerificationWaypointPlan.Create(
+                                pointA,
+                                TargetDistance,
+                                EastDirection);
+                            foreach (var waypoint in driftWaypointPlan.Forward) {
+                                EnsureVerificationOnlySlewDestinationSafe(waypoint);
+                            }
+                            Logger.Info(
+                                "TPPA drift-validation exact A/B/C waypoint preflight passed after settled A capture.");
                             break;
                         case 1:
                         case 2:
-                            var moveStart = telescopeMediator.GetCurrentPosition();
-                            var relativeLegPreflight = TppaDriftLegPreflightFactory.EvaluateRelative(
-                                moveStart,
-                                TargetDistance,
-                                DateTime.UtcNow,
-                                Latitude,
-                                Longitude,
-                                elevationMeters,
-                                refraction,
-                                destination => telescopeMediator.DestinationSideOfPier(destination));
-                            if (!relativeLegPreflight.IsSafe) {
+                            if (driftWaypointPlan == null) {
                                 throw new InvalidOperationException(
-                                    $"TPPA drift-validation move to {positionId} rejected before actuation: {relativeLegPreflight.Reason}.");
+                                    "TPPA drift-validation exact waypoint plan was not initialized.");
                             }
-                            Logger.Info(
-                                $"TPPA drift-validation current-time preflight for {positionId} passed: {relativeLegPreflight.Reason}.");
-                            var startPierSide = telescopeMediator.DestinationSideOfPier(moveStart);
-                            Logger.Info(
-                                $"Moving RA axis to drift-validation position {positionId}; distance={TargetDistance} deg, east={EastDirection}.");
-                            await MoveToNextPoint(
+                            var waypointIndex = arrivalIndex - 1;
+                            await SlewToVerificationWaypoint(
+                                driftWaypointPlan.Forward[waypointIndex],
                                 TargetDistance,
-                                MoveRate,
-                                EastDirection,
+                                $"drift-validation position {positionId}",
                                 progress,
                                 movementToken);
-                            var moveEnd = telescopeMediator.GetCurrentPosition();
-                            var endPierSide = telescopeMediator.DestinationSideOfPier(moveEnd);
-                            var moveVerification = TppaDriftMoveVerificationPolicy.Evaluate(
-                                moveStart.RADegrees,
-                                moveEnd.RADegrees,
-                                moveStart.Dec,
-                                moveEnd.Dec,
-                                TargetDistance,
-                                startPierSide,
-                                endPierSide);
-                            if (!moveVerification.IsSafe) {
-                                throw new InvalidOperationException(
-                                    $"TPPA drift-validation move to {positionId} rejected: {moveVerification.Reason}.");
-                            }
-                            Logger.Info(
-                                $"TPPA drift-validation move to {positionId} verified: RA travel={moveVerification.RightAscensionTravelDegrees:F3} deg; DEC travel={moveVerification.DeclinationTravelDegrees:F3} deg; {moveVerification.Reason}.");
                             break;
                         case 3:
                             if (pointA == null) {
@@ -1281,17 +1287,12 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                             }
                             Logger.Info(
                                 $"TPPA drift-validation current-time return preflight passed: {returnPreflight.Reason}.");
-                            Logger.Info($"Returning to drift-validation position A {pointA}.");
-                            SetTrackingSidereal(true);
-                            await telescopeMediator.SlewToCoordinatesAsync(pointA, movementToken);
-                            var returnSettleTime = profileService.ActiveProfile.TelescopeSettings.SettleTime;
-                            if (returnSettleTime > 0) {
-                                await CoreUtil.Wait(
-                                    TimeSpan.FromSeconds(returnSettleTime),
-                                    movementToken,
-                                    progress,
-                                    "Settling at drift-validation return position A");
-                            }
+                            await SlewToVerificationWaypoint(
+                                pointA,
+                                TargetDistance * 2.0,
+                                "drift-validation return to A",
+                                progress,
+                                movementToken);
                             var returnedPointA = telescopeMediator.GetCurrentPosition();
                             var returnedPierSide =
                                 telescopeMediator.DestinationSideOfPier(returnedPointA);
@@ -1784,7 +1785,10 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             SetTrackingSidereal(true);
             var trackingConfirmed = false;
             for (var attempt = 0; attempt < 20; attempt++) {
-                if (telescopeMediator.GetInfo().TrackingEnabled) {
+                var trackingInfo = telescopeMediator.GetInfo();
+                if (trackingInfo.TrackingEnabled
+                        && trackingInfo.TrackingRate.TrackingMode
+                            == Equipment.Interfaces.TrackingMode.Sidereal) {
                     trackingConfirmed = true;
                     break;
                 }
@@ -2371,7 +2375,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
         public bool Validate() {
             var i = new List<string>();
             i.AddRange(PolarAlignmentExecutionPolicy.GetValidationIssues(VerificationOnly, DriftValidationOnly, ManualMode));
-            if (VerificationOnly) {
+            if (VerificationOnly || DriftValidationOnly) {
                 i.AddRange(TppaVerificationSettlePolicy.GetQualificationIssues(
                     TargetDistance, profileService.ActiveProfile.TelescopeSettings.SettleTime, VerificationPointSettleTimeSeconds));
             }
