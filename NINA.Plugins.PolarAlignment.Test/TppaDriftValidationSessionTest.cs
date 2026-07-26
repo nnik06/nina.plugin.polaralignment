@@ -43,6 +43,9 @@ namespace NINA.Plugins.PolarAlignment.Test {
 
             result.IsComplete.Should().BeFalse();
             result.Reason.Should().Contain("refraction");
+            result.Validation.IsValid.Should().BeFalse();
+            result.Validation.Reason.Should().Be(result.Reason);
+            result.Validation.TotalErrorArcMinutes.Should().Be(double.NaN);
         }
 
         [Test]
@@ -66,6 +69,28 @@ namespace NINA.Plugins.PolarAlignment.Test {
 
             result.IsComplete.Should().BeFalse();
             result.Reason.Should().Contain("cloud interruption");
+            result.Validation.IsValid.Should().BeFalse();
+            result.Validation.Reason.Should().Be(result.Reason);
+            result.Validation.TotalErrorArcMinutes.Should().Be(double.NaN);
+        }
+
+        [Test]
+        public void FailedTrackQualificationPropagatesIntoValidation() {
+            var session = new TppaDriftValidationSession();
+            var ids = new[] { "A", "B", "C", "A" };
+            for (var index = 0; index < ids.Length; index++) {
+                session.TryBeginTrack(ids[index], out _).Should().BeTrue();
+                AddLinearSamples(session, 0.4, sampleCount: index == 0 ? 3 : 60);
+                session.CompleteActiveTrack(Metadata(ids[index], -75 + index * 40));
+            }
+
+            var result = session.Evaluate(LatitudeDegrees);
+
+            result.IsComplete.Should().BeFalse();
+            result.Reason.Should().Contain("position A failed track qualification");
+            result.Validation.IsValid.Should().BeFalse();
+            result.Validation.Reason.Should().Be(result.Reason);
+            result.Validation.TotalErrorArcMinutes.Should().Be(double.NaN);
         }
 
         private static TppaDriftValidationSession BuildCompleteSession(bool hasRefraction) {
@@ -91,10 +116,13 @@ namespace NINA.Plugins.PolarAlignment.Test {
             return session;
         }
 
-        private static void AddLinearSamples(TppaDriftValidationSession session, double driftArcsecondsPerMinute) {
+        private static void AddLinearSamples(
+            TppaDriftValidationSession session,
+            double driftArcsecondsPerMinute,
+            int sampleCount = 60) {
             var start = new DateTime(2026, 7, 23, 20, 0, 0, DateTimeKind.Utc);
             const double baseDeclinationDegrees = 45;
-            for (var index = 0; index <= 60; index++) {
+            for (var index = 0; index <= sampleCount; index++) {
                 var elapsedSeconds = index * 5.0;
                 var driftDegrees = driftArcsecondsPerMinute / 60.0 * elapsedSeconds / 3600.0;
                 var noiseDegrees = 0.15 * Math.Sin(index * 1.7) / 3600.0;

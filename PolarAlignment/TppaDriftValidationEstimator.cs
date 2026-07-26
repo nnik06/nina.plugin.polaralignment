@@ -213,7 +213,7 @@ namespace NINA.Plugins.PolarAlignment {
 
         private static double DegreesToRadians(double degrees) => degrees * Math.PI / 180.0;
 
-        private static TppaDriftValidationResult Invalid(int trackCount, string reason) => new(
+        internal static TppaDriftValidationResult Invalid(int trackCount, string reason) => new(
             trackCount,
             double.NaN,
             double.NaN,

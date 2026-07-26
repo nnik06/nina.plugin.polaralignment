@@ -161,7 +161,7 @@ namespace NINA.Plugins.PolarAlignment {
 
         private TppaDriftValidationSessionReport Incomplete(string reason) => new(
             completedTracks.ToArray(),
-            default,
+            TppaDriftValidationEstimator.Invalid(completedTracks.Count, reason),
             false,
             reason);
     }

@@ -1,3 +1,8 @@
+## Version 2.2.6.45
+
+- Preserve the session rejection reason in incomplete report-only drift-validation results and mark unavailable estimates as `NaN` instead of emitting misleading zero-error values.
+- Add regression coverage for missing refraction, explicit invalidation, and failed per-track qualification; drift-fit and acceptance thresholds are unchanged.
+
 ## Version 2.2.6.38
 
 - Fail VerificationOnly validation and runtime qualification when a leg is shorter than the field-qualified 15-degree conservative floor or the effective point settle is shorter than 30 seconds.
