@@ -29,9 +29,17 @@ using System.Windows.Media;
 namespace NINA.Plugins.PolarAlignment {
     public class TPAPAVM : BaseINPC, IDisposable {
 
-        public TPAPAVM(IProfileService profileService, IWeatherDataMediator weatherDataMediator) {
+        public TPAPAVM(IProfileService profileService, IWeatherDataMediator weatherDataMediator)
+            : this(profileService, weatherDataMediator, AutomatedMoveExecutorFactory.CreateDefault()) {
+        }
+
+        internal TPAPAVM(
+            IProfileService profileService,
+            IWeatherDataMediator weatherDataMediator,
+            IAutomatedMoveExecutor automatedMoveExecutor) {
             this.profileService = profileService;
             this.weatherDataMediator = weatherDataMediator;
+            this.automatedMoveExecutor = automatedMoveExecutor ?? throw new ArgumentNullException(nameof(automatedMoveExecutor));
             Status = new ApplicationStatus();
 
             Steps = new List<TPPAStep>() {
@@ -56,6 +64,7 @@ namespace NINA.Plugins.PolarAlignment {
         public bool UseContinuousErrorEstimator => Properties.Settings.Default.UseContinuousErrorEstimator;
 
         private readonly AutomatedAdjustmentController automatedAdjustmentController = new AutomatedAdjustmentController();
+        private readonly IAutomatedMoveExecutor automatedMoveExecutor;
         private bool lastContinuousEstimateStable = true;
         private bool upasResponseMemorySeeded;
 
@@ -265,7 +274,8 @@ namespace NINA.Plugins.PolarAlignment {
                 return;
             }
 
-            if (!upas.Connected) {
+            if (automatedMoveExecutor.RequiresLocalActuatorConnection
+                && !upas.Connected) {
                 progress?.Report(new ApplicationStatus() { Status = "Connecting UPAS before azimuth pre-seat" });
                 await upas.Connect();
             }
@@ -285,8 +295,10 @@ namespace NINA.Plugins.PolarAlignment {
             Logger.Info($"Pre-seating UPAS azimuth before initial TPPA measurement. Logical X command: {Math.Round(command, 3)}.");
             progress?.Report(new ApplicationStatus() { Status = $"Pre-seating UPAS azimuth X {Math.Round(command, 1)}" });
 
-            if (!await upas.TryNudgeXForAutomation((float)command, token)) {
-                throw new InvalidOperationException("UPAS azimuth pre-seat move failed.");
+            var execution = await automatedMoveExecutor.ExecuteAsync(upas, Axis.XAxis, (float)command, token);
+            if (!execution.PhysicalMotionVerified) {
+                Logger.Warning($"UPAS azimuth pre-seat denied. {execution.Reason}");
+                throw new InvalidOperationException($"UPAS azimuth pre-seat move was not physically verified. {execution.Reason}");
             }
 
             automatedAdjustmentController.NoteExternalAzimuthTravel(command, "UPAS azimuth pre-seat");
@@ -387,7 +399,9 @@ namespace NINA.Plugins.PolarAlignment {
             var executedY = 0.0;
 
             if (Math.Abs(plan.XMagnitude) > 0) {
-                if (!await activeSystem.TryNudgeXForAutomation((float)plan.XMagnitude, token)) {
+                var xExecution = await automatedMoveExecutor.ExecuteAsync(activeSystem, Axis.XAxis, (float)plan.XMagnitude, token);
+                if (!xExecution.PhysicalMotionVerified) {
+                    Logger.Warning($"Automated X movement denied. {xExecution.Reason}");
                     automatedAdjustmentController.NoteFailedExecution(new AutomatedAdjustmentPlan(plan.XMagnitude,
                                                                                                    0,
                                                                                                    plan.IsProbe,
@@ -398,7 +412,9 @@ namespace NINA.Plugins.PolarAlignment {
             }
 
             if (Math.Abs(plan.YMagnitude) > 0) {
-                if (!await activeSystem.TryNudgeY((float)plan.YMagnitude, token)) {
+                var yExecution = await automatedMoveExecutor.ExecuteAsync(activeSystem, Axis.YAxis, (float)plan.YMagnitude, token);
+                if (!yExecution.PhysicalMotionVerified) {
+                    Logger.Warning($"Automated Y movement denied. {yExecution.Reason}");
                     automatedAdjustmentController.NoteFailedExecution(new AutomatedAdjustmentPlan(0,
                                                                                                    plan.YMagnitude,
                                                                                                    plan.IsProbe,

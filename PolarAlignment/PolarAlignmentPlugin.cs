@@ -267,6 +267,38 @@ namespace NINA.Plugins.PolarAlignment {
             }
         }
 
+        public bool RequireExternalUpasSupervisorForAutomatedMoves {
+            get => Properties.Settings.Default.RequireExternalUpasSupervisorForAutomatedMoves;
+            set {
+                Properties.Settings.Default.RequireExternalUpasSupervisorForAutomatedMoves = value;
+                CoreUtil.SaveSettings(Properties.Settings.Default);
+                RaisePropertyChanged();
+                RaisePropertyChanged(nameof(ExternalUpasSupervisorState));
+            }
+        }
+
+        public string UpasSupervisorEndpoint {
+            get => Properties.Settings.Default.UpasSupervisorEndpoint;
+            set {
+                if (string.IsNullOrWhiteSpace(value)) {
+                    return;
+                }
+                try {
+                    _ = HttpsUpasSupervisorStatusSource.BuildStatusUri(value);
+                } catch (ArgumentException) {
+                    return;
+                }
+                Properties.Settings.Default.UpasSupervisorEndpoint = value;
+                CoreUtil.SaveSettings(Properties.Settings.Default);
+                RaisePropertyChanged();
+            }
+        }
+
+        public string ExternalUpasSupervisorState =>
+            RequireExternalUpasSupervisorForAutomatedMoves
+                ? "Required: automated motion fails closed until external physical authority is commissioned"
+                : "Legacy direct automated actuator path";
+
         public bool StopTrackingWhenDone {
             get {
                 return Properties.Settings.Default.StopTrackingWhenDone;

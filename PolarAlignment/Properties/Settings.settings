@@ -74,6 +74,12 @@
     <Setting Name="DoAutomatedAdjustments" Type="System.Boolean" Scope="User">
       <Value Profile="(Default)">False</Value>
     </Setting>
+    <Setting Name="RequireExternalUpasSupervisorForAutomatedMoves" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">True</Value>
+    </Setting>
+    <Setting Name="UpasSupervisorEndpoint" Type="System.String" Scope="User">
+      <Value Profile="(Default)">https://127.0.0.1:8443/</Value>
+    </Setting>
     <Setting Name="AutomatedAdjustmentSettleTime" Type="System.Double" Scope="User">
       <Value Profile="(Default)">2</Value>
     </Setting>

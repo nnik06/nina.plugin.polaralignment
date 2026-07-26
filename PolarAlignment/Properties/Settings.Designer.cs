@@ -445,6 +445,30 @@ namespace NINA.Plugins.PolarAlignment.Properties {
 
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("True")]
+        public bool RequireExternalUpasSupervisorForAutomatedMoves {
+            get {
+                return ((bool)(this["RequireExternalUpasSupervisorForAutomatedMoves"]));
+            }
+            set {
+                this["RequireExternalUpasSupervisorForAutomatedMoves"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("https://127.0.0.1:8443/")]
+        public string UpasSupervisorEndpoint {
+            get {
+                return ((string)(this["UpasSupervisorEndpoint"]));
+            }
+            set {
+                this["UpasSupervisorEndpoint"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
         [global::System.Configuration.DefaultSettingValueAttribute("2")]
         public double AvalonAzimuthTravelLimitDegrees {
             get {

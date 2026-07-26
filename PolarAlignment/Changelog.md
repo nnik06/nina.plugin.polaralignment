@@ -1,3 +1,11 @@
+## Version 2.2.6.35
+
+- Add a fail-closed external UPAS supervisor boundary shared by automated pre-seat and correction movement.
+- Accept only the frozen authenticated HTTPS status V1 contract and reject unknown schemas, properties, modes, invalid sessions, locks, unavailable axes, and `physicalMotion=false`.
+- Require the external supervisor by default for automated movement; retain legacy direct actuation only as an explicit compatibility opt-out, with no fallback from supervisor-required mode.
+- Deliberately omit correction submission in this commissioning release, so even a future success-shaped capability response cannot enable physical motion.
+- Add bypass, cancellation, malformed-contract, capability, credential, and dry-run honesty tests plus a threat-model handoff for the later transaction-client increment.
+
 ## Version 2.2.6.34
 
 - Add a report-only robust timestamped trend-span diagnostic and frozen replay test that catches the July 2026 75-arcsecond same-arc walk hidden by median/MAD repeatability; runtime movement authorization remains unchanged pending field qualification.
