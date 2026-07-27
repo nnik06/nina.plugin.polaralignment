@@ -1,5 +1,9 @@
 # Next-Night UPAS Field Protocol
 
+When the objective is to separate tripod flexure, arc geometry, and refraction,
+use docs/FLEXURE_GEOMETRY_REFRACTION_CAMPAIGN.md. Its no-motion phases
+supersede the actuator trial below; UPAS remains disabled for that campaign.
+
 ## Build
 - Build the current committed branch and record its DLL SHA-256.
 - Run `tools/validate_tppa_plugin_install.ps1` before opening a diagnostic sequence. The live plugin tree must contain exactly one TPPA assembly and its hash must match the tested build.
