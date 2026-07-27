@@ -1,3 +1,9 @@
+## Version 2.2.6.46
+
+- Add the canonical Claude Fable and Gemini High council-bridge runbook, including repository provenance, read-only invocation, completion, troubleshooting, and update contracts.
+- Add a one-command bridge preflight that verifies the canonical repository checkpoint, configured bridge sources, Python syntax, CLI versions, Claude authentication, and live read-only pings for both council seats.
+- Require council sessions to repair and rerun failed, incomplete, timed-out, or stale seats instead of silently substituting or omitting a requested reviewer.
+
 ## Version 2.2.6.45
 
 - Preserve the session rejection reason in incomplete report-only drift-validation results and mark unavailable estimates as `NaN` instead of emitting misleading zero-error values.
