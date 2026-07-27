@@ -11,6 +11,10 @@ external accuracy reference, estimator equations, actuator calibration, and
 hardware configuration must not change in the same experimental block.
 One causal variable changes at a time, with an unchanged A-B-A control.
 
+Historical field results that do not record `RefractionAdjustment` and the
+associated atmosphere inputs cannot support a true-pole absolute-accuracy
+claim. They remain usable for lower claim levels when their other provenance is complete.
+
 ## Claim Levels
 
 The project distinguishes these claims:
@@ -39,7 +43,7 @@ be called ground truth until same-state repeatability, direction stability,
 and cross-night bias are qualified. Open-sky qualification with a third
 reference remains required before a sub-arcminute absolute claim.
 
-## Error Budget
+## Error-Budget Provenance
 
 Every field artifact must retain enough provenance to separate:
 
@@ -57,6 +61,24 @@ Every field artifact must retain enough provenance to separate:
 
 Missing provenance invalidates the associated accuracy claim; it must not be
 silently replaced with a default.
+
+## Current Quantified Terms
+
+These are measured or deterministic scales, not yet an uncertainty allocation:
+
+| Contributor | Current scale | Type | Release treatment |
+| --- | ---: | --- | --- |
+| Apparent-pole versus true-pole target at the Dubai fixture | 121 arcsec | Deterministic target bias when `RefractionAdjustment=false` | True-pole mode is the default; automated correction and drift validation fail closed when it is off |
+| Forward-versus-reciprocal TPPA difference | approximately 25 arcsec | Observed direction-dependent systematic | Open; retain reciprocal diagnostics and do not fold into random sigma |
+| 2026-07-23 same-arc temporal walk | approximately 75 arcsec over 24 minutes | Observed nonstationary systematic | Theil-Sen trend gate rejects movement authorization |
+| Same-arc random solve scatter under qualified geometry | Unknown | Random | Estimate per session from no-motion replicates after trend rejection |
+| Atmosphere-input/model residual | Unknown | Systematic and time-varying | Record pressure, temperature, humidity, source, target mode, and exact solve times |
+| Independent witness bias and repeatability | Unknown | External systematic | iPolar and PHD2 remain report-only until independently qualified |
+
+No root-sum-square total is reported yet. The known terms are not established
+as independent zero-mean random variables, and two of the largest observed
+terms are explicitly systematic. A numerical combined uncertainty requires
+qualified distributions or defensible bounds for every retained contributor.
 
 ## Experiment Order
 

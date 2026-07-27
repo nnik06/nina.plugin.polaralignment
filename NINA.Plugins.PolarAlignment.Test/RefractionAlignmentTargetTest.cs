@@ -24,5 +24,50 @@ namespace NINA.Plugins.PolarAlignment.Test {
                                      .Should()
                                      .Be(expected);
         }
+
+        [Test]
+        public void ApparentPoleModeBlocksAutomatedActuatorMovement() {
+            var issues = RefractionAlignmentTarget.GetValidationIssues(
+                refractionAdjustmentEnabled: false,
+                automatedAdjustmentsEnabled: true,
+                actuatorMovementAllowed: true,
+                driftValidationOnly: false);
+
+            issues.Should().ContainSingle()
+                  .Which.Should().Be(RefractionAlignmentTarget.AutomatedAdjustmentRequiresTruePoleIssue);
+        }
+
+        [Test]
+        public void ApparentPoleModeBlocksDriftValidation() {
+            var issues = RefractionAlignmentTarget.GetValidationIssues(
+                refractionAdjustmentEnabled: false,
+                automatedAdjustmentsEnabled: false,
+                actuatorMovementAllowed: false,
+                driftValidationOnly: true);
+
+            issues.Should().ContainSingle()
+                  .Which.Should().Be(RefractionAlignmentTarget.DriftValidationRequiresTruePoleIssue);
+        }
+
+        [Test]
+        public void ApparentPoleModeRemainsAvailableForMeasurementOnlyRuns() {
+            var issues = RefractionAlignmentTarget.GetValidationIssues(
+                refractionAdjustmentEnabled: false,
+                automatedAdjustmentsEnabled: false,
+                actuatorMovementAllowed: false,
+                driftValidationOnly: false);
+
+            issues.Should().BeEmpty();
+            RefractionAlignmentTarget.GetPoleTarget(false)
+                                     .Should().Be(RefractionAlignmentTarget.ApparentPoleTarget);
+        }
+
+        [Test]
+        public void TruePoleModePassesAllTargetPolicyGates() {
+            RefractionAlignmentTarget.GetValidationIssues(true, true, true, true)
+                                     .Should().BeEmpty();
+            RefractionAlignmentTarget.GetPoleTarget(true)
+                                     .Should().Be(RefractionAlignmentTarget.TruePoleTarget);
+        }
     }
 }

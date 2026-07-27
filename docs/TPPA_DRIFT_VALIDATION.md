@@ -62,8 +62,11 @@ No polar-error value is valid unless all gates pass:
 - acceptable residuals for every track at the revisited position.
 
 The report must include both fitted components, their uncertainties, total
-error, reduced chi-squared, design condition number, and the maximum
+error, reduced chi-squared, weighted normal-matrix condition number, and the maximum
 revisited-position standardized residual.
+
+The normal-matrix condition number is the square of the corresponding
+whitened design-matrix condition number; the label is intentionally explicit.
 
 ## Qualification Plan
 

@@ -517,6 +517,16 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
         /// <returns></returns>
         public override async Task Execute(IProgress<ApplicationStatus> externalProgress, CancellationToken token) {
             var executionPolicy = PolarAlignmentExecutionPolicy.Create(VerificationOnly, DriftValidationOnly);
+            var automatedAdjustmentsEnabled =
+                PolarAlignmentPlugin.ActiveAlignmentSystemVM?.DoAutomatedAdjustments == true;
+            var poleTargetIssue = RefractionAlignmentTarget.GetValidationIssues(
+                Properties.Settings.Default.RefractionAdjustment,
+                automatedAdjustmentsEnabled,
+                executionPolicy.AllowActuatorMovement,
+                DriftValidationOnly).FirstOrDefault();
+            if (poleTargetIssue != null) {
+                throw new InvalidOperationException(poleTargetIssue);
+            }
             using var actuatorConnectionSuppression = executionPolicy.AllowActuatorConnection
                 ? null
                 : await PolarAlignmentActuatorConnectionGate.SuppressAsync(
@@ -556,7 +566,35 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         
                     }
 
-                    WarnWhenTargetingRefractedPole();
+                    var runWeatherInfo = weatherDataMediator.GetInfo();
+                    var runRefractionParameters = RefractionParameters.GetRefractionParameters(runWeatherInfo);
+                    var truePoleOffsetArcMinutes = RefractionAlignmentTarget.CalculateTruePoleOffsetArcMinutes(
+                        Latitude.Degree,
+                        runRefractionParameters);
+                    var finiteTruePoleOffset = double.IsFinite(truePoleOffsetArcMinutes)
+                        ? truePoleOffsetArcMinutes
+                        : (double?)null;
+                    var atmosphereSource = runWeatherInfo?.Connected == true
+                        ? "weather-device-with-standard-fallbacks"
+                        : "standard-atmosphere-fallback";
+                    Logger.Info("TPPA_RUN_PROVENANCE " + new TppaRunProvenance(
+                        TppaRunProvenance.CurrentSchemaVersion,
+                        correlatedGuid,
+                        DateTime.UtcNow,
+                        Properties.Settings.Default.RefractionAdjustment,
+                        RefractionAlignmentTarget.GetPoleTarget(Properties.Settings.Default.RefractionAdjustment),
+                        finiteTruePoleOffset,
+                        atmosphereSource,
+                        runRefractionParameters.PressureHPa,
+                        runRefractionParameters.Temperature,
+                        runRefractionParameters.RelativeHumidity,
+                        runRefractionParameters.Wavelength,
+                        automatedAdjustmentsEnabled,
+                        executionPolicy.AllowActuatorMovement,
+                        VerificationOnly,
+                        DriftValidationOnly,
+                        AlignmentTolerance).ToJson());
+                    WarnWhenTargetingRefractedPole(truePoleOffsetArcMinutes);
 
                     var currentPosition = telescopeMediator.GetInfo().Connected ? telescopeMediator.GetCurrentPosition().Transform(Latitude, Longitude) : null;
                     Logger.Info($"""
@@ -627,7 +665,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     }
 
                     var solve1 = await Solve(TPAPAVM, 5.0, progress, localCTS.Token);
-                    var refractionParameter = RefractionParameters.GetRefractionParameters(weatherDataMediator.GetInfo());
+                    var refractionParameter = runRefractionParameters;
 
                     var telescopeInfo = telescopeMediator.GetInfo();
 
@@ -716,6 +754,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     var activeTarget = correctForRefraction ? "true celestial pole" : "refracted apparent pole";
 
                     Logger.Info($"TPPA fresh 3-point calculated error: Az: {determination.InitialMountAxisAzimuthError}, Alt: {determination.InitialMountAxisAltitudeError}, Tot: {determination.InitialMountAxisTotalError}");
+                    Logger.Info($"TPPA fresh 3-point geometry diagnostic: {determination.ThreePointGeometry.ToLogString()}; qualification=report-only.");
                     var freshVector = TppaPolarErrorVector.FromMinutes(
                         determination.InitialMountAxisAzimuthError.ArcMinutes,
                         determination.InitialMountAxisAltitudeError.ArcMinutes,
@@ -1006,15 +1045,12 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             }
         }
 
-        private void WarnWhenTargetingRefractedPole() {
+        private void WarnWhenTargetingRefractedPole(double offsetArcMinutes) {
             if (Properties.Settings.Default.RefractionAdjustment) {
                 return;
             }
 
-            var refractionParameters = RefractionParameters.GetRefractionParameters(weatherDataMediator.GetInfo());
-            var offsetArcMinutes = RefractionAlignmentTarget.CalculateTruePoleOffsetArcMinutes(Latitude.Degree,
-                                                                                               refractionParameters);
-            if (double.IsNaN(offsetArcMinutes) || double.IsInfinity(offsetArcMinutes) || offsetArcMinutes <= 0) {
+            if (!double.IsFinite(offsetArcMinutes) || offsetArcMinutes <= 0) {
                 return;
             }
 
@@ -1415,7 +1451,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
 
                 var validation = report.Validation;
                 Logger.Info(
-                    $"TPPA drift-validation result: valid={validation.IsValid}; Az={validation.AzimuthErrorArcMinutes:F3}'; Alt={validation.AltitudeErrorArcMinutes:F3}'; total={validation.TotalErrorArcMinutes:F3}'; Az sigma={validation.AzimuthSigmaArcMinutes:F3}'; Alt sigma={validation.AltitudeSigmaArcMinutes:F3}'; reduced chi2={validation.ReducedChiSquared:F3}; condition={validation.DesignConditionNumber:F3}; repeated residual={validation.MaximumRepeatedPositionStandardizedResidual:F3}; reason={validation.Reason}");
+                    $"TPPA drift-validation result: valid={validation.IsValid}; Az={validation.AzimuthErrorArcMinutes:F3}'; Alt={validation.AltitudeErrorArcMinutes:F3}'; total={validation.TotalErrorArcMinutes:F3}'; Az sigma={validation.AzimuthSigmaArcMinutes:F3}'; Alt sigma={validation.AltitudeSigmaArcMinutes:F3}'; reduced chi2={validation.ReducedChiSquared:F3}; normal-matrix condition={validation.NormalMatrixConditionNumber:F3}; repeated residual={validation.MaximumRepeatedPositionStandardizedResidual:F3}; reason={validation.Reason}");
                 progress?.Report(new ApplicationStatus() {
                     Status = validation.IsValid
                         ? $"Drift validation complete: {validation.TotalErrorArcMinutes:F2}' total (report only)"
@@ -1573,6 +1609,9 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     Logger.Info($"TPPA verification-only initial result: Az: {initialDetermination.InitialMountAxisAzimuthError}, Alt: {initialDetermination.InitialMountAxisAltitudeError}, Tot: {initialDetermination.InitialMountAxisTotalError}");
                     Logger.Info($"TPPA verification-only reciprocal result: Az: {reciprocalDetermination.InitialMountAxisAzimuthError}, Alt: {reciprocalDetermination.InitialMountAxisAltitudeError}, Tot: {reciprocalDetermination.InitialMountAxisTotalError}");
                     Logger.Info($"TPPA verification-only repeated-forward result: Az: {verificationDetermination.InitialMountAxisAzimuthError}, Alt: {verificationDetermination.InitialMountAxisAltitudeError}, Tot: {verificationDetermination.InitialMountAxisTotalError}");
+                    Logger.Info($"TPPA verification-only initial geometry: {initialDetermination.ThreePointGeometry.ToLogString()}; qualification=report-only.");
+                    Logger.Info($"TPPA verification-only reciprocal geometry: {reciprocalDetermination.ThreePointGeometry.ToLogString()}; qualification=report-only.");
+                    Logger.Info($"TPPA verification-only repeated-forward geometry: {verificationDetermination.ThreePointGeometry.ToLogString()}; qualification=report-only.");
                     Logger.Info($"TPPA verification-only repeat-minus-initial delta: Az: {Angle.ByDegree(azimuthDeltaDegrees)}, Alt: {Angle.ByDegree(altitudeDeltaDegrees)}, Tot: {Angle.ByDegree(totalDeltaDegrees)}");
 
                     await messageBroker.Publish(new PolarAlignmentVerificationMessage(correlatedGuid,
@@ -2424,6 +2463,11 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             }
 
             var executionPolicy = PolarAlignmentExecutionPolicy.Create(VerificationOnly, DriftValidationOnly);
+            i.AddRange(RefractionAlignmentTarget.GetValidationIssues(
+                Properties.Settings.Default.RefractionAdjustment,
+                PolarAlignmentPlugin.ActiveAlignmentSystemVM?.DoAutomatedAdjustments == true,
+                executionPolicy.AllowActuatorMovement,
+                DriftValidationOnly));
             if (executionPolicy.AllowActuatorMovement && PolarAlignmentPlugin.ActiveAlignmentSystemVM != null && PolarAlignmentPlugin.ActiveAlignmentSystemVM?.DoAutomatedAdjustments == true && AlignmentTolerance == 0) {
                 i.Add("Automated adjustments are enabled, but polar alignment tolerance is set to zero. Please set an alignment tolerance!");
             }

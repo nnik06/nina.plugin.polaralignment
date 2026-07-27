@@ -1,3 +1,12 @@
+## Version 2.2.6.49
+
+- Make true-celestial-pole targeting the default for new profiles and fail closed when automated axis correction or drift validation is requested with apparent-pole targeting.
+- Emit structured `TPPA_RUN_PROVENANCE` with the target pole, estimated true/apparent offset, atmospheric inputs and source, automation scope, and run correlation ID.
+- Preserve intentional apparent-pole measurement-only operation while removing its ability to silently satisfy true-pole automation claims.
+- Report ordinary and verification-only three-point geometry scale/shape diagnostics and reject exactly degenerate plane fits; thresholds remain report-only pending field qualification.
+- Rename the drift estimator's reported condition metric to weighted normal-matrix condition number and document its relationship to the design-matrix condition.
+- Add a quantitative known-term inventory without combining unresolved systematic effects into a false RSS uncertainty.
+
 ## Version 2.2.6.48
 
 - Migrate the Claude council seat from Fable to pinned Claude Opus 5 (`claude-opus-5`) at high effort while preserving safe plan/no-tools execution.

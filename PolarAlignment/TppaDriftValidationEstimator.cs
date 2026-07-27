@@ -8,7 +8,7 @@ namespace NINA.Plugins.PolarAlignment {
         int MinimumSamplesPerTrack,
         double MinimumAltitudeDegrees,
         double MaximumTrackSlopeSigmaArcsecondsPerMinute,
-        double MaximumDesignConditionNumber,
+        double MaximumNormalMatrixConditionNumber,
         double MaximumReducedChiSquared,
         double MaximumRepeatedPositionStandardizedResidual) {
         public static TppaDriftValidationPolicy FieldDefault => new(
@@ -16,7 +16,7 @@ namespace NINA.Plugins.PolarAlignment {
             MinimumSamplesPerTrack: 8,
             MinimumAltitudeDegrees: 30,
             MaximumTrackSlopeSigmaArcsecondsPerMinute: 0.20,
-            MaximumDesignConditionNumber: 100,
+            MaximumNormalMatrixConditionNumber: 100,
             MaximumReducedChiSquared: 4,
             MaximumRepeatedPositionStandardizedResidual: 3);
     }
@@ -39,7 +39,7 @@ namespace NINA.Plugins.PolarAlignment {
         double AzimuthSigmaArcMinutes,
         double AltitudeSigmaArcMinutes,
         double ReducedChiSquared,
-        double DesignConditionNumber,
+        double NormalMatrixConditionNumber,
         double MaximumRepeatedPositionStandardizedResidual,
         bool IsValid,
         string Reason);
@@ -121,9 +121,9 @@ namespace NINA.Plugins.PolarAlignment {
                 return Invalid(tracks.Count, "drift-validation geometry is singular");
             }
             var conditionNumber = SymmetricConditionNumber(normal00, normal01, normal11);
-            if (!double.IsFinite(conditionNumber) || conditionNumber > activePolicy.MaximumDesignConditionNumber) {
+            if (!double.IsFinite(conditionNumber) || conditionNumber > activePolicy.MaximumNormalMatrixConditionNumber) {
                 return Invalid(tracks.Count,
-                    $"drift-validation geometry condition number {conditionNumber:F2} exceeds {activePolicy.MaximumDesignConditionNumber:F2}");
+                    $"drift-validation normal-matrix condition number {conditionNumber:F2} exceeds {activePolicy.MaximumNormalMatrixConditionNumber:F2}");
             }
 
             var azimuthErrorRadians = (normal11 * rhs0 - normal01 * rhs1) / determinant;

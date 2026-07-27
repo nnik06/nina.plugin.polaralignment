@@ -997,6 +997,12 @@ namespace NINA.Plugins.PolarAlignment {
 
             DeclinationSpreadArcsec = declinationSpreadArcsec;
 
+            ThreePointGeometry = TppaThreePointGeometry.Evaluate(
+                FirstPosition.Vector, SecondPosition.Vector, ThirdPosition.Vector);
+            if (ThreePointGeometry.IsDegenerate) {
+                throw new InvalidOperationException("The three solved TPPA positions form degenerate plane-fit geometry.");
+            }
+
             var planeVector = Vector3.DeterminePlaneVector(FirstPosition.Vector, SecondPosition.Vector, ThirdPosition.Vector);
 
             if ((Northern && planeVector.X < 0) || (!Northern && planeVector.X > 0)) {
@@ -1022,6 +1028,7 @@ namespace NINA.Plugins.PolarAlignment {
         public Position FirstPosition { get; }
         public Position SecondPosition { get; }
         public Position ThirdPosition { get; }
+        internal TppaThreePointGeometry ThreePointGeometry { get; }
 
         public Position InitialMountAxisErrorPosition { get; }
 

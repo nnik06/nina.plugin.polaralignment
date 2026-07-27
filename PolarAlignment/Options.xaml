@@ -33,7 +33,7 @@
     <s:String x:Key="TargetCircleColorToolTip">Color used for the target-circle overlay that shows the correction destination.</s:String>
     <s:String x:Key="SuccessColorToolTip">Color used for success-state TPPA overlay elements.</s:String>
     <s:String x:Key="LogErrorToolTip">When enabled, TPPA writes the current longitude, latitude, altitude error, azimuth error, and total error to its polar-alignment log during continuous updates.</s:String>
-    <s:String x:Key="RefractionAdjustmentToolTip">Enabled: align the mechanical axis to the true celestial pole using refraction-aware topocentric coordinates. Disabled: target the apparent refracted pole, which can differ by several arcminutes at low latitude.</s:String>
+    <s:String x:Key="RefractionAdjustmentToolTip">Enabled: align the mechanical axis to the true celestial pole using refraction-aware topocentric coordinates. This is required for automated correction and drift validation. Disabled: measure against the apparent refracted pole only.</s:String>
     <s:String x:Key="UseContinuousErrorEstimatorToolTip">When enabled, TPPA uses the experimental time-aware continuous estimator for live correction error. When disabled, TPPA uses the legacy image-plane calculation.</s:String>
     <s:String x:Key="StopTrackingWhenDoneToolTip">When enabled, TPPA turns sidereal tracking off in its cleanup path after the run ends.</s:String>
     <s:String x:Key="AutoPauseToolTip">When enabled, TPPA pauses itself after each continuous-correction update.</s:String>
@@ -332,7 +332,7 @@
                             Grid.Row="14"
                             Margin="0,5,0,0"
                             VerticalAlignment="Center"
-                            Text="Adjust for refraction?"
+                            Text="Target true celestial pole?"
                             ToolTip="{StaticResource RefractionAdjustmentToolTip}" />
                         <StackPanel
                             Grid.Row="14"
@@ -345,10 +345,6 @@
                                 VerticalAlignment="Center"
                                 IsChecked="{Binding RefractionAdjustment}"
                                 ToolTip="{StaticResource RefractionAdjustmentToolTip}" />
-                            <TextBlock
-                                Margin="5,5,0,0"
-                                Text="This option is currently under test. Feedback if this results in better polar alignment is appreciated!"
-                                Visibility="{Binding RefractionAdjustment, Converter={StaticResource BooleanToVisibilityConverter}}" />
                         </StackPanel>
                         <TextBlock
                             Grid.Row="15"
