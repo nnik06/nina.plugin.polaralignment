@@ -1,3 +1,9 @@
+## Version 2.2.6.48
+
+- Migrate the Claude council seat from Fable to pinned Claude Opus 5 (`claude-opus-5`) at high effort while preserving safe plan/no-tools execution.
+- Delegate generic bridge invocation and health checks to the codex-wide runbook and preflight, leaving the repository document as a TPPA-specific provenance and disclosure supplement.
+- Replace the duplicate TPPA bridge health script with a thin repository-root wrapper so future global bridge repairs cannot drift from project-local checks.
+
 ## Version 2.2.6.47
 
 - Replace unreliable Antigravity headless @path attachments with bounded inline file context and fail closed before the Windows command-line limit.

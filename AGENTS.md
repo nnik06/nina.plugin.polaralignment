@@ -51,17 +51,18 @@ Treat these topic names as external contracts. Other plugins can subscribe to th
 
 ## Council Bridges
 
-- The canonical Claude/Gemini invocation and recovery procedure is
-  `docs/COUNCIL_BRIDGE_RUNBOOK.md`. Do not reconstruct bridge commands from
-  chat history or dated council reports.
+- Codex-wide Claude/Gemini invocation and recovery are governed by
+  `C:\Users\nnik0\.codex\bridge\COUNCIL_BRIDGE_RUNBOOK.md`. This repository
+  adds TPPA-specific provenance and disclosure rules in
+  `docs/COUNCIL_BRIDGE_RUNBOOK.md`.
 - Before the first council call in a work session, run
   `pwsh -NoProfile -File .\tools\test_council_bridges.ps1`.
 - Pin every repository-aware review to
   `C:\Dev\upas-nina-tppa-plugin` and the full current commit. Reject output from
   any other root or checkpoint.
-- Claude reviews use Fable in read-only plan/no-tools mode. Gemini reviews use
-  Gemini 3.1 Pro High in read-only plan mode with a new project and explicit
-  repository directory.
+- Claude reviews use pinned `claude-opus-5` with `--effort high` in read-only
+  plan/no-tools mode. Gemini reviews use Gemini 3.1 Pro High in read-only plan
+  mode with a new project and explicit repository directory.
 - A requested council is incomplete until both Claude and Gemini return
   substantive, provenance-verified answers. Repair and rerun a failed,
   incomplete, timed-out, or stale seat; never silently substitute or omit it.
