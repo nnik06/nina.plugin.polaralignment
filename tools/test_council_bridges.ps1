@@ -164,17 +164,37 @@ if (-not $SkipLiveCalls) {
     }
     $claudeLive = 'PASS'
 
-    $geminiPing = Invoke-CapturedProcess $agy @(
-        '--mode', 'plan',
-        '--model', 'Gemini 3.1 Pro (High)',
-        '--new-project',
-        '--add-dir', $root,
-        '--print-timeout', '2m',
-        '--print', '@AGENTS.md Reply exactly GEMINI_FILE_OK and nothing else.'
+    $projectFile = Join-Path $root 'PolarAlignment\NINA.Plugins.PolarAlignment.csproj'
+    $versionMatch = [regex]::Match([IO.File]::ReadAllText($projectFile), '<Version>([^<]+)</Version>')
+    if (-not $versionMatch.Success) {
+        throw "Could not read the plugin version from $projectFile."
+    }
+    $pluginVersion = $versionMatch.Groups[1].Value
+
+    $geminiFileProbe = @'
+import importlib.util
+import sys
+
+bridge_path, repository_root, expected_version = sys.argv[1:4]
+spec = importlib.util.spec_from_file_location("gemini_bridge_preflight", bridge_path)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+result = module.execute_gemini_with_files(
+    f"Use only the attached file. If its Version element is {expected_version}, reply exactly GEMINI_BRIDGE_FILE_OK. Do not invoke tools or commands.",
+    repository_root,
+    ["PolarAlignment/NINA.Plugins.PolarAlignment.csproj"],
+    "Gemini 3.1 Pro (High)",
+    180,
+    "inline",
+)
+print(result)
+'@
+    $geminiPing = Invoke-CapturedProcess $python @(
+        '-c', $geminiFileProbe, $geminiBridge, $root, $pluginVersion
     ) $root $TimeoutSeconds
-    Assert-Success $geminiPing 'Gemini High live ping'
-    if ($geminiPing.Stdout.Trim() -ne 'GEMINI_FILE_OK') {
-        throw "Gemini live ping returned unexpected output: $($geminiPing.Stdout)"
+    Assert-Success $geminiPing 'Gemini bridge nested-file live ping'
+    if ($geminiPing.Stdout.Trim() -ne 'GEMINI_BRIDGE_FILE_OK') {
+        throw "Gemini file bridge returned unexpected output: $($geminiPing.Stdout)"
     }
     $geminiLive = 'PASS'
 }

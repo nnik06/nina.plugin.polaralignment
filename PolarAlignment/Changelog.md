@@ -1,3 +1,9 @@
+## Version 2.2.6.47
+
+- Replace unreliable Antigravity headless @path attachments with bounded inline file context and fail closed before the Windows command-line limit.
+- Extend the council preflight to prove that the active Gemini bridge actually receives a nested plugin project file, preventing false-positive CLI-only health checks.
+- Document recovery for missing Gemini file context and denied headless command attempts without weakening read-only permissions.
+
 ## Version 2.2.6.46
 
 - Add the canonical Claude Fable and Gemini High council-bridge runbook, including repository provenance, read-only invocation, completion, troubleshooting, and update contracts.

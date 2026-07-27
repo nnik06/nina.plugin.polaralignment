@@ -144,14 +144,15 @@ Use `consult_gemini` for summarized evidence. For repository files, use:
 ```text
 directory: C:\Dev\upas-nina-tppa-plugin
 model: Gemini 3.1 Pro (High)
-mode: at_command
+mode: inline
 timeout_seconds: 180
 ```
 
-`at_command` passes bounded `@relative-path` directives and avoids Windows'
-command-line length limit. The bridge defaults to this mode. If a caller
-explicitly selects `inline` and the payload is too large, the bridge switches to
-read-only `@path` mode and emits a warning.
+`inline` passes bounded file contents directly to Antigravity and is the only
+supported attachment mode. Headless `@path` handling does not reliably attach
+nested files and must not be used. The bridge limits each file to 12 KiB, all
+files to 20 KiB, and the Windows command to 26,000 characters. Oversized context
+fails closed; reduce the files or put a concise evidence summary in the prompt.
 
 Direct read-only fallback:
 
@@ -159,7 +160,7 @@ Direct read-only fallback:
 agy --mode plan --model "Gemini 3.1 Pro (High)" `
   --new-project --add-dir "C:\Dev\upas-nina-tppa-plugin" `
   --print-timeout 2m --print `
-  "@AGENTS.md Reply exactly GEMINI_FILE_OK and nothing else."
+  "Reply exactly GEMINI_BRIDGE_OK and nothing else."
 ```
 
 Do not count a Gemini review that used a stale project, omitted provenance, or
@@ -185,7 +186,8 @@ open. Fix it and rerun it. Never silently substitute or omit a requested seat.
 |---|---|---|
 | Claude call times out | Prompt/file payload is too broad | Run the direct ping, shorten the request, use no files or fewer files, and retry with 180 seconds |
 | Claude says it will inspect but gives no findings | Tools are deliberately disabled and the prompt invited exploration | Retry with summarized evidence and the direct-answer instruction |
-| Gemini `WinError 206` | Old bridge process or explicit oversized inline mode | Use `mode=at_command`; restart Codex to reload the updated bridge |
+| Gemini reports that files were not attached or a command permission was denied | Unreliable old `@path` mode, stale bridge process, or a prompt that invited tool use | Use the updated bridge with `mode=inline`, state that supplied evidence is sufficient, forbid tools/commands, and restart Codex if needed |
+| Gemini `WinError 206` or bounded-context refusal | Too many or overly large inline files | Reduce the file set or summarize decisive evidence; never fall back to `@path` or broaden permissions |
 | Gemini reviews an old tree | Reused Antigravity project | Require `--new-project --add-dir`, root, and full HEAD; reject stale output |
 | Gemini says not authenticated in a Codex shell | Sandbox cannot access/write `%USERPROFILE%\.gemini` | Run the preflight in the authenticated interactive user context |
 | `codex mcp list` reports no servers | Wrong Codex binary or missing `CODEX_HOME` | Set `CODEX_HOME`, use the bundled binary, then rely on app tool discovery |
