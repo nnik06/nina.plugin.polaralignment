@@ -1,5 +1,9 @@
 ## Version 2.2.6.51
 
+- Let the next-session readiness checker require an existing UPAS bridge TCP
+  session owned by the expected local client process. This avoids opening a
+  second serial-over-TCP connection merely to test a bridge that is already in
+  use, and reports that transport evidence does not verify GRBL health.
 - Let the next-session readiness checker use and report an explicit ADB
   executable path, so Mele's fixed platform-tools installation is not confused
   with an absent P20.

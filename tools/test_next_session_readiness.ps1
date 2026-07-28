@@ -15,6 +15,7 @@ param(
     [string]$UpasBridgeHost = '',
     [ValidateRange(1, 65535)]
     [int]$UpasBridgePort = 4001,
+    [string]$UpasBridgeClientProcessName = '',
     [ValidateRange(100, 30000)]
     [int]$NetworkTimeoutMilliseconds = 3000,
     [string]$AdbTarget = '',
@@ -104,7 +105,8 @@ function Test-TcpEndpoint {
         [void]$connect.GetAwaiter().GetResult()
         return [pscustomobject]@{
             Connected = $client.Connected
-            Detail = "TCP $HostName`:$Port connected."
+            Detail = "TCP transport probe to $HostName`:$Port connected. " +
+                'Serial and GRBL health were not tested.'
         }
     } catch {
         return [pscustomobject]@{
@@ -113,6 +115,58 @@ function Test-TcpEndpoint {
         }
     } finally {
         $client.Dispose()
+    }
+}
+
+function Test-EstablishedTcpSession {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$HostName,
+        [Parameter(Mandatory = $true)]
+        [int]$Port,
+        [Parameter(Mandatory = $true)]
+        [string]$ProcessName
+    )
+
+    $expectedProcessName = [IO.Path]::GetFileNameWithoutExtension($ProcessName)
+    try {
+        $remoteAddresses = [System.Collections.Generic.HashSet[string]]::new(
+            [StringComparer]::OrdinalIgnoreCase
+        )
+        [void]$remoteAddresses.Add($HostName)
+        foreach ($address in [Net.Dns]::GetHostAddresses($HostName)) {
+            [void]$remoteAddresses.Add($address.IPAddressToString)
+        }
+        $connections = @(Get-NetTCPConnection -State Established -ErrorAction Stop |
+            Where-Object {
+                $_.RemotePort -eq $Port -and
+                $remoteAddresses.Contains([string]$_.RemoteAddress)
+            })
+    } catch {
+        return [pscustomobject]@{
+            Connected = $false
+            Detail = "Could not inspect established TCP sessions: " +
+                $_.Exception.GetBaseException().Message
+        }
+    }
+
+    foreach ($connection in $connections) {
+        $owner = Get-Process -Id $connection.OwningProcess -ErrorAction SilentlyContinue
+        if ($owner -and $owner.ProcessName -ieq $expectedProcessName) {
+            return [pscustomobject]@{
+                Connected = $true
+                Detail = "Existing TCP session to $HostName`:$Port is established " +
+                    "by $($owner.ProcessName) (PID $($owner.Id)); no active bridge " +
+                    'probe was issued. This verifies the transport session only; ' +
+                    'serial and GRBL health were not tested.'
+            }
+        }
+    }
+
+    return [pscustomobject]@{
+        Connected = $false
+        Detail = "No established TCP session to $HostName`:$Port is owned by " +
+            "$expectedProcessName; no active bridge probe was issued."
     }
 }
 
@@ -234,7 +288,13 @@ $gates.Add($(New-ReadinessGate -Name 'UpasSerial' -Passed $upasPassed `
 $bridgePassed = -not $RequireUpasBridge
 $bridgeDetail = 'Pi bridge check not requested.'
 if ($UpasBridgeHost) {
-    $bridgeResults = @(Test-TcpEndpoint -HostName $UpasBridgeHost -Port $UpasBridgePort)
+    if ($UpasBridgeClientProcessName) {
+        $bridgeResults = @(Test-EstablishedTcpSession -HostName $UpasBridgeHost `
+            -Port $UpasBridgePort -ProcessName $UpasBridgeClientProcessName)
+    } else {
+        $bridgeResults = @(Test-TcpEndpoint -HostName $UpasBridgeHost `
+            -Port $UpasBridgePort)
+    }
     if ($bridgeResults.Count -ne 1 -or
         -not $bridgeResults[0].PSObject.Properties['Connected'] -or
         -not $bridgeResults[0].PSObject.Properties['Detail']) {
