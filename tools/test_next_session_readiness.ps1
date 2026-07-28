@@ -18,6 +18,7 @@ param(
     [ValidateRange(100, 30000)]
     [int]$NetworkTimeoutMilliseconds = 3000,
     [string]$AdbTarget = '',
+    [string]$AdbExecutable = '',
     [switch]$RequireNinaClosed,
     [switch]$RequireIPolar,
     [switch]$RequireMainCamera,
@@ -253,14 +254,28 @@ $gates.Add($(New-ReadinessGate -Name 'UpasPiBridge' -Passed $bridgePassed `
 $adbPassed = -not $RequireAdb
 $adbDetail = 'ADB check not requested.'
 if ($AdbTarget) {
-    $adb = Get-Command adb -ErrorAction SilentlyContinue
-    if (-not $adb) {
+    $adbSource = ''
+    if ($AdbExecutable) {
+        if (Test-Path -LiteralPath $AdbExecutable -PathType Leaf) {
+            $adbSource = (Resolve-Path -LiteralPath $AdbExecutable).Path
+        } else {
+            $adbDetail = "Configured adb executable does not exist: $AdbExecutable"
+        }
+    } else {
+        $adb = Get-Command adb -ErrorAction SilentlyContinue
+        if ($adb) {
+            $adbSource = $adb.Source
+        }
+    }
+    if (-not $adbSource -and -not $adbDetail.StartsWith('Configured adb executable')) {
         $adbPassed = $false
         $adbDetail = 'adb.exe was not found.'
-    } else {
-        $state = (& $adb.Source -s $AdbTarget get-state 2>&1 | Out-String).Trim()
+    } elseif ($adbSource) {
+        $state = (& $adbSource -s $AdbTarget get-state 2>&1 | Out-String).Trim()
         $adbPassed = $state -eq 'device'
-        $adbDetail = "ADB target $AdbTarget state: $state."
+        $adbDetail = "ADB target $AdbTarget state: $state. Executable: $adbSource"
+    } else {
+        $adbPassed = $false
     }
 } elseif ($RequireAdb) {
     $adbPassed = $false

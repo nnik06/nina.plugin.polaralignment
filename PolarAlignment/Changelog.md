@@ -1,5 +1,8 @@
 ## Version 2.2.6.51
 
+- Let the next-session readiness checker use and report an explicit ADB
+  executable path, so Mele's fixed platform-tools installation is not confused
+  with an absent P20.
 - Extend the read-only next-session readiness check with independent fail-closed gates for the main camera, guide camera, and filter wheel instead of allowing iPolar and the UPAS bridge to mask an absent imaging train.
 - Match the expected ZWO devices by friendly name or stable USB VID/PID so an unlabelled HID-class EFW still satisfies the correct gate.
 - Suppress asynchronous TCP connection pipeline output and validate the bridge probe result schema before reading it.
