@@ -8,6 +8,7 @@ supersede the actuator trial below; UPAS remains disabled for that campaign.
 - Build the current committed branch and record its DLL SHA-256.
 - Run `tools/validate_tppa_plugin_install.ps1` before opening a diagnostic sequence. The live plugin tree must contain exactly one TPPA assembly and its hash must match the tested build.
 - Keep prior DLLs in `Documents\TPPA-PHD2-tests` or another directory outside NINA's live plugin tree. A rollback DLL below the live plugin directory can be discovered as another plugin assembly.
+- Run `tools/test_next_session_readiness.ps1` before darkness. Treat missing iPolar or UPAS USB enumeration as a hardware-preflight failure, not as a reason to weaken a later field gate.
 - Do not begin unattended. The first actuator trial requires an observer at the rig.
 
 ## Starting State
@@ -16,9 +17,12 @@ supersede the actuator trial below; UPAS remains disabled for that campaign.
 - Focus successfully, plate solve reliably, and begin between 20 and 60 arcminutes total PA error.
 - Disable pre-seat for the first trial. Keep configured azimuth travel guards enabled.
 - Record reversal settings and do not change them during a run.
+- After Home, a major slew, cable handling, or physical contact, hold the mount undisturbed for at least five minutes before the first qualified VerificationOnly determination. Restart the dwell after any new disturbance.
+- When UPAS is connected directly to Mele, record the actual serial port after every reboot. A COM number is discovery metadata, never physical-position evidence.
+- Confirm iPolar is enumerated and acquire its dark frame before a campaign; after restarting iPolar, explicitly select the preserved previous dark frame before collecting witness evidence.
 
 ## Measurement Qualification
-1. Run three no-motion fresh TPPA determinations on safe arc A with fixed settings and refraction state.
+1. After the required settling dwell, run three no-motion fresh TPPA determinations on safe arc A with fixed settings and refraction state.
 2. Require the robust set gate to pass: component MAD at most 20 arcseconds and total-error MAD at most 10 arcseconds.
 3. Move only the telescope to safe alternate arc B and collect three no-motion fresh determinations. Do not move UPAS.
 4. Return to the exact arc-A geometry and collect three more fresh determinations.
@@ -45,6 +49,7 @@ supersede the actuator trial below; UPAS remains disabled for that campaign.
 - X/Y travel approaches the configured guard, the controller direction becomes contradictory, or the UPAS bridge loses status synchronization.
 - A fresh solve fails repeatedly, clouds invalidate solves, or physical marker travel becomes unsafe.
 - The verification launcher reports a duplicate assembly, DLL hash mismatch, insufficient target margin, or settled pointing outside the balcony guard.
+- iPolar, UPAS, P20, or another required witness disappears after reboot. Re-run the read-only readiness check and repair enumeration before continuing.
 
 ## Evidence to Preserve
 - NINA log, structured TPPA vector/phase lines, robust set-gate results, A1-B-A2 consistency result, every UPAS command/status frame, PHD2 debug log, controller MPos before/after, marker photographs, reversal settings, gear ratios, tolerance, refraction setting, exact arc coordinates, and DLL SHA-256.

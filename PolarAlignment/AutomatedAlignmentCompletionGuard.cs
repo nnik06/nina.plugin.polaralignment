@@ -12,6 +12,7 @@ namespace NINA.Plugins.PolarAlignment {
 
     internal static class FreshPolarAlignmentAgreementPolicy {
         private const double MinimumThresholdMinutes = 0.5;
+        private const double MinimumReciprocitySpanSeconds = 1.0;
 
         public static FreshPolarAlignmentAgreement Evaluate(
             double firstAzimuthMinutes,
@@ -56,6 +57,66 @@ namespace NINA.Plugins.PolarAlignment {
             double toleranceMinutes) {
             var centeredForwardAzimuth = (firstForwardAzimuthMinutes + repeatedForwardAzimuthMinutes) / 2.0;
             var centeredForwardAltitude = (firstForwardAltitudeMinutes + repeatedForwardAltitudeMinutes) / 2.0;
+            var centeredForwardTotal = Math.Sqrt(centeredForwardAzimuth * centeredForwardAzimuth
+                + centeredForwardAltitude * centeredForwardAltitude);
+            var reciprocalTotal = Math.Sqrt(reciprocalAzimuthMinutes * reciprocalAzimuthMinutes
+                + reciprocalAltitudeMinutes * reciprocalAltitudeMinutes);
+            return Evaluate(centeredForwardAzimuth, centeredForwardAltitude, centeredForwardTotal,
+                reciprocalAzimuthMinutes, reciprocalAltitudeMinutes, reciprocalTotal, toleranceMinutes);
+        }
+
+        public static FreshPolarAlignmentAgreement EvaluateTimeCenteredReciprocity(
+            double firstForwardAzimuthMinutes,
+            double firstForwardAltitudeMinutes,
+            DateTime firstForwardObservationTimeUtc,
+            double reciprocalAzimuthMinutes,
+            double reciprocalAltitudeMinutes,
+            DateTime reciprocalObservationTimeUtc,
+            double repeatedForwardAzimuthMinutes,
+            double repeatedForwardAltitudeMinutes,
+            DateTime repeatedForwardObservationTimeUtc,
+            double toleranceMinutes) {
+            var values = new[] {
+                firstForwardAzimuthMinutes, firstForwardAltitudeMinutes,
+                reciprocalAzimuthMinutes, reciprocalAltitudeMinutes,
+                repeatedForwardAzimuthMinutes, repeatedForwardAltitudeMinutes
+            };
+            var thresholdMinutes = double.IsFinite(toleranceMinutes) && toleranceMinutes > 0
+                ? Math.Max(MinimumThresholdMinutes, toleranceMinutes)
+                : MinimumThresholdMinutes;
+            if (firstForwardObservationTimeUtc.Kind != DateTimeKind.Utc
+                    || reciprocalObservationTimeUtc.Kind != DateTimeKind.Utc
+                    || repeatedForwardObservationTimeUtc.Kind != DateTimeKind.Utc) {
+                return new FreshPolarAlignmentAgreement(
+                    false, double.NaN, double.NaN, double.NaN, double.NaN, thresholdMinutes,
+                    "reciprocity observation timestamps must use DateTimeKind.Utc");
+            }
+            if (reciprocalObservationTimeUtc <= firstForwardObservationTimeUtc
+                    || repeatedForwardObservationTimeUtc <= reciprocalObservationTimeUtc) {
+                return new FreshPolarAlignmentAgreement(
+                    false, double.NaN, double.NaN, double.NaN, double.NaN, thresholdMinutes,
+                    "reciprocity observation timestamps must be strictly increasing");
+            }
+            if (Array.Exists(values, value => !double.IsFinite(value))) {
+                return new FreshPolarAlignmentAgreement(
+                    false, double.NaN, double.NaN, double.NaN, double.NaN, thresholdMinutes,
+                    "one or more reciprocity measurements were not finite");
+            }
+
+            var fullSpanSeconds =
+                (repeatedForwardObservationTimeUtc - firstForwardObservationTimeUtc).TotalSeconds;
+            if (fullSpanSeconds < MinimumReciprocitySpanSeconds) {
+                return new FreshPolarAlignmentAgreement(
+                    false, double.NaN, double.NaN, double.NaN, double.NaN, thresholdMinutes,
+                    $"reciprocity observation span must be at least {MinimumReciprocitySpanSeconds:F1} second");
+            }
+            var reciprocalOffsetSeconds =
+                (reciprocalObservationTimeUtc - firstForwardObservationTimeUtc).TotalSeconds;
+            var interpolationFraction = reciprocalOffsetSeconds / fullSpanSeconds;
+            var centeredForwardAzimuth = firstForwardAzimuthMinutes
+                + interpolationFraction * (repeatedForwardAzimuthMinutes - firstForwardAzimuthMinutes);
+            var centeredForwardAltitude = firstForwardAltitudeMinutes
+                + interpolationFraction * (repeatedForwardAltitudeMinutes - firstForwardAltitudeMinutes);
             var centeredForwardTotal = Math.Sqrt(centeredForwardAzimuth * centeredForwardAzimuth
                 + centeredForwardAltitude * centeredForwardAltitude);
             var reciprocalTotal = Math.Sqrt(reciprocalAzimuthMinutes * reciprocalAzimuthMinutes

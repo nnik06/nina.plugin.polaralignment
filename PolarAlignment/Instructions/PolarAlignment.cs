@@ -1605,6 +1605,9 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         - initialDetermination.InitialMountAxisAltitudeError.Degree;
                     var totalDeltaDegrees = verificationDetermination.InitialMountAxisTotalError.Degree
                         - initialDetermination.InitialMountAxisTotalError.Degree;
+                    var vectorSeparationDegrees = Math.Sqrt(
+                        azimuthDeltaDegrees * azimuthDeltaDegrees
+                        + altitudeDeltaDegrees * altitudeDeltaDegrees);
 
                     Logger.Info($"TPPA verification-only initial result: Az: {initialDetermination.InitialMountAxisAzimuthError}, Alt: {initialDetermination.InitialMountAxisAltitudeError}, Tot: {initialDetermination.InitialMountAxisTotalError}");
                     Logger.Info($"TPPA verification-only reciprocal result: Az: {reciprocalDetermination.InitialMountAxisAzimuthError}, Alt: {reciprocalDetermination.InitialMountAxisAltitudeError}, Tot: {reciprocalDetermination.InitialMountAxisTotalError}");
@@ -1612,7 +1615,8 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     Logger.Info($"TPPA verification-only initial geometry: {initialDetermination.ThreePointGeometry.ToLogString()}; qualification=report-only.");
                     Logger.Info($"TPPA verification-only reciprocal geometry: {reciprocalDetermination.ThreePointGeometry.ToLogString()}; qualification=report-only.");
                     Logger.Info($"TPPA verification-only repeated-forward geometry: {verificationDetermination.ThreePointGeometry.ToLogString()}; qualification=report-only.");
-                    Logger.Info($"TPPA verification-only repeat-minus-initial delta: Az: {Angle.ByDegree(azimuthDeltaDegrees)}, Alt: {Angle.ByDegree(altitudeDeltaDegrees)}, Tot: {Angle.ByDegree(totalDeltaDegrees)}");
+                    Logger.Info($"TPPA verification-only repeat-minus-initial delta: Az: {Angle.ByDegree(azimuthDeltaDegrees)}, Alt: {Angle.ByDegree(altitudeDeltaDegrees)}, " +
+                                $"magnitude change: {Angle.ByDegree(totalDeltaDegrees)}, vector separation: {Angle.ByDegree(vectorSeparationDegrees)}");
 
                     await messageBroker.Publish(new PolarAlignmentVerificationMessage(correlatedGuid,
                                                                                        initialDetermination.InitialMountAxisAltitudeError.Degree,
@@ -1679,13 +1683,22 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 verificationAltitudeMinutes,
                 verificationTotalMinutes,
                 AlignmentTolerance);
-            var reciprocalAgreement = FreshPolarAlignmentAgreementPolicy.EvaluateCenteredReciprocity(
+            var initialObservationTimeUtc =
+                initialDetermination.InitialReferenceFrame.Coordinates.DateTime.UtcNow;
+            var reciprocalObservationTimeUtc =
+                reciprocalDetermination.InitialReferenceFrame.Coordinates.DateTime.UtcNow;
+            var verificationObservationTimeUtc =
+                verificationDetermination.InitialReferenceFrame.Coordinates.DateTime.UtcNow;
+            var reciprocalAgreement = FreshPolarAlignmentAgreementPolicy.EvaluateTimeCenteredReciprocity(
                 initialAzimuthMinutes,
                 initialAltitudeMinutes,
+                initialObservationTimeUtc,
                 reciprocalAzimuthMinutes,
                 reciprocalAltitudeMinutes,
+                reciprocalObservationTimeUtc,
                 verificationAzimuthMinutes,
                 verificationAltitudeMinutes,
+                verificationObservationTimeUtc,
                 AlignmentTolerance);
             var diagnosticPassed = verificationAgreement.IsRepeatable && reciprocalAgreement.IsRepeatable;
             Logger.Info($"TPPA verification-only repeatability verdict: {(verificationAgreement.IsRepeatable ? "PASS" : "FAIL")}; " +
@@ -1693,17 +1706,23 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             Logger.Info($"TPPA verification-only reciprocity verdict: {(reciprocalAgreement.IsRepeatable ? "PASS" : "FAIL")}; " +
                         $"dAz={reciprocalAgreement.AzimuthDeltaMinutes:+0.00;-0.00;0.00}', " +
                         $"dAlt={reciprocalAgreement.AltitudeDeltaMinutes:+0.00;-0.00;0.00}', " +
-                        $"dTot={reciprocalAgreement.TotalDeltaMinutes:+0.00;-0.00;0.00}', " +
-                        $"threshold={reciprocalAgreement.ThresholdMinutes:F2}'.");
+                        $"magnitude change={reciprocalAgreement.TotalDeltaMinutes:+0.00;-0.00;0.00}', " +
+                        $"vector separation={reciprocalAgreement.VectorDeltaMinutes:F2}', " +
+                        $"threshold={reciprocalAgreement.ThresholdMinutes:F2}'; {reciprocalAgreement.Reason}.");
+            Logger.Info($"TPPA verification-only reciprocity timing: firstForwardUtc={initialObservationTimeUtc:O}; " +
+                        $"reciprocalUtc={reciprocalObservationTimeUtc:O}; repeatedForwardUtc={verificationObservationTimeUtc:O}.");
             var verificationSummary =
                 $"Verification-only measurements complete. Overall: {(diagnosticPassed ? "PASS" : "FAIL")}.{Environment.NewLine}" +
                 $"Repeatability: {(verificationAgreement.IsRepeatable ? "PASS" : "FAIL")}; reciprocity: {(reciprocalAgreement.IsRepeatable ? "PASS" : "FAIL")}.{Environment.NewLine}" +
+                $"Reciprocity detail: {reciprocalAgreement.Reason}; " +
+                $"vector separation {reciprocalAgreement.VectorDeltaMinutes:F2}'{Environment.NewLine}" +
                 $"Initial: Az {initialAzimuthMinutes:F2}', Alt {initialAltitudeMinutes:F2}', Total {initialTotalMinutes:F2}'{Environment.NewLine}" +
                 $"Reciprocal: Az {reciprocalAzimuthMinutes:F2}', Alt {reciprocalAltitudeMinutes:F2}', Total {reciprocalTotalMinutes:F2}'{Environment.NewLine}" +
                 $"Repeated forward: Az {verificationAzimuthMinutes:F2}', Alt {verificationAltitudeMinutes:F2}', Total {verificationTotalMinutes:F2}'{Environment.NewLine}" +
                 $"Delta: Az {verificationAzimuthMinutes - initialAzimuthMinutes:+0.00;-0.00;0.00}', " +
                 $"Alt {verificationAltitudeMinutes - initialAltitudeMinutes:+0.00;-0.00;0.00}', " +
-                $"Total {verificationTotalMinutes - initialTotalMinutes:+0.00;-0.00;0.00}'{Environment.NewLine}" +
+                $"magnitude change {verificationAgreement.TotalDeltaMinutes:+0.00;-0.00;0.00}', " +
+                $"vector separation {verificationAgreement.VectorDeltaMinutes:F2}'{Environment.NewLine}" +
                 $"Repeatability limit: {verificationAgreement.ThresholdMinutes:F2}'. " +
                 "This checks internal consistency, not absolute polar-alignment accuracy.";
             if (diagnosticPassed) {

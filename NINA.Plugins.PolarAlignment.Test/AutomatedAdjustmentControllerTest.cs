@@ -31,6 +31,22 @@ namespace NINA.Plugins.PolarAlignment.Test {
 
             result.IsRepeatable.Should().BeFalse();
             result.AzimuthDeltaMinutes.Should().BeApproximately(1.20, 1e-9);
+            result.TotalDeltaMinutes.Should().BeApproximately(0, 1e-9);
+            result.VectorDeltaMinutes.Should().BeApproximately(1.20, 1e-9);
+        }
+
+        [Test]
+        public void FreshPolarAlignmentAgreementPolicy_SeparatesMagnitudeChangeFromVectorSeparation() {
+            var result = FreshPolarAlignmentAgreementPolicy.Evaluate(
+                2.288, -15.641, 15.808,
+                -0.961, -11.886, 11.925,
+                toleranceMinutes: 1.0);
+
+            result.TotalDeltaMinutes.Should().BeApproximately(-3.883, 1e-9);
+            result.VectorDeltaMinutes.Should().BeApproximately(
+                Math.Sqrt(3.249 * 3.249 + 3.755 * 3.755),
+                1e-9);
+            result.VectorDeltaMinutes.Should().BeGreaterThan(Math.Abs(result.TotalDeltaMinutes));
         }
 
         [Test]
@@ -57,6 +73,126 @@ namespace NINA.Plugins.PolarAlignment.Test {
 
             result.IsRepeatable.Should().BeTrue();
             result.VectorDeltaMinutes.Should().BeApproximately(0, 1e-9);
+        }
+
+        [Test]
+        public void FreshPolarAlignmentAgreementPolicy_TimeCenteredReciprocityRemovesAsymmetricLinearDrift() {
+            var start = new DateTime(2026, 7, 28, 0, 0, 0, DateTimeKind.Utc);
+            var result = FreshPolarAlignmentAgreementPolicy.EvaluateTimeCenteredReciprocity(
+                firstForwardAzimuthMinutes: 1.0,
+                firstForwardAltitudeMinutes: -2.0,
+                firstForwardObservationTimeUtc: start,
+                reciprocalAzimuthMinutes: 3.0,
+                reciprocalAltitudeMinutes: 0.0,
+                reciprocalObservationTimeUtc: start.AddMinutes(4),
+                repeatedForwardAzimuthMinutes: 6.0,
+                repeatedForwardAltitudeMinutes: 3.0,
+                repeatedForwardObservationTimeUtc: start.AddMinutes(10),
+                toleranceMinutes: 0.5);
+
+            result.IsRepeatable.Should().BeTrue();
+            result.VectorDeltaMinutes.Should().BeApproximately(0, 1e-9);
+        }
+
+        [Test]
+        public void FreshPolarAlignmentAgreementPolicy_TimeCenteredReciprocityDetectsDirectionBias() {
+            var start = new DateTime(2026, 7, 28, 0, 0, 0, DateTimeKind.Utc);
+            var result = FreshPolarAlignmentAgreementPolicy.EvaluateTimeCenteredReciprocity(
+                firstForwardAzimuthMinutes: 1.0,
+                firstForwardAltitudeMinutes: -2.0,
+                firstForwardObservationTimeUtc: start,
+                reciprocalAzimuthMinutes: 4.0,
+                reciprocalAltitudeMinutes: 0.0,
+                reciprocalObservationTimeUtc: start.AddMinutes(4),
+                repeatedForwardAzimuthMinutes: 6.0,
+                repeatedForwardAltitudeMinutes: 3.0,
+                repeatedForwardObservationTimeUtc: start.AddMinutes(10),
+                toleranceMinutes: 0.5);
+
+            result.IsRepeatable.Should().BeFalse();
+            result.AzimuthDeltaMinutes.Should().BeApproximately(1.0, 1e-9);
+            result.AltitudeDeltaMinutes.Should().BeApproximately(0.0, 1e-9);
+            result.VectorDeltaMinutes.Should().BeApproximately(1.0, 1e-9);
+            result.Reason.Should().Contain("exceeds");
+        }
+
+        [Test]
+        public void FreshPolarAlignmentAgreementPolicy_TimeCenteredReciprocityRejectsInvalidTiming() {
+            var start = new DateTime(2026, 7, 28, 0, 0, 0, DateTimeKind.Utc);
+            var result = FreshPolarAlignmentAgreementPolicy.EvaluateTimeCenteredReciprocity(
+                firstForwardAzimuthMinutes: 1.0,
+                firstForwardAltitudeMinutes: -2.0,
+                firstForwardObservationTimeUtc: start,
+                reciprocalAzimuthMinutes: 2.0,
+                reciprocalAltitudeMinutes: -1.0,
+                reciprocalObservationTimeUtc: start.AddMinutes(6),
+                repeatedForwardAzimuthMinutes: 3.0,
+                repeatedForwardAltitudeMinutes: 0.0,
+                repeatedForwardObservationTimeUtc: start.AddMinutes(5),
+                toleranceMinutes: 0.5);
+
+            result.IsRepeatable.Should().BeFalse();
+            result.Reason.Should().Contain("strictly increasing");
+            double.IsNaN(result.AzimuthDeltaMinutes).Should().BeTrue();
+            double.IsNaN(result.AltitudeDeltaMinutes).Should().BeTrue();
+            double.IsNaN(result.TotalDeltaMinutes).Should().BeTrue();
+            double.IsNaN(result.VectorDeltaMinutes).Should().BeTrue();
+        }
+
+        [Test]
+        public void FreshPolarAlignmentAgreementPolicy_TimeCenteredReciprocityRejectsNonUtcTimestamp() {
+            var start = new DateTime(2026, 7, 28, 0, 0, 0, DateTimeKind.Unspecified);
+            var result = FreshPolarAlignmentAgreementPolicy.EvaluateTimeCenteredReciprocity(
+                1.0, -2.0, start,
+                3.0, 0.0, start.AddMinutes(4),
+                6.0, 3.0, start.AddMinutes(10),
+                toleranceMinutes: 0.5);
+
+            result.IsRepeatable.Should().BeFalse();
+            result.Reason.Should().Contain("DateTimeKind.Utc");
+        }
+
+        [Test]
+        public void FreshPolarAlignmentAgreementPolicy_TimeCenteredReciprocityRejectsDegenerateSpan() {
+            var start = new DateTime(2026, 7, 28, 0, 0, 0, DateTimeKind.Utc);
+            var result = FreshPolarAlignmentAgreementPolicy.EvaluateTimeCenteredReciprocity(
+                1.0, -2.0, start,
+                3.0, 0.0, start.AddTicks(1),
+                6.0, 3.0, start.AddTicks(2),
+                toleranceMinutes: 0.5);
+
+            result.IsRepeatable.Should().BeFalse();
+            result.Reason.Should().Contain("at least");
+        }
+
+        [Test]
+        public void FreshPolarAlignmentAgreementPolicy_TimeCenteredReciprocityRejectsNonFiniteMeasurement() {
+            var start = new DateTime(2026, 7, 28, 0, 0, 0, DateTimeKind.Utc);
+            var result = FreshPolarAlignmentAgreementPolicy.EvaluateTimeCenteredReciprocity(
+                double.NaN, -2.0, start,
+                3.0, 0.0, start.AddMinutes(4),
+                6.0, 3.0, start.AddMinutes(10),
+                toleranceMinutes: 0.5);
+
+            result.IsRepeatable.Should().BeFalse();
+            result.Reason.Should().Contain("not finite");
+        }
+
+        [Test]
+        public void FreshPolarAlignmentAgreementPolicy_TimeCenteredReciprocityMatchesMidpointPolicy() {
+            var start = new DateTime(2026, 7, 28, 0, 0, 0, DateTimeKind.Utc);
+            var timed = FreshPolarAlignmentAgreementPolicy.EvaluateTimeCenteredReciprocity(
+                1.0, -2.0, start,
+                3.0, -1.0, start.AddMinutes(5),
+                3.0, 0.0, start.AddMinutes(10),
+                toleranceMinutes: 0.5);
+            var midpoint = FreshPolarAlignmentAgreementPolicy.EvaluateCenteredReciprocity(
+                1.0, -2.0,
+                3.0, -1.0,
+                3.0, 0.0,
+                toleranceMinutes: 0.5);
+
+            timed.Should().BeEquivalentTo(midpoint);
         }
 
         [Test]

@@ -1,3 +1,10 @@
+## Version 2.2.6.50
+
+- Compare reciprocal VerificationOnly results at the reciprocal exposure midpoint by interpolating the two forward signed error vectors using their frozen exposure-midpoint UTC timestamps.
+- Distinguish signed-vector separation from scalar total-error magnitude change in logs and operator summaries.
+- Fail reciprocity closed on non-UTC, unordered, degenerate, or non-finite observations and report the precise rejection reason.
+- Add a read-only next-session readiness check for the tested plugin hash, NINA process state, iPolar USB enumeration, direct-USB UPAS serial presence, and optional P20 ADB visibility.
+
 ## Version 2.2.6.49
 
 - Make true-celestial-pole targeting the default for new profiles and fail closed when automated axis correction or drift validation is requested with apparent-pole targeting.
