@@ -10,7 +10,7 @@ supersede the actuator trial below; UPAS remains disabled for that campaign.
 - Keep prior DLLs in `Documents\TPPA-PHD2-tests` or another directory outside NINA's live plugin tree. A rollback DLL below the live plugin directory can be discovered as another plugin assembly.
 - Run `tools/test_next_session_readiness.ps1` under PowerShell 7 before darkness.
   For the Pi bridge on Mele, use the following shape after replacing the hash and
-  ADB target with the values qualified for that session:
+  confirming the exact commissioned USB ADB serial:
 
   ```powershell
   pwsh -NoProfile -File tools/test_next_session_readiness.ps1 `
@@ -29,10 +29,13 @@ supersede the actuator trial below; UPAS remains disabled for that campaign.
     -UpasBridgePort 4001 `
     -UpasBridgeClientProcessName 'com2tcp' `
     -RequireAdb `
-    -AdbTarget '<qualified-usb-serial-or-wifi-target>' `
+    -AdbTarget 'WCRFL19B06000037' `
     -AdbExecutable 'C:\Tools\platform-tools\adb.exe'
   ```
 
+  Control evidence permits only the exact P20 USB ADB serial
+  `WCRFL19B06000037`. Wi-Fi ADB, including `192.168.1.66:5555`, must not
+  satisfy readiness or supply before/after motion evidence.
   `-UpasBridgeClientProcessName com2tcp` is a safety gate, not optional
   decoration: it requires Mele's existing `ESTABLISHED` transport session and
   prevents the readiness check from opening a second connection to the
