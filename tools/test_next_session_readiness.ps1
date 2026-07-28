@@ -94,7 +94,7 @@ function Test-TcpEndpoint {
                 Detail = "TCP $HostName`:$Port timed out after $NetworkTimeoutMilliseconds ms."
             }
         }
-        $connect.GetAwaiter().GetResult()
+        [void]$connect.GetAwaiter().GetResult()
         return [pscustomobject]@{
             Connected = $client.Connected
             Detail = "TCP $HostName`:$Port connected."
@@ -195,9 +195,16 @@ $gates.Add($(New-ReadinessGate -Name 'UpasSerial' -Passed $upasPassed `
 $bridgePassed = -not $RequireUpasBridge
 $bridgeDetail = 'Pi bridge check not requested.'
 if ($UpasBridgeHost) {
-    $bridge = Test-TcpEndpoint -HostName $UpasBridgeHost -Port $UpasBridgePort
-    $bridgePassed = $bridge.Connected
-    $bridgeDetail = $bridge.Detail
+    $bridgeResults = @(Test-TcpEndpoint -HostName $UpasBridgeHost -Port $UpasBridgePort)
+    if ($bridgeResults.Count -ne 1 -or
+        -not $bridgeResults[0].PSObject.Properties['Connected'] -or
+        -not $bridgeResults[0].PSObject.Properties['Detail']) {
+        $bridgePassed = $false
+        $bridgeDetail = "Pi bridge probe returned an invalid result count/schema: $($bridgeResults.Count)."
+    } else {
+        $bridgePassed = [bool]$bridgeResults[0].Connected
+        $bridgeDetail = [string]$bridgeResults[0].Detail
+    }
 } elseif ($RequireUpasBridge) {
     $bridgePassed = $false
     $bridgeDetail = 'RequireUpasBridge was specified without UpasBridgeHost.'
