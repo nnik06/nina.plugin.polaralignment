@@ -8,7 +8,48 @@ supersede the actuator trial below; UPAS remains disabled for that campaign.
 - Build the current committed branch and record its DLL SHA-256.
 - Run `tools/validate_tppa_plugin_install.ps1` before opening a diagnostic sequence. The live plugin tree must contain exactly one TPPA assembly and its hash must match the tested build.
 - Keep prior DLLs in `Documents\TPPA-PHD2-tests` or another directory outside NINA's live plugin tree. A rollback DLL below the live plugin directory can be discovered as another plugin assembly.
-- Run `tools/test_next_session_readiness.ps1` before darkness with `-RequireMainCamera -RequireGuideCamera -RequireFilterWheel` plus the selected witness/UPAS transport requirements. Treat a missing imaging-train device, iPolar, or UPAS transport as a hardware-preflight failure, not as a reason to weaken a later field gate.
+- Run `tools/test_next_session_readiness.ps1` under PowerShell 7 before darkness.
+  For the Pi bridge on Mele, use the following shape after replacing the hash and
+  ADB target with the values qualified for that session:
+
+  ```powershell
+  pwsh -NoProfile -File tools/test_next_session_readiness.ps1 `
+    -PluginDirectory "$env:LOCALAPPDATA\NINA\Plugins\3.0.0\Three Point Polar Alignment" `
+    -ExpectedSha256 '<tested-dll-sha256>' `
+    -RequireNinaClosed `
+    -RequireIPolar `
+    -RequireMainCamera `
+    -RequireGuideCamera `
+    -RequireFilterWheel `
+    -RequireUpas `
+    -ExpectedUpasComPort 'COM30' `
+    -UpasPattern 'com0com' `
+    -RequireUpasBridge `
+    -UpasBridgeHost '192.168.137.50' `
+    -UpasBridgePort 4001 `
+    -UpasBridgeClientProcessName 'com2tcp' `
+    -RequireAdb `
+    -AdbTarget '<qualified-usb-serial-or-wifi-target>' `
+    -AdbExecutable 'C:\Tools\platform-tools\adb.exe'
+  ```
+
+  `-UpasBridgeClientProcessName com2tcp` is a safety gate, not optional
+  decoration: it requires Mele's existing `ESTABLISHED` transport session and
+  prevents the readiness check from opening a second connection to the
+  serial-over-TCP listener. The resulting pass verifies the TCP transport
+  session only. It does not verify that GRBL is attached, powered, configured,
+  or responsive.
+  In the qualified Mele pairing, NINA opens `COM30` and `com2tcp` owns the
+  paired `COM31`; the live `com2tcp` command line must confirm that relationship.
+  Re-discover both ports after reboot and replace the example value if the
+  pairing changed. Neither virtual COM number is physical-position evidence.
+- For a deliberate direct-USB session, omit `-RequireUpasBridge`,
+  `-UpasBridgeHost`, `-UpasBridgePort`, and
+  `-UpasBridgeClientProcessName`; replace `COM30` with the physically verified
+  direct-UPAS COM port observed after that reboot. Never let a stale COM number
+  select the transport.
+- Treat a missing imaging-train device, iPolar, P20, or UPAS transport as a
+  hardware-preflight failure, not as a reason to weaken a later field gate.
 - Do not begin unattended. The first actuator trial requires an observer at the rig.
 
 ## Starting State
