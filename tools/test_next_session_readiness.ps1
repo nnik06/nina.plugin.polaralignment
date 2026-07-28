@@ -9,10 +9,16 @@ param(
     [string]$ExpectedUpasComPort = '',
     [ValidateRange(1, 60)]
     [int]$DeviceQueryTimeoutSeconds = 10,
+    [string]$UpasBridgeHost = '',
+    [ValidateRange(1, 65535)]
+    [int]$UpasBridgePort = 4001,
+    [ValidateRange(100, 30000)]
+    [int]$NetworkTimeoutMilliseconds = 3000,
     [string]$AdbTarget = '',
     [switch]$RequireNinaClosed,
     [switch]$RequireIPolar,
     [switch]$RequireUpas,
+    [switch]$RequireUpasBridge,
     [switch]$RequireAdb
 )
 
@@ -69,6 +75,38 @@ function Find-MatchingDevice {
         ([string]$_.FriendlyName -match $Pattern) -or
         ([string]$_.InstanceId -match $Pattern)
     })
+}
+
+function Test-TcpEndpoint {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$HostName,
+        [Parameter(Mandatory = $true)]
+        [int]$Port
+    )
+
+    $client = [System.Net.Sockets.TcpClient]::new()
+    try {
+        $connect = $client.ConnectAsync($HostName, $Port)
+        if (-not $connect.Wait($NetworkTimeoutMilliseconds)) {
+            return [pscustomobject]@{
+                Connected = $false
+                Detail = "TCP $HostName`:$Port timed out after $NetworkTimeoutMilliseconds ms."
+            }
+        }
+        $connect.GetAwaiter().GetResult()
+        return [pscustomobject]@{
+            Connected = $client.Connected
+            Detail = "TCP $HostName`:$Port connected."
+        }
+    } catch {
+        return [pscustomobject]@{
+            Connected = $false
+            Detail = "TCP $HostName`:$Port failed: $($_.Exception.GetBaseException().Message)"
+        }
+    } finally {
+        $client.Dispose()
+    }
 }
 
 $gates = [System.Collections.Generic.List[object]]::new()
@@ -153,6 +191,19 @@ if ($ExpectedUpasComPort -and -not $expectedPortPresent) {
 }
 $gates.Add($(New-ReadinessGate -Name 'UpasSerial' -Passed $upasPassed `
     -Detail $upasDetail))
+
+$bridgePassed = -not $RequireUpasBridge
+$bridgeDetail = 'Pi bridge check not requested.'
+if ($UpasBridgeHost) {
+    $bridge = Test-TcpEndpoint -HostName $UpasBridgeHost -Port $UpasBridgePort
+    $bridgePassed = $bridge.Connected
+    $bridgeDetail = $bridge.Detail
+} elseif ($RequireUpasBridge) {
+    $bridgePassed = $false
+    $bridgeDetail = 'RequireUpasBridge was specified without UpasBridgeHost.'
+}
+$gates.Add($(New-ReadinessGate -Name 'UpasPiBridge' -Passed $bridgePassed `
+    -Detail $bridgeDetail))
 
 $adbPassed = -not $RequireAdb
 $adbDetail = 'ADB check not requested.'

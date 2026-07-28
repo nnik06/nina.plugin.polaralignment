@@ -19,6 +19,8 @@ supersede the actuator trial below; UPAS remains disabled for that campaign.
 - Record reversal settings and do not change them during a run.
 - After Home, a major slew, cable handling, or physical contact, hold the mount undisturbed for at least five minutes before the first qualified VerificationOnly determination. Restart the dwell after any new disturbance.
 - When UPAS is connected directly to Mele, record the actual serial port after every reboot. A COM number is discovery metadata, never physical-position evidence.
+- When UPAS is connected through the Pi, require the Pi address to resolve at the expected wired interface, raw GRBL TCP to accept a connection, and Mele `com2tcp` to reach `ESTABLISHED`. `SYN_SENT`, `CLOSE_WAIT`, an empty GRBL read, or a missing ARP neighbor fails the bridge gate.
+- Select exactly one UPAS transport for a session. Do not let a stale direct-USB COM port satisfy a Pi-bridge preflight or vice versa.
 - Confirm iPolar is enumerated and acquire its dark frame before a campaign; after restarting iPolar, explicitly select the preserved previous dark frame before collecting witness evidence.
 
 ## Measurement Qualification
