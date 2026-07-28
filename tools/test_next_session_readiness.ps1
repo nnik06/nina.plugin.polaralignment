@@ -5,6 +5,9 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$ExpectedSha256,
     [string]$IPolarPattern = 'iPolar|iOptron.*Polar',
+    [string]$MainCameraPattern = 'ASI2600|VID_03C3&PID_260E',
+    [string]$GuideCameraPattern = 'ASI220|VID_03C3&PID_2209',
+    [string]$FilterWheelPattern = 'EFW|VID_03C3&PID_1F01',
     [string]$UpasPattern = 'USB-SERIAL|CH340|CH341|FTDI|GRBL|Avalon|UPAS',
     [string]$ExpectedUpasComPort = '',
     [ValidateRange(1, 60)]
@@ -17,6 +20,9 @@ param(
     [string]$AdbTarget = '',
     [switch]$RequireNinaClosed,
     [switch]$RequireIPolar,
+    [switch]$RequireMainCamera,
+    [switch]$RequireGuideCamera,
+    [switch]$RequireFilterWheel,
     [switch]$RequireUpas,
     [switch]$RequireUpasBridge,
     [switch]$RequireAdb
@@ -159,6 +165,38 @@ $ipolarDetail = if ($ipolar.Count -gt 0) {
 }
 $gates.Add($(New-ReadinessGate -Name 'IPolarUsb' `
     -Passed (-not $RequireIPolar -or $ipolar.Count -gt 0) -Detail $ipolarDetail))
+
+$pnpRequirements = @(
+    [pscustomobject]@{
+        Name = 'MainCameraUsb'
+        Required = [bool]$RequireMainCamera
+        Pattern = $MainCameraPattern
+    },
+    [pscustomobject]@{
+        Name = 'GuideCameraUsb'
+        Required = [bool]$RequireGuideCamera
+        Pattern = $GuideCameraPattern
+    },
+    [pscustomobject]@{
+        Name = 'FilterWheelUsb'
+        Required = [bool]$RequireFilterWheel
+        Pattern = $FilterWheelPattern
+    }
+)
+foreach ($requirement in $pnpRequirements) {
+    $matches = @(Find-MatchingDevice $pnpDevices $requirement.Pattern)
+    $detail = if ($matches.Count -gt 0) {
+        ($matches | ForEach-Object { "$($_.Status): $($_.FriendlyName)" }) -join '; '
+    } elseif ($pnpError) {
+        "PnP device enumeration failed: $pnpError"
+    } elseif ($pnpDevices.Count -eq 0) {
+        'PnP device enumeration returned no present devices.'
+    } else {
+        "No present device matched '$($requirement.Pattern)'."
+    }
+    $gates.Add($(New-ReadinessGate -Name $requirement.Name `
+        -Passed (-not $requirement.Required -or $matches.Count -gt 0) -Detail $detail))
+}
 
 $serialError = ''
 try {

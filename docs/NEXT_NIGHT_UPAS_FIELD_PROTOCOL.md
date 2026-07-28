@@ -8,7 +8,7 @@ supersede the actuator trial below; UPAS remains disabled for that campaign.
 - Build the current committed branch and record its DLL SHA-256.
 - Run `tools/validate_tppa_plugin_install.ps1` before opening a diagnostic sequence. The live plugin tree must contain exactly one TPPA assembly and its hash must match the tested build.
 - Keep prior DLLs in `Documents\TPPA-PHD2-tests` or another directory outside NINA's live plugin tree. A rollback DLL below the live plugin directory can be discovered as another plugin assembly.
-- Run `tools/test_next_session_readiness.ps1` before darkness. Treat missing iPolar or UPAS USB enumeration as a hardware-preflight failure, not as a reason to weaken a later field gate.
+- Run `tools/test_next_session_readiness.ps1` before darkness with `-RequireMainCamera -RequireGuideCamera -RequireFilterWheel` plus the selected witness/UPAS transport requirements. Treat a missing imaging-train device, iPolar, or UPAS transport as a hardware-preflight failure, not as a reason to weaken a later field gate.
 - Do not begin unattended. The first actuator trial requires an observer at the rig.
 
 ## Starting State
