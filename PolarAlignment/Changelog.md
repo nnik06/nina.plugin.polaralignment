@@ -1,3 +1,9 @@
+## Version 2.2.6.52
+
+- Deny automated polar-alignment actuator correction when the fresh initial
+  error is non-finite or exceeds two degrees, while preserving measurement-only
+  operation for diagnosis and manual coarse alignment.
+
 ## Version 2.2.6.51
 
 - Let the next-session readiness checker require an existing UPAS bridge TCP

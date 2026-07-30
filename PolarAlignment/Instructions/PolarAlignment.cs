@@ -788,6 +788,22 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         Logger.Warning($"TPPA same-solves alternate target diagnostic could not be calculated: {ex.Message}");
                     }
 
+                    if (executionPolicy.AllowActuatorMovement
+                            && TPAPAVM.ActiveAlignmentSystemVM?.DoAutomatedAdjustments == true) {
+                        var inputDecision = AutomatedAdjustmentInputPolicy.Evaluate(
+                            determination.InitialMountAxisAzimuthError.ArcMinutes,
+                            determination.InitialMountAxisAltitudeError.ArcMinutes,
+                            determination.InitialMountAxisTotalError.ArcMinutes);
+                        Logger.Info(
+                            $"TPPA automated-adjustment input qualification: " +
+                            $"{(inputDecision.IsEligible ? "PASS" : "FAIL")}; {inputDecision.Reason}.");
+                        if (!inputDecision.IsEligible) {
+                            throw new SequenceEntityFailedException(
+                                $"Automated polar-alignment correction was denied because {inputDecision.Reason}. " +
+                                "Bring the mount closer manually and obtain a new qualified measurement.");
+                        }
+                    }
+
                     TPAPAVM.ActivateFourthStep();
 
                     if (executionPolicy.ShouldConnectActuator(
