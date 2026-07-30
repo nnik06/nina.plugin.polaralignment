@@ -1,3 +1,13 @@
+## Version 2.2.6.53
+
+- Add a guarded no-slew main-camera plate-solve series that records fixed-field
+  solve motion while continuously enforcing tracking, pier-side, equatorial
+  pointing, and balcony-envelope gates.
+- Report tangent-plane RA/Dec drift slopes, vector slope, span, and linear-fit
+  residual RMS directly in each stationary-series artifact.
+- Extend the guarded telescope slew helper across the full wrapped balcony
+  azimuth window while retaining the altitude and post-slew pointing gates.
+
 ## Version 2.2.6.52
 
 - Deny automated polar-alignment actuator correction when the fresh initial

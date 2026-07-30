@@ -1,6 +1,7 @@
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateRange(270.0, 300.0)]
+    [ValidateScript({ ($_ -ge 270.0 -and $_ -le 360.0) -or
+        ($_ -ge 0.0 -and $_ -le 10.0) })]
     [double]$TargetAzimuthDegrees,
     [Parameter(Mandatory = $true)]
     [ValidateRange(25.0, 55.0)]
@@ -45,8 +46,10 @@ if (-not $slew.Success) { throw "NINA slew failed: $($slew.Error)" }
 $actual = (Invoke-RestMethod -Uri "$base/equipment/mount/info" -TimeoutSec 10).Response
 $azimuthError = [Math]::Abs([double]$actual.Azimuth - $TargetAzimuthDegrees)
 $altitudeError = [Math]::Abs([double]$actual.Altitude - $TargetAltitudeDegrees)
+$actualAzimuthSafe = ([double]$actual.Azimuth -ge 270.0 -and [double]$actual.Azimuth -le 360.0) -or
+    ([double]$actual.Azimuth -ge 0.0 -and [double]$actual.Azimuth -le 10.0)
 if ($actual.Slewing -or -not $actual.TrackingEnabled -or
-    [double]$actual.Azimuth -lt 270.0 -or [double]$actual.Azimuth -gt 300.0 -or
+    -not $actualAzimuthSafe -or
     [double]$actual.Altitude -lt 25.0 -or [double]$actual.Altitude -gt 55.0 -or
     $azimuthError -gt $PointingToleranceDegrees -or $altitudeError -gt $PointingToleranceDegrees) {
     throw ("Post-slew guard failed: Az={0:F2}, Alt={1:F2}, dAz={2:F2}, dAlt={3:F2}." -f

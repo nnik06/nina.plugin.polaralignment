@@ -9,7 +9,9 @@ $errors = $null
 if ($errors.Count -gt 0) { throw "Guarded slew has parse errors: $($errors -join '; ')" }
 
 foreach ($required in @(
-    '[ValidateRange(270.0, 300.0)]',
+    '($_ -ge 270.0 -and $_ -le 360.0)',
+    '($_ -ge 0.0 -and $_ -le 10.0)',
+    '$actualAzimuthSafe',
     '[ValidateRange(25.0, 55.0)]',
     "-not `$mount.TrackingEnabled",
     '`$mount.Slewing',
