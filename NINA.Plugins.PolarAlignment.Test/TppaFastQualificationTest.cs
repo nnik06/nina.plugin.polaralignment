@@ -1,6 +1,7 @@
 using FluentAssertions;
 using NINA.Plugins.PolarAlignment;
 using NINA.Plugins.PolarAlignment.Instructions;
+using Newtonsoft.Json.Linq;
 
 namespace NINA.Plugins.PolarAlignment.Test {
     public class TppaFastQualificationTest {
@@ -195,6 +196,60 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 });
 
             result.IsFastTruePoleQualified.Should().BeTrue();
+        }
+
+        [Test]
+        public void ShadowReceiptBindsCampaignInputVectorAndNeverGrantsMotion() {
+            var created = new DateTime(2026, 7, 31, 20, 0, 0, DateTimeKind.Utc);
+            var receipt = TppaFastQualificationReceipt.Create(
+                "campaign-2026-07-31",
+                created,
+                new string('b', 64),
+                new string('c', 64),
+                QualifiedInput());
+
+            receipt.IsFastTruePoleQualified.Should().BeTrue();
+            receipt.GrantsMotionAuthority.Should().BeFalse();
+            receipt.QualificationInputSha256.Should().HaveLength(64);
+
+            var json = JObject.Parse(receipt.ToJson());
+            json.Value<int>("schemaVersion").Should().Be(1);
+            json.Value<string>("campaignId").Should().Be("campaign-2026-07-31");
+            json.Value<string>("sourcePolarErrorVectorDigest").Should().Be(new string('c', 64));
+            json.Value<bool>("grantsMotionAuthority").Should().BeFalse();
+            json.Value<DateTime>("createdUtc").Kind.Should().Be(DateTimeKind.Utc);
+        }
+
+        [Test]
+        public void ShadowReceiptDigestChangesWhenQualificationEvidenceChanges() {
+            var created = new DateTime(2026, 7, 31, 20, 0, 0, DateTimeKind.Utc);
+            var passing = TppaFastQualificationReceipt.Create(
+                "campaign-2026-07-31",
+                created,
+                new string('b', 64),
+                new string('c', 64),
+                QualifiedInput());
+            var failing = TppaFastQualificationReceipt.Create(
+                "campaign-2026-07-31",
+                created,
+                new string('b', 64),
+                new string('c', 64),
+                QualifiedInput() with { RefractionAdjustmentEnabled = false });
+
+            failing.IsFastTruePoleQualified.Should().BeFalse();
+            failing.QualificationInputSha256.Should().NotBe(
+                passing.QualificationInputSha256);
+        }
+
+        [Test]
+        public void ShadowReceiptRejectsAmbiguousIdentityAndTime() {
+            Action localTime = () => TppaFastQualificationReceipt.Create(
+                "campaign", DateTime.Now, new string('b', 64), new string('c', 64), QualifiedInput());
+            Action badDigest = () => TppaFastQualificationReceipt.Create(
+                "campaign", DateTime.UtcNow, "BAD", new string('c', 64), QualifiedInput());
+
+            localTime.Should().Throw<ArgumentException>().WithMessage("*UTC*");
+            badDigest.Should().Throw<ArgumentException>().WithMessage("*lowercase SHA-256*");
         }
     }
 }
