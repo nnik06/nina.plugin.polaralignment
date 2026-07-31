@@ -1,20 +1,23 @@
 # Fast Polar Alignment Field Packet
 
 Date: 2026-07-31
-Status: shadow qualification only; field claims remain `UNPROVEN`
+Status: unit-tested shadow qualification only; field claims remain `UNPROVEN`
 
 ## Frozen checkpoints
 
 - TPPA root: `C:\Dev\upas-nina-tppa-plugin`
-- TPPA HEAD: `84895f07e54271db32e24dca6b839e8d6e74c57b`
+- TPPA implementation HEAD: `03a4a2347f31888370ad2ed4577d1de03d3cdebe`
 - TPPA policy SHA256:
-  `F76FCEFCDAA2D0103B374B286965AD0FFECFD3365E665C678274FA463EEA0821`
+  `0ef7966f50b1c5f2fdc3f7109172105524ac3a9f064a994aab8b9d3ea96c3926`
+- TPPA receipt implementation SHA256:
+  `7d1f54e44c7dab2989456711d32b1832895e151584180c5840bd4f2ecffe9af1`
 - Supervisor root: `C:\Dev\upas-polar-align`
-- Supervisor HEAD: `2b7195d7b6498843f58d9e04838ba637e030c22a`
+- Reviewed iPolar policy commit:
+  `2b7195d7b6498843f58d9e04838ba637e030c22a`
 - iPolar policy SHA256:
-  `3D0D80383FB8FDD938039CD16D3240E7F83D42186FB09BB7F4AC13A3D54A06AE`
+  `3d0d80383fb8fdd938039cd16d3240e7f83d42186fb09bb7f4ac13a3d54a06ae`
 
-The TPPA suite passed 389/389 after its checkpoint. The iPolar policy passed
+The TPPA suite passed 396/396 after its checkpoint. The iPolar policy passed
 20/20 after sole-motion-owner hardening. The supervisor remainder passed
 850 tests with 2 skipped after five exact unrelated P20 source/canary tests
 were deselected. Those P20 failures belong to concurrent modified Android
@@ -59,6 +62,10 @@ Use one safe, geometrically qualified arc. Do not move tripod or UPAS.
 4. Compute repeatability with spherical polar-error-vector separation.
 5. Stop at 300 seconds.
 6. Evaluate the frozen TPPA policy.
+
+The policy evaluates a self-contained, content-hashed evidence envelope. It
+does not perform the astrometric measurement itself; the shadow adapter remains
+responsible for deriving every quantity and preserving the underlying solves.
 
 A passing repeatability result requires all of:
 

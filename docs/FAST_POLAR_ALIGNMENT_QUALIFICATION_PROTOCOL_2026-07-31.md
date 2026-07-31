@@ -1,7 +1,7 @@
 # Fast Polar Alignment Qualification Protocol
 
 Date: 2026-07-31
-Status: laboratory-tested policy; field qualification pending
+Status: unit-tested admission policy; field qualification pending
 TPPA repository checkpoint: `1111bd704a718a76c1cdc6fa70f695539dc6996f`
 UPAS supervisor checkpoint: `5e335800aa245adc919738a47b149e6ea1f0bb87`
 
@@ -194,9 +194,9 @@ Remain `UNPROVEN` until:
   `src\upas_control\ipolar_fast_path.py`
 - iPolar policy tests:
   `tests\unit\test_ipolar_fast_path.py`
-- TPPA full suite: 389 passed.
-- UPAS supervisor intended-scope suite: 852 passed, 2 skipped, with 2 unrelated
-  modified P20 commissioning fixture tests explicitly deselected. Those two
+- TPPA full suite: 396 passed.
+- UPAS supervisor intended-scope suite: 850 passed, 2 skipped, with 5 unrelated
+  modified P20 commissioning fixture tests explicitly deselected. Those five
   quarantined tests must be reconciled by their owner before claiming a wholly
   green repository.
 
