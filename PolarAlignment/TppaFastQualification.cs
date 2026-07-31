@@ -22,7 +22,10 @@ namespace NINA.Plugins.PolarAlignment {
         double MaximumFinalErrorArcMinutes = 1.0,
         double MaximumIndependentErrorArcMinutes = 0.5,
         double MaximumIndependentDeltaArcMinutes = 0.5,
-        double MaximumCombinedAbsoluteErrorArcMinutes = 1.0);
+        double MaximumCombinedAbsoluteErrorArcMinutes = 1.0,
+        double MaximumIndependentWitnessUncertainty95ArcSeconds = 30.0,
+        int MinimumIndependentWitnessCalibrationSamples = 3,
+        int MinimumIndependentWitnessClosureSamples = 2);
 
     internal sealed record TppaFastQualificationInput(
         double DurationSeconds,
@@ -61,6 +64,7 @@ namespace NINA.Plugins.PolarAlignment {
         string IndependentWitnessCoordinateFrame,
         string IndependentWitnessCalibrationDigest,
         bool IndependentWitnessCalibrationCurrent,
+        TppaWitnessUncertaintyEvidence IndependentWitnessUncertainty,
         double? IndependentTruePoleErrorArcMinutes,
         double? TppaToIndependentDeltaArcMinutes);
 
@@ -197,20 +201,37 @@ namespace NINA.Plugins.PolarAlignment {
                     || !input.IndependentWitnessCalibrationCurrent) {
                 issues.Add("independent witness calibration provenance is missing or stale");
             }
+
+            var witnessUncertainty = TppaWitnessUncertainty.Evaluate(
+                input.IndependentWitnessUncertainty,
+                activePolicy.MaximumIndependentWitnessUncertainty95ArcSeconds,
+                activePolicy.MinimumIndependentWitnessCalibrationSamples,
+                activePolicy.MinimumIndependentWitnessClosureSamples);
+            issues.AddRange(witnessUncertainty.Issues);
+            var witnessUncertaintyArcMinutes = witnessUncertainty.IsQualified
+                    && witnessUncertainty.UpperBound95ArcSeconds.HasValue
+                ? witnessUncertainty.UpperBound95ArcSeconds.Value / 60.0
+                : (double?)null;
             if (!input.IndependentTruePoleErrorArcMinutes.HasValue
+                    || !witnessUncertaintyArcMinutes.HasValue
                     || input.IndependentTruePoleErrorArcMinutes.Value
-                    > activePolicy.MaximumIndependentErrorArcMinutes) {
+                        + witnessUncertaintyArcMinutes.Value
+                        > activePolicy.MaximumIndependentErrorArcMinutes) {
                 issues.Add("independent witness does not establish the required true-pole error");
             }
             if (!input.TppaToIndependentDeltaArcMinutes.HasValue
+                    || !witnessUncertaintyArcMinutes.HasValue
                     || input.TppaToIndependentDeltaArcMinutes.Value
-                    > activePolicy.MaximumIndependentDeltaArcMinutes) {
+                        + witnessUncertaintyArcMinutes.Value
+                        > activePolicy.MaximumIndependentDeltaArcMinutes) {
                 issues.Add("TPPA and the independent witness do not agree within the policy");
             }
             if (input.IndependentTruePoleErrorArcMinutes.HasValue
                     && input.TppaToIndependentDeltaArcMinutes.HasValue
+                    && witnessUncertaintyArcMinutes.HasValue
                     && input.IndependentTruePoleErrorArcMinutes.Value
                         + input.TppaToIndependentDeltaArcMinutes.Value
+                        + witnessUncertaintyArcMinutes.Value
                         > activePolicy.MaximumCombinedAbsoluteErrorArcMinutes) {
                 issues.Add("witness error plus TPPA disagreement exceeds the absolute-error budget");
             }

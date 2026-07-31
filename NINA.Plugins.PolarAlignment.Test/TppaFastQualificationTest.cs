@@ -44,8 +44,28 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 IndependentWitnessCoordinateFrame: TppaFastQualificationConventions.IcrsObservationEpoch,
                 IndependentWitnessCalibrationDigest: new string('a', 64),
                 IndependentWitnessCalibrationCurrent: true,
-                IndependentTruePoleErrorArcMinutes: 0.35,
-                TppaToIndependentDeltaArcMinutes: 0.40);
+                IndependentWitnessUncertainty: QualifiedWitnessUncertainty(),
+                IndependentTruePoleErrorArcMinutes: 0.25,
+                TppaToIndependentDeltaArcMinutes: 0.30);
+
+        private static TppaWitnessUncertaintyEvidence QualifiedWitnessUncertainty() {
+            var evidence = new TppaWitnessUncertaintyEvidence(
+                ModelId: "qualified-independent-pole-camera-v1",
+                InputDigest: new string('e', 64),
+                EvidenceDigest: new string('0', 64),
+                CalibrationSampleCount: 6,
+                ClosureSampleCount: 3,
+                MeasurementStandardUncertaintyArcSeconds: 1,
+                CalibrationResidualArcSeconds: 2,
+                OrientationModelResidualArcSeconds: 1,
+                ClosureResidualArcSeconds: 1,
+                FrameSystematicBoundArcSeconds: 1,
+                DistortionSystematicBoundArcSeconds: 1,
+                MechanicalSystematicBoundArcSeconds: 1);
+            return evidence with {
+                EvidenceDigest = TppaWitnessUncertainty.ComputeEvidenceDigest(evidence)
+            };
+        }
 
         [Test]
         public void PassingEveryGateSupportsTheNarrowFastTruePoleClaim() {
@@ -220,7 +240,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
-        public void PublishedThresholdBoundariesAreInclusive() {
+        public void PointEstimateAtBoundaryCannotHideWitnessUncertainty() {
             var result = TppaFastQualification.Evaluate(
                 QualifiedInput() with {
                     DurationSeconds = 300,
@@ -231,7 +251,32 @@ namespace NINA.Plugins.PolarAlignment.Test {
                     TppaToIndependentDeltaArcMinutes = 0.5
                 });
 
-            result.IsFastTruePoleQualified.Should().BeTrue();
+            result.IsFastTruePoleQualified.Should().BeFalse();
+            result.Issues.Should().Contain(issue => issue.Contains("true-pole error"));
+            result.Issues.Should().Contain(issue => issue.Contains("do not agree"));
+        }
+
+        [Test]
+        public void BooleanOnlyWitnessCannotQualifyWithoutMeasuredUncertainty() {
+            var result = TppaFastQualification.Evaluate(
+                QualifiedInput() with { IndependentWitnessUncertainty = null });
+
+            result.IsFastTruePoleQualified.Should().BeFalse();
+            result.Issues.Should().Contain(
+                issue => issue.Contains("uncertainty evidence is missing"));
+        }
+
+        [Test]
+        public void FieldReplayRejectsFiveArcminuteIpolarDisagreement() {
+            var result = TppaFastQualification.Evaluate(
+                QualifiedInput() with {
+                    IndependentTruePoleErrorArcMinutes = 109.96,
+                    TppaToIndependentDeltaArcMinutes = 5.0
+                });
+
+            result.IsFastTruePoleQualified.Should().BeFalse();
+            result.Issues.Should().Contain(issue => issue.Contains("true-pole error"));
+            result.Issues.Should().Contain(issue => issue.Contains("do not agree"));
         }
 
         [Test]
@@ -252,7 +297,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
             receipt.HasValidContentDigest().Should().BeTrue();
 
             var json = JObject.Parse(receipt.ToJson());
-            json.Value<int>("schemaVersion").Should().Be(1);
+            json.Value<int>("schemaVersion").Should().Be(TppaFastQualificationReceipt.CurrentSchemaVersion);
             json.Value<string>("campaignId").Should().Be("campaign-2026-07-31");
             json.Value<string>("sourcePolarErrorVectorDigest").Should().Be(new string('c', 64));
             json.Value<bool>("grantsMotionAuthority").Should().BeFalse();

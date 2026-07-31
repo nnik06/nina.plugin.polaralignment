@@ -12,7 +12,7 @@ namespace NINA.Plugins.PolarAlignment {
         private readonly JToken qualificationInputEnvelope;
         private readonly JToken policyParametersEnvelope;
 
-        public const int CurrentSchemaVersion = 1;
+        public const int CurrentSchemaVersion = 3;
 
         private static readonly JsonSerializerSettings SerializerSettings = new() {
             Culture = CultureInfo.InvariantCulture,

@@ -1,3 +1,50 @@
+## Version 2.2.6.58
+
+- Seal the complete independent-witness uncertainty payload with a canonical
+  SHA-256 evidence digest and reject any post-derivation mutation.
+- Bump the qualification receipt schema to version 3 so persisted receipts
+  cannot silently omit the sealed uncertainty payload.
+- State explicitly that the content digest is tamper evidence, not producer
+  authentication or proof that field calibration bounds are physically valid.
+## Version 2.2.6.57
+
+- Require quantitative independent-witness uncertainty evidence instead of
+  accepting qualification booleans and calibration digests alone.
+- Add a conservative 95% witness budget: two-sigma measurement uncertainty
+  plus linearly summed calibration, orientation, closure, frame, distortion,
+  and mechanical bounds. Include that budget in the independent-error,
+  agreement, and combined absolute-error gates.
+- Bind the runtime uncertainty model to the same content-addressed witness
+  input path and fail closed on missing, zero, non-finite, undersampled, or
+  over-budget evidence.
+## Version 2.2.6.56
+
+- Make runtime qualification derivation total and fail closed for malformed or
+  non-unit vectors, while defensively snapshotting asynchronous evidence before
+  hashing or evaluation.
+- Distinguish ICRS observation coordinates from topocentric north-west-up
+  mount-axis vectors and reject out-of-range RA or mixed/unknown pier-side solve
+  evidence.
+- Let offline receipt verification bind the recorded source polar-error vector
+  to an independently supplied expected digest, and state explicitly that the
+  unsigned receipt proves content integrity rather than signer authenticity.
+
+## Version 2.2.6.55
+
+- Add a read-only runtime adapter that derives the fast true-pole qualification
+  input from UTC solve evidence, fitted mount-axis vectors, returned-A closure,
+  qualified site/weather provenance, and an independent calibrated witness.
+- Compute repeatability, final error, and witness agreement as exact spherical
+  vector separations while rejecting reused solves, stale inputs, physical
+  adjustment commands, unknown pier side, and incomplete runtime identities.
+
+## Version 2.2.6.54
+
+- Add an independent parser and verifier for persisted fast true-pole
+  qualification receipts.
+- Recompute the frozen policy verdict plus the input, policy, and complete
+  receipt hashes while permanently rejecting any receipt that grants motion.
+
 ## Version 2.2.6.53
 
 - Add a guarded no-slew main-camera plate-solve series that records fixed-field
