@@ -7,6 +7,12 @@ namespace NINA.Plugins.PolarAlignment {
     internal static class TppaFastQualificationConventions {
         public const string SphericalVectorSeparationArcMinutes =
             "spherical-vector-separation-arcminutes";
+        public const string SphericalPolarErrorMagnitudeArcMinutes =
+            "spherical-polar-error-magnitude-arcminutes";
+        public const string QualifiedLocalWeatherStation =
+            "qualified-local-weather-station";
+        public const string IcrsObservationEpoch =
+            "icrs-observation-epoch";
     }
 
     internal sealed record TppaFastQualificationPolicy(
@@ -22,9 +28,15 @@ namespace NINA.Plugins.PolarAlignment {
         double DurationSeconds,
         int FreshDeterminationCount,
         bool FreshSolvesUncached,
+        string HardwareConfigurationId,
+        string ClockDomainId,
+        string TppaInstrumentId,
+        string TppaInputPathDigest,
+        string SolverIdentity,
         double MaximumPairwiseDeltaArcMinutes,
         double FinalReportedErrorArcMinutes,
         string DeltaMetric,
+        string ErrorMetric,
         bool NoPhysicalAdjustmentBetweenDeterminations,
         bool GeometryQualified,
         bool MinimumArcSpanQualified,
@@ -44,6 +56,7 @@ namespace NINA.Plugins.PolarAlignment {
         bool IndependentWitnessSameMechanicalState,
         bool IndependentWitnessDisjointInputPathQualified,
         string IndependentWitnessInstrumentId,
+        string IndependentWitnessInputPathDigest,
         string IndependentWitnessPoleTarget,
         string IndependentWitnessCoordinateFrame,
         string IndependentWitnessCalibrationDigest,
@@ -76,10 +89,20 @@ namespace NINA.Plugins.PolarAlignment {
                 input.TppaToIndependentDeltaArcMinutes,
                 nameof(input.TppaToIndependentDeltaArcMinutes));
 
+            if (string.IsNullOrWhiteSpace(input.HardwareConfigurationId)
+                    || string.IsNullOrWhiteSpace(input.ClockDomainId)
+                    || string.IsNullOrWhiteSpace(input.TppaInstrumentId)
+                    || string.IsNullOrWhiteSpace(input.SolverIdentity)) {
+                issues.Add(
+                    "TPPA hardware epoch, clock domain, instrument, or solver identity is missing");
+            }
+            if (!IsSha256(input.TppaInputPathDigest)) {
+                issues.Add("TPPA input-path provenance digest is missing or invalid");
+            }
             if (input.DurationSeconds > activePolicy.MaximumDurationSeconds) {
                 issues.Add(
-                    $"run duration {input.DurationSeconds:F1}s exceeds the " +
-                    $"{activePolicy.MaximumDurationSeconds:F1}s fast-path ceiling");
+                    FormattableString.Invariant(
+                        $"run duration {input.DurationSeconds:F1}s exceeds the {activePolicy.MaximumDurationSeconds:F1}s fast-path ceiling"));
             }
             if (input.FreshDeterminationCount < activePolicy.MinimumFreshDeterminations) {
                 issues.Add(
@@ -92,20 +115,24 @@ namespace NINA.Plugins.PolarAlignment {
                     != TppaFastQualificationConventions.SphericalVectorSeparationArcMinutes) {
                 issues.Add("repeatability and witness deltas do not use spherical-vector separation");
             }
+            if (input.ErrorMetric
+                    != TppaFastQualificationConventions.SphericalPolarErrorMagnitudeArcMinutes) {
+                issues.Add("reported and witness errors do not use spherical polar-error magnitude");
+            }
             if (!input.NoPhysicalAdjustmentBetweenDeterminations) {
                 issues.Add("physical state changed between fresh determinations");
             }
             if (input.MaximumPairwiseDeltaArcMinutes
                     > activePolicy.MaximumRepeatabilityDeltaArcMinutes) {
                 issues.Add(
-                    $"repeatability delta {input.MaximumPairwiseDeltaArcMinutes:F3}' exceeds " +
-                    $"{activePolicy.MaximumRepeatabilityDeltaArcMinutes:F3}'");
+                    FormattableString.Invariant(
+                        $"repeatability delta {input.MaximumPairwiseDeltaArcMinutes:F3}' exceeds {activePolicy.MaximumRepeatabilityDeltaArcMinutes:F3}'"));
             }
             if (input.FinalReportedErrorArcMinutes
                     > activePolicy.MaximumFinalErrorArcMinutes) {
                 issues.Add(
-                    $"reported final error {input.FinalReportedErrorArcMinutes:F3}' exceeds " +
-                    $"{activePolicy.MaximumFinalErrorArcMinutes:F3}'");
+                    FormattableString.Invariant(
+                        $"reported final error {input.FinalReportedErrorArcMinutes:F3}' exceeds {activePolicy.MaximumFinalErrorArcMinutes:F3}'"));
             }
             if (!input.GeometryQualified) {
                 issues.Add("three-point geometry is not qualified");
@@ -120,8 +147,8 @@ namespace NINA.Plugins.PolarAlignment {
                     || input.PoleTarget != RefractionAlignmentTarget.TruePoleTarget) {
                 issues.Add("run did not target the true celestial pole");
             }
-            if (string.IsNullOrWhiteSpace(input.AtmosphereSource)
-                    || input.AtmosphereSource == "unknown"
+            if (input.AtmosphereSource
+                    != TppaFastQualificationConventions.QualifiedLocalWeatherStation
                     || !input.AtmosphereQualified
                     || !input.AtmosphereFresh
                     || !input.StationPressureQualified
@@ -133,7 +160,8 @@ namespace NINA.Plugins.PolarAlignment {
             if (!input.SiteTimeProvenanceQualified) {
                 issues.Add("site coordinates, elevation, epoch, or clock provenance is unqualified");
             }
-            if (string.IsNullOrWhiteSpace(input.CoordinateFrame)
+            if (input.CoordinateFrame
+                    != TppaFastQualificationConventions.IcrsObservationEpoch
                     || !input.CoordinateFrameQualified) {
                 issues.Add("TPPA coordinate frame or epoch reduction is unqualified");
             }
@@ -146,15 +174,23 @@ namespace NINA.Plugins.PolarAlignment {
             if (!input.IndependentWitnessDisjointInputPathQualified) {
                 issues.Add("independent witness does not provide a qualified disjoint input path");
             }
-            if (string.IsNullOrWhiteSpace(input.IndependentWitnessInstrumentId)) {
-                issues.Add("independent witness instrument identity is missing");
+            if (string.IsNullOrWhiteSpace(input.IndependentWitnessInstrumentId)
+                    || input.IndependentWitnessInstrumentId == input.TppaInstrumentId) {
+                issues.Add("independent witness instrument identity is missing or not independent");
+            }
+            if (!IsSha256(input.IndependentWitnessInputPathDigest)
+                    || input.IndependentWitnessInputPathDigest
+                        == input.TppaInputPathDigest) {
+                issues.Add(
+                    "independent witness input path is missing or aliases the TPPA input path");
             }
             if (input.IndependentWitnessPoleTarget
                     != RefractionAlignmentTarget.TruePoleTarget) {
                 issues.Add("independent witness does not use the true-pole convention");
             }
             if (string.IsNullOrWhiteSpace(input.IndependentWitnessCoordinateFrame)
-                    || input.IndependentWitnessCoordinateFrame != input.CoordinateFrame) {
+                    || input.IndependentWitnessCoordinateFrame != input.CoordinateFrame
+                    || input.CoordinateFrame != TppaFastQualificationConventions.IcrsObservationEpoch) {
                 issues.Add("independent witness coordinate frame does not match TPPA");
             }
             if (!IsSha256(input.IndependentWitnessCalibrationDigest)

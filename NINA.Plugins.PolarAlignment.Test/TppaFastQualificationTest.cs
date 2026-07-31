@@ -2,6 +2,7 @@ using FluentAssertions;
 using NINA.Plugins.PolarAlignment;
 using NINA.Plugins.PolarAlignment.Instructions;
 using Newtonsoft.Json.Linq;
+using System.Globalization;
 
 namespace NINA.Plugins.PolarAlignment.Test {
     public class TppaFastQualificationTest {
@@ -10,30 +11,37 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 DurationSeconds: 238,
                 FreshDeterminationCount: 3,
                 FreshSolvesUncached: true,
+                HardwareConfigurationId: "main-camera-mount-epoch-001",
+                ClockDomainId: "mele-monotonic-v1",
+                TppaInstrumentId: "main-camera-solver-001",
+                TppaInputPathDigest: new string('d', 64),
+                SolverIdentity: "astap-2026.1",
                 MaximumPairwiseDeltaArcMinutes: 0.22,
                 FinalReportedErrorArcMinutes: 0.65,
                 DeltaMetric: TppaFastQualificationConventions.SphericalVectorSeparationArcMinutes,
+                ErrorMetric: TppaFastQualificationConventions.SphericalPolarErrorMagnitudeArcMinutes,
                 NoPhysicalAdjustmentBetweenDeterminations: true,
                 GeometryQualified: true,
                 MinimumArcSpanQualified: true,
                 ClosureQualified: true,
                 RefractionAdjustmentEnabled: true,
                 PoleTarget: RefractionAlignmentTarget.TruePoleTarget,
-                AtmosphereSource: "weather-device",
+                AtmosphereSource: TppaFastQualificationConventions.QualifiedLocalWeatherStation,
                 AtmosphereQualified: true,
                 AtmosphereFresh: true,
                 StationPressureQualified: true,
                 AtmosphereTemperatureQualified: true,
                 AtmosphereHumidityQualified: true,
                 SiteTimeProvenanceQualified: true,
-                CoordinateFrame: "ICRS-current-epoch",
+                CoordinateFrame: TppaFastQualificationConventions.IcrsObservationEpoch,
                 CoordinateFrameQualified: true,
                 IndependentWitnessQualified: true,
                 IndependentWitnessSameMechanicalState: true,
                 IndependentWitnessDisjointInputPathQualified: true,
                 IndependentWitnessInstrumentId: "ipolar-serial-001",
+                IndependentWitnessInputPathDigest: new string('e', 64),
                 IndependentWitnessPoleTarget: RefractionAlignmentTarget.TruePoleTarget,
-                IndependentWitnessCoordinateFrame: "ICRS-current-epoch",
+                IndependentWitnessCoordinateFrame: TppaFastQualificationConventions.IcrsObservationEpoch,
                 IndependentWitnessCalibrationDigest: new string('a', 64),
                 IndependentWitnessCalibrationCurrent: true,
                 IndependentTruePoleErrorArcMinutes: 0.35,
@@ -147,6 +155,34 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public void AtmosphereAndCoordinateFrameUseQualifiedAllowlists() {
+            var atmosphere = TppaFastQualification.Evaluate(
+                QualifiedInput() with {
+                    AtmosphereSource = "standard-atmosphere-fallback"
+                });
+            var frame = TppaFastQualification.Evaluate(
+                QualifiedInput() with {
+                    CoordinateFrame = "J2000",
+                    IndependentWitnessCoordinateFrame = "J2000"
+                });
+
+            atmosphere.Issues.Should().Contain(issue => issue.Contains("atmosphere provenance"));
+            frame.Issues.Should().Contain(issue => issue.Contains("coordinate frame"));
+        }
+
+        [Test]
+        public void InstrumentAndInputPathMustBeActuallyDisjoint() {
+            var result = TppaFastQualification.Evaluate(
+                QualifiedInput() with {
+                    IndependentWitnessInstrumentId = "main-camera-solver-001",
+                    IndependentWitnessInputPathDigest = new string('d', 64)
+                });
+
+            result.Issues.Should().Contain(issue => issue.Contains("not independent"));
+            result.Issues.Should().Contain(issue => issue.Contains("aliases"));
+        }
+
+        [Test]
         public void WitnessMustBeDisjointIdentifiedCurrentAndFrameMatched() {
             var input = QualifiedInput() with {
                 IndependentWitnessSameMechanicalState = false,
@@ -211,6 +247,9 @@ namespace NINA.Plugins.PolarAlignment.Test {
             receipt.IsFastTruePoleQualified.Should().BeTrue();
             receipt.GrantsMotionAuthority.Should().BeFalse();
             receipt.QualificationInputSha256.Should().HaveLength(64);
+            receipt.PolicyParametersSha256.Should().HaveLength(64);
+            receipt.ReceiptContentSha256.Should().HaveLength(64);
+            receipt.HasValidContentDigest().Should().BeTrue();
 
             var json = JObject.Parse(receipt.ToJson());
             json.Value<int>("schemaVersion").Should().Be(1);
@@ -218,6 +257,14 @@ namespace NINA.Plugins.PolarAlignment.Test {
             json.Value<string>("sourcePolarErrorVectorDigest").Should().Be(new string('c', 64));
             json.Value<bool>("grantsMotionAuthority").Should().BeFalse();
             json.Value<DateTime>("createdUtc").Kind.Should().Be(DateTimeKind.Utc);
+            json.Value<string>("policyParametersSha256").Should().Be(receipt.PolicyParametersSha256);
+            json.Value<string>("receiptContentSha256").Should().Be(receipt.ReceiptContentSha256);
+            json["qualificationInputEnvelope"]!["input"]![
+                nameof(TppaFastQualificationInput.HardwareConfigurationId)]!
+                .Value<string>().Should().Be("main-camera-mount-epoch-001");
+            json["policyParametersEnvelope"]!["policy"]![
+                nameof(TppaFastQualificationPolicy.MaximumDurationSeconds)]!
+                .Value<double>().Should().Be(300);
         }
 
         [Test]
@@ -242,6 +289,28 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public void ReceiptContentDigestBindsCampaignVectorPolicyAndVerdict() {
+            var created = new DateTime(2026, 7, 31, 20, 0, 0, DateTimeKind.Utc);
+            var baseline = TppaFastQualificationReceipt.Create(
+                "campaign-a", created, new string('b', 64), new string('c', 64), QualifiedInput());
+            var differentCampaign = TppaFastQualificationReceipt.Create(
+                "campaign-b", created, new string('b', 64), new string('c', 64), QualifiedInput());
+            var differentVector = TppaFastQualificationReceipt.Create(
+                "campaign-a", created, new string('b', 64), new string('f', 64), QualifiedInput());
+            var repeat = TppaFastQualificationReceipt.Create(
+                "campaign-a", created, new string('b', 64), new string('c', 64), QualifiedInput());
+
+            baseline.QualificationInputSha256.Should().Be(
+                differentCampaign.QualificationInputSha256);
+            baseline.ReceiptContentSha256.Should().NotBe(
+                differentCampaign.ReceiptContentSha256);
+            baseline.ReceiptContentSha256.Should().NotBe(
+                differentVector.ReceiptContentSha256);
+            baseline.ReceiptContentSha256.Should().Be(repeat.ReceiptContentSha256);
+            baseline.ToJson().Should().Be(repeat.ToJson());
+        }
+
+        [Test]
         public void ShadowReceiptRejectsAmbiguousIdentityAndTime() {
             Action localTime = () => TppaFastQualificationReceipt.Create(
                 "campaign", DateTime.Now, new string('b', 64), new string('c', 64), QualifiedInput());
@@ -250,6 +319,29 @@ namespace NINA.Plugins.PolarAlignment.Test {
 
             localTime.Should().Throw<ArgumentException>().WithMessage("*UTC*");
             badDigest.Should().Throw<ArgumentException>().WithMessage("*lowercase SHA-256*");
+        }
+
+        [Test]
+        public void ReceiptIssuesAreInvariantAcrossHostCulture() {
+            var originalCulture = CultureInfo.CurrentCulture;
+            try {
+                CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
+                var receipt = TppaFastQualificationReceipt.Create(
+                    "campaign",
+                    new DateTime(2026, 7, 31, 20, 0, 0, DateTimeKind.Utc),
+                    new string('b', 64),
+                    new string('c', 64),
+                    QualifiedInput() with {
+                        MaximumPairwiseDeltaArcMinutes = 0.75,
+                        FinalReportedErrorArcMinutes = 1.25
+                    });
+
+                receipt.Issues.Should().Contain(issue => issue.Contains("0.750"));
+                receipt.Issues.Should().Contain(issue => issue.Contains("1.250"));
+                receipt.ToJson().Should().NotContain("0,750");
+            } finally {
+                CultureInfo.CurrentCulture = originalCulture;
+            }
         }
     }
 }
