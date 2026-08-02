@@ -330,28 +330,18 @@ namespace NINA.Plugins.PolarAlignment {
                 $"Cancelling active {SystemName} GRBL jog after movement failure: {movementFailure.Message}");
             try {
                 port.Write(new[] { GrblJogCancelRealtimeCommand }, 0, 1);
-                var stoppedConfirmations = 0;
-                (float X, float Y, float Z)? previousIdlePosition = null;
+                var confirmationTracker = new JogCancellationConfirmationTracker(
+                    RequiredStoppedStatusConfirmations);
                 for (var attempt = 1; attempt <= MaximumJogCancelStatusAttempts; attempt++) {
                     Thread.Sleep(JogCancelStatusConfirmationInterval);
                     UpdateStatus();
                     var currentPosition = (X: XPosition, Y: YPosition, Z: ZPosition);
-                    if (IsJogCancellationTerminalStatus(Status)) {
-                        stoppedConfirmations = previousIdlePosition.HasValue
-                            && AreControllerPositionsStable(previousIdlePosition.Value, currentPosition)
-                                ? stoppedConfirmations + 1
-                                : 1;
-                        previousIdlePosition = currentPosition;
-                        if (stoppedConfirmations >= RequiredStoppedStatusConfirmations) {
-                            Logger.Warning(
-                                $"Confirmed {SystemName} GRBL jog stopped after failure; " +
-                                $"status={Status}; confirmations={stoppedConfirmations}; " +
-                                $"position=({currentPosition.X:F3},{currentPosition.Y:F3},{currentPosition.Z:F3}).");
-                            return;
-                        }
-                    } else {
-                        stoppedConfirmations = 0;
-                        previousIdlePosition = null;
+                    if (confirmationTracker.Observe(Status, currentPosition)) {
+                        Logger.Warning(
+                            $"Confirmed {SystemName} GRBL jog stopped after failure; " +
+                            $"status={Status}; confirmations={confirmationTracker.Confirmations}; " +
+                            $"position=({currentPosition.X:F3},{currentPosition.Y:F3},{currentPosition.Z:F3}).");
+                        return;
                     }
                 }
                 throw new TimeoutException(

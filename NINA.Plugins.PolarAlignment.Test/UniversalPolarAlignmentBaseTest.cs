@@ -126,5 +126,45 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 (1f, 2f, 3f),
                 (1.011f, 2f, 3f)).Should().BeFalse();
         }
+
+        [Test]
+        public void JogCancellationConfirmationRequiresTwoConsecutiveStableIdleSamples() {
+            var tracker = new JogCancellationConfirmationTracker(2);
+
+            tracker.Observe("Hold:1", (1f, 2f, 3f)).Should().BeFalse();
+            tracker.Confirmations.Should().Be(0);
+            tracker.Observe("Idle", (1f, 2f, 3f)).Should().BeFalse();
+            tracker.Confirmations.Should().Be(1);
+            tracker.Observe("Idle", (1.005f, 2f, 3f)).Should().BeTrue();
+            tracker.Confirmations.Should().Be(2);
+        }
+
+        [Test]
+        public void JogCancellationConfirmationRestartsWhenIdlePositionMoves() {
+            var tracker = new JogCancellationConfirmationTracker(2);
+
+            tracker.Observe("Idle", (1f, 2f, 3f)).Should().BeFalse();
+            tracker.Observe("Idle", (1.02f, 2f, 3f)).Should().BeFalse();
+            tracker.Confirmations.Should().Be(1);
+            tracker.Observe("Idle", (1.02f, 2f, 3f)).Should().BeTrue();
+        }
+
+        [Test]
+        public void JogCancellationConfirmationRestartsAfterNonIdleState() {
+            var tracker = new JogCancellationConfirmationTracker(2);
+
+            tracker.Observe("Idle", (1f, 2f, 3f)).Should().BeFalse();
+            tracker.Observe("Door:2", (1f, 2f, 3f)).Should().BeFalse();
+            tracker.Confirmations.Should().Be(0);
+            tracker.Observe("Idle", (1f, 2f, 3f)).Should().BeFalse();
+            tracker.Observe("Idle", (1f, 2f, 3f)).Should().BeTrue();
+        }
+
+        [Test]
+        public void JogCancellationConfirmationRejectsInvalidThreshold() {
+            var action = () => new JogCancellationConfirmationTracker(0);
+
+            action.Should().Throw<System.ArgumentOutOfRangeException>();
+        }
     }
 }

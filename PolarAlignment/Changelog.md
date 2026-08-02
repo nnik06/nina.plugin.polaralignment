@@ -1,3 +1,9 @@
+## Version 2.2.6.79
+
+- Record the actually loaded TPPA plugin and qualification-core paths, assembly and informational versions, SHA-256 hashes, and MVIDs in every qualification run artifact.
+- Bind the run pipeline digest to the loaded plugin DLL hash and reject missing, malformed, or mismatched runtime identities before evidence is persisted.
+- Exercise GRBL jog-cancellation confirmation as a sequence: non-idle states and changing positions reset the two-stable-Idle requirement.
+
 ## Version 2.2.6.78
 
 - Harden GRBL jog cancellation after a movement failure: require two 300 ms-spaced `Idle` reports with stable X/Y/Z positions before cancellation is considered verified.

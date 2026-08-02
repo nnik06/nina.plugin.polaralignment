@@ -27,7 +27,9 @@ namespace NINA.Plugins.PolarAlignment {
         TppaRuntimeIdentityEvidence Identity,
         TppaRuntimeSiteEvidence Site,
         TppaRuntimeAtmosphereEvidence Atmosphere,
-        bool RefractionAdjustmentEnabled);
+        bool RefractionAdjustmentEnabled,
+        TppaLoadedAssemblyEvidence PluginAssembly,
+        TppaLoadedAssemblyEvidence QualificationCoreAssembly);
 
     internal sealed record TppaQualificationRunEvidenceProductionResult(
         bool Produced,
@@ -133,7 +135,9 @@ namespace NINA.Plugins.PolarAlignment {
                     input.SiteTimeProvenanceQualified,
                     input.CoordinateFrameQualified,
                     evidenceDeterminations,
-                    ToQualificationVector(targetPole));
+                    ToQualificationVector(targetPole),
+                    metadata.PluginAssembly,
+                    metadata.QualificationCoreAssembly);
                 var json = SerializeEvidence(evidence);
                 Directory.CreateDirectory(outputDirectory);
                 var outputPath = Path.Combine(
@@ -233,6 +237,16 @@ namespace NINA.Plugins.PolarAlignment {
                     || !IsSha256(metadata.Identity?.MechanicalStateId)) {
                 issues.Add("pipeline or mechanical-state digest is invalid");
             }
+            if (!IsLoadedAssemblyEvidenceComplete(
+                    metadata.PluginAssembly,
+                    TppaAbsoluteEvidenceBinder.PluginAssemblyName)
+                    || !IsLoadedAssemblyEvidenceComplete(
+                        metadata.QualificationCoreAssembly,
+                        TppaAbsoluteEvidenceBinder.QualificationCoreAssemblyName)) {
+                issues.Add("loaded plugin or qualification-core assembly identity is incomplete");
+            } else if (!string.Equals(metadata.PipelineDigest, metadata.PluginAssembly.Sha256, StringComparison.OrdinalIgnoreCase)) {
+                issues.Add("pipeline digest does not match the loaded plugin assembly SHA-256");
+            }
             if (metadata.Identity == null || metadata.Site == null
                     || metadata.Atmosphere == null) {
                 issues.Add("runtime identity, site, or atmosphere evidence is missing");
@@ -259,6 +273,29 @@ namespace NINA.Plugins.PolarAlignment {
                 }
             }
             return issues;
+        }
+
+        private static bool IsLoadedAssemblyEvidenceComplete(
+                TppaLoadedAssemblyEvidence evidence,
+                string expectedName) {
+            if (evidence == null
+                    || !string.Equals(
+                        evidence.AssemblyName,
+                        expectedName,
+                        StringComparison.Ordinal)
+                    || !Version.TryParse(evidence.AssemblyVersion, out _)
+                    || string.IsNullOrWhiteSpace(evidence.InformationalVersion)
+                    || string.IsNullOrWhiteSpace(evidence.Location)
+                    || !Path.IsPathRooted(evidence.Location)
+                    || !IsSha256(evidence.Sha256)
+                    || !Guid.TryParseExact(
+                        evidence.ModuleVersionId,
+                        "D",
+                        out var mvid)
+                    || mvid == Guid.Empty) {
+                return false;
+            }
+            return true;
         }
 
         private static bool IsSha256(string value) =>

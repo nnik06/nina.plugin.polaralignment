@@ -2103,7 +2103,10 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 };
 
                 var assembly = typeof(PolarAlignment).Assembly;
-                var pipelineDigest = TppaQualificationRunEvidenceProducer.Sha256File(assembly.Location);
+                var pluginAssembly = TppaLoadedAssemblyEvidenceFactory.Capture(assembly);
+                var qualificationCoreAssembly = TppaLoadedAssemblyEvidenceFactory.Capture(
+                    typeof(TppaAbsoluteEvidenceBinder).Assembly);
+                var pipelineDigest = pluginAssembly.Sha256;
                 var instrumentManifest = FormattableString.Invariant(
                     $"pixelSize={profileService.ActiveProfile.CameraSettings.PixelSize:R}|focalLength={profileService.ActiveProfile.TelescopeSettings.FocalLength:R}|binningX={Binning?.X ?? 1}|binningY={Binning?.Y ?? 1}|gain={Gain}|offset={Offset}|filter={Filter?.Name ?? "none"}|exposure={ExposureTime:R}");
                 var instrumentId = TppaQualificationRunEvidenceProducer.Sha256Utf8(instrumentManifest);
@@ -2153,7 +2156,9 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         Elevation,
                         siteId),
                     atmosphere,
-                    Properties.Settings.Default.RefractionAdjustment);
+                    Properties.Settings.Default.RefractionAdjustment,
+                    pluginAssembly,
+                    qualificationCoreAssembly);
                 var outputDirectory = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                     "NINA",

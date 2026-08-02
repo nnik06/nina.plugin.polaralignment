@@ -36,6 +36,28 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public void RejectsMissingLoadedPluginAssemblyIdentity() {
+            var pair = QualifiedPair();
+
+            AssertInvalid(
+                pair with { Run = pair.Run with { PluginAssembly = null } },
+                "loaded plugin assembly evidence is missing");
+        }
+
+        [Test]
+        public void RejectsPipelineDigestThatDoesNotMatchLoadedPluginHash() {
+            var pair = QualifiedPair();
+
+            AssertInvalid(
+                pair with {
+                    Run = pair.Run with {
+                        PipelineDigest = Sha("different-loaded-plugin")
+                    }
+                },
+                "does not match the loaded plugin assembly");
+        }
+
+        [Test]
         public void ValidButOverBudgetWitnessProducesNotQualifiedReceipt() {
             var pair = QualifiedPair();
             var uncertainty = QualifiedUncertainty(25.0);
@@ -470,6 +492,20 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 Determination("determination-2", start.AddSeconds(20), 0.24, mechanicalState, 1),
                 Determination("determination-3", start.AddSeconds(40), 0.22, mechanicalState, 2)
             };
+            var pluginAssembly = new TppaLoadedAssemblyEvidence(
+                TppaAbsoluteEvidenceBinder.PluginAssemblyName,
+                "2.2.0.0",
+                "2.2.6.79",
+                @"C:\NINA\NINA.Plugins.PolarAlignment.dll",
+                Sha("tppa-pipeline"),
+                "11111111-2222-4333-8444-555555555555");
+            var qualificationCoreAssembly = new TppaLoadedAssemblyEvidence(
+                TppaAbsoluteEvidenceBinder.QualificationCoreAssemblyName,
+                "2.2.0.0",
+                "2.2.6.79",
+                @"C:\NINA\NINA.Plugins.PolarAlignment.QualificationCore.dll",
+                Sha("qualification-core"),
+                "22222222-3333-4444-8555-666666666666");
             var run = new TppaQualificationRunEvidence(
                 SchemaVersion: TppaAbsoluteEvidenceBinder.CurrentEvidenceSchemaVersion,
                 EvidenceDigest: string.Empty,
@@ -477,7 +513,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 SessionId: "session-1",
                 ProducerId: "tppa-runtime-1",
                 ProducerKind: TppaAbsoluteEvidenceBinder.TppaProducerKind,
-                PipelineDigest: Sha("tppa-pipeline"),
+                PipelineDigest: pluginAssembly.Sha256,
                 HardwareConfigurationId: "hae29c-ota-camera-epoch-1",
                 MechanicalStateDigest: mechanicalState,
                 ClockDomainId: "utc-ntp-disciplined-1",
@@ -507,7 +543,9 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 SiteTimeProvenanceQualified: true,
                 CoordinateFrameQualified: true,
                 Determinations: determinations,
-                TargetPoleVector: AxisVector(0));
+                TargetPoleVector: AxisVector(0),
+                PluginAssembly: pluginAssembly,
+                QualificationCoreAssembly: qualificationCoreAssembly);
 
             var uncertainty = QualifiedUncertainty(1.0);
             var witnessObservationUtc =

@@ -17,10 +17,10 @@ It does not itself prove the project goals. As of 2026-08-01:
 
 ## Architecture
 
-The policy and binder are BCL/Newtonsoft-only sources under
-`QualificationCore`. The same physical source files are compiled into the
-NINA plugin and the headless `TppaQualificationCli`; policy logic is not
-reimplemented in PowerShell.
+The policy and binder are a BCL/Newtonsoft-only `net8.0` project under
+`QualificationCore`. The NINA plugin, test project, and headless
+`TppaQualificationCli` consume that assembly through project references;
+policy logic is not source-globbed or reimplemented in PowerShell.
 
 The producer boundary is deliberate:
 
@@ -33,13 +33,20 @@ The producer boundary is deliberate:
 
 ## Strict JSON rules
 
-Both files use schema version 3, UTF-8 JSON, camel-case property names, no
+Both files use schema version 6, UTF-8 JSON, camel-case property names, no
 duplicate names, and no unknown fields. Each contains `evidenceDigest`, the
 lowercase SHA-256 of canonical JSON after removing that property and sorting
 object properties recursively. The binder also records the SHA-256 of each
 original byte stream in the receipt.
 
-Schema versions 1 and 2 are intentionally ineligible for an absolute claim.
+Schema versions 1 through 5 are intentionally ineligible for a new absolute
+claim. Version 6 binds the run to the assemblies actually loaded by NINA:
+absolute path, four-part assembly version, informational version, lowercase
+SHA-256, and MVID for both the plugin and `QualificationCore`. The declared
+pipeline digest must equal the loaded plugin SHA-256. Missing, malformed, or
+mismatched runtime identity invalidates the evidence before persistence or
+binding.
+
 Version 1 persisted producer conclusions without enough raw data for the
 headless binder to reproduce the critical fit and environmental gates.
 Version 2 added those raw vectors but did not bind the complete mount-command,
@@ -54,6 +61,9 @@ TPPA evidence records:
   longitude and elevation, coordinate frames, pole target, raw atmospheric
   observation time/pressure/temperature/humidity, refraction state, and the
   producer's atmosphere/site/frame qualification assertions;
+- the loaded plugin and qualification-core absolute paths, assembly and
+  informational versions, lowercase SHA-256 hashes, and MVIDs, with the run
+  pipeline digest equal to the loaded plugin SHA-256;
 - at least three non-overlapping UTC determinations with unique IDs;
 - one unchanged correction sequence and mechanical-state digest;
 - exactly three raw solves per determination: strict UTC, content digest,

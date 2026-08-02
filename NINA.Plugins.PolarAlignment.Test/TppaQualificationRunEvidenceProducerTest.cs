@@ -47,6 +47,12 @@ namespace NINA.Plugins.PolarAlignment.Test {
             token.Value<bool>("atmosphereQualified").Should().BeFalse();
             token.Value<bool>("siteTimeProvenanceQualified").Should().BeFalse();
             token["determinations"]!.Count().Should().Be(3);
+            token.SelectToken("pluginAssembly.sha256")!.Value<string>()
+                .Should().Be(fixture.Metadata.PluginAssembly.Sha256);
+            token.SelectToken("pluginAssembly.moduleVersionId")!.Value<string>()
+                .Should().Be(fixture.Metadata.PluginAssembly.ModuleVersionId);
+            token.SelectToken("qualificationCoreAssembly.sha256")!.Value<string>()
+                .Should().Be(fixture.Metadata.QualificationCoreAssembly.Sha256);
             token["determinations"]!.All(value =>
                 value["sourceVectorDigests"]!.Count() == 3).Should().BeTrue();
 
@@ -107,6 +113,47 @@ namespace NINA.Plugins.PolarAlignment.Test {
             File.ReadAllBytes(first.OutputPath).Should().Equal(original);
         }
 
+        [Test]
+        public void CapturesActuallyLoadedPluginAndCoreAssemblyIdentity() {
+            var plugin = TppaLoadedAssemblyEvidenceFactory.Capture(
+                typeof(TppaQualificationRunEvidenceProducer).Assembly);
+            var core = TppaLoadedAssemblyEvidenceFactory.Capture(
+                typeof(TppaAbsoluteEvidenceBinder).Assembly);
+
+            plugin.AssemblyName.Should().Be(
+                TppaAbsoluteEvidenceBinder.PluginAssemblyName);
+            core.AssemblyName.Should().Be(
+                TppaAbsoluteEvidenceBinder.QualificationCoreAssemblyName);
+            Path.IsPathRooted(plugin.Location).Should().BeTrue();
+            Path.IsPathRooted(core.Location).Should().BeTrue();
+            File.Exists(plugin.Location).Should().BeTrue();
+            File.Exists(core.Location).Should().BeTrue();
+            plugin.Sha256.Should().Be(
+                TppaQualificationRunEvidenceProducer.Sha256File(plugin.Location));
+            core.Sha256.Should().Be(
+                TppaQualificationRunEvidenceProducer.Sha256File(core.Location));
+            Guid.Parse(plugin.ModuleVersionId).Should().NotBe(Guid.Empty);
+            Guid.Parse(core.ModuleVersionId).Should().NotBe(Guid.Empty);
+        }
+
+        [Test]
+        public void RefusesPipelineDigestThatDoesNotMatchLoadedPlugin() {
+            var fixture = CreateFixture();
+            var metadata = fixture.Metadata with {
+                PipelineDigest = TppaQualificationRunEvidenceProducer.Sha256Utf8(
+                    "different-plugin")
+            };
+
+            var result = TppaQualificationRunEvidenceProducer.Produce(
+                metadata,
+                fixture.Determinations,
+                outputDirectory);
+
+            result.Produced.Should().BeFalse();
+            result.ProductionIssues.Should().Contain(issue =>
+                issue.Contains("loaded plugin", StringComparison.OrdinalIgnoreCase));
+        }
+
         private static ProducerFixture CreateFixture() {
             var runId = "11111111-2222-3333-4444-555555555555";
             var start = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc);
@@ -129,16 +176,22 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 1013.25,
                 15,
                 0);
+            var pluginAssembly = TppaLoadedAssemblyEvidenceFactory.Capture(
+                typeof(TppaQualificationRunEvidenceProducer).Assembly);
+            var qualificationCoreAssembly = TppaLoadedAssemblyEvidenceFactory.Capture(
+                typeof(TppaAbsoluteEvidenceBinder).Assembly);
             var metadata = new TppaQualificationRunProductionMetadata(
                 runId,
                 "session-test",
                 "tppa-runtime-test",
-                TppaQualificationRunEvidenceProducer.Sha256Utf8("pipeline"),
+                pluginAssembly.Sha256,
                 CorrectionSequenceNumber: 0,
                 identity,
                 site,
                 atmosphere,
-                RefractionAdjustmentEnabled: true);
+                RefractionAdjustmentEnabled: true,
+                pluginAssembly,
+                qualificationCoreAssembly);
             var determinations = new[] {
                 Determination(runId + "-initial", start, 0, 0.20),
                 Determination(runId + "-reciprocal", start.AddSeconds(40), 20, 0.22),

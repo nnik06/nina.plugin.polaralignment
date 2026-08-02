@@ -63,8 +63,14 @@ supersede the actuator trial below; UPAS remains disabled for that campaign.
   validate the completed live installation, and report the archive path.
 - Start NINA only after the live validator returns the expected source commit,
   plugin version, manifest hash, plugin hash, qualification-core hash, and
-  assembly count two. Independently confirm the exact loaded module path and
-  version after startup.
+  assembly count two.
+- After startup, require the first schema-v6 qualification run artifact to
+  record absolute loaded paths, four-part assembly versions, informational
+  versions, lowercase SHA-256 hashes, and MVIDs for both the plugin and
+  qualification core. Require its pipeline digest to equal the loaded plugin
+  SHA-256 and both loaded hashes to match the admitted runtime manifest. Stop
+  the campaign on any mismatch; package admission alone does not prove what
+  NINA loaded.
 
 ## Starting State
 - Put both UPAS markers near their engraved zero positions and photograph them.

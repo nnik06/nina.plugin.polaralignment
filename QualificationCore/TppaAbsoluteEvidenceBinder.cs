@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
@@ -71,6 +72,14 @@ namespace NINA.Plugins.PolarAlignment {
         double PositionAngleDegrees,
         string PierSide);
 
+    internal sealed record TppaLoadedAssemblyEvidence(
+        string AssemblyName,
+        string AssemblyVersion,
+        string InformationalVersion,
+        string Location,
+        string Sha256,
+        string ModuleVersionId);
+
     internal sealed record TppaQualificationRunEvidence(
         int SchemaVersion,
         string EvidenceDigest,
@@ -106,7 +115,9 @@ namespace NINA.Plugins.PolarAlignment {
         bool SiteTimeProvenanceQualified,
         bool CoordinateFrameQualified,
         IReadOnlyList<TppaQualificationDeterminationEvidence> Determinations,
-        TppaQualificationVector TargetPoleVector);
+        TppaQualificationVector TargetPoleVector,
+        TppaLoadedAssemblyEvidence PluginAssembly,
+        TppaLoadedAssemblyEvidence QualificationCoreAssembly);
 
     internal sealed record TppaQualificationWitnessEvidence(
         int SchemaVersion,
@@ -167,7 +178,10 @@ namespace NINA.Plugins.PolarAlignment {
     /// vector-derived quantity; it never grants motion authority.
     /// </summary>
     internal static class TppaAbsoluteEvidenceBinder {
-        public const int CurrentEvidenceSchemaVersion = 5;
+        public const int CurrentEvidenceSchemaVersion = 6;
+        public const string PluginAssemblyName = "NINA.Plugins.PolarAlignment";
+        public const string QualificationCoreAssemblyName =
+            "NINA.Plugins.PolarAlignment.QualificationCore";
         public const double MaximumWitnessDelaySeconds = 300.0;
         public const double MaximumClockUncertaintyMilliseconds = 1000.0;
         public const double MaximumAtmosphereAgeSeconds = 300.0;
@@ -393,6 +407,25 @@ namespace NINA.Plugins.PolarAlignment {
                 "TPPA mount-axis vector frame",
                 issues);
             RequireNonBlank(evidence.PoleTarget, "TPPA pole target", issues);
+            ValidateLoadedAssembly(
+                evidence.PluginAssembly,
+                PluginAssemblyName,
+                "TPPA loaded plugin assembly",
+                issues);
+            ValidateLoadedAssembly(
+                evidence.QualificationCoreAssembly,
+                QualificationCoreAssemblyName,
+                "TPPA loaded qualification-core assembly",
+                issues);
+            if (evidence.PluginAssembly != null
+                    && IsSha256(evidence.PipelineDigest)
+                    && !string.Equals(
+                        evidence.PipelineDigest,
+                        evidence.PluginAssembly.Sha256,
+                        StringComparison.OrdinalIgnoreCase)) {
+                issues.Add(
+                    "TPPA pipeline digest does not match the loaded plugin assembly SHA-256");
+            }
             RequireNonBlank(evidence.AtmosphereSource, "TPPA atmosphere source", issues);
             if (!IsUnitVector(evidence.TargetPoleVector)) {
                 issues.Add("TPPA target pole vector is missing, non-finite, or not unit length");
@@ -827,6 +860,42 @@ namespace NINA.Plugins.PolarAlignment {
             };
             if (terms.Any(value => !double.IsFinite(value) || value <= 0)) {
                 issues.Add("witness uncertainty terms must all be finite and positive");
+            }
+        }
+
+        private static void ValidateLoadedAssembly(
+                TppaLoadedAssemblyEvidence evidence,
+                string expectedAssemblyName,
+                string label,
+                ICollection<string> issues) {
+            if (evidence == null) {
+                issues.Add($"{label} evidence is missing");
+                return;
+            }
+            if (!string.Equals(
+                    evidence.AssemblyName,
+                    expectedAssemblyName,
+                    StringComparison.Ordinal)) {
+                issues.Add($"{label} name is invalid");
+            }
+            if (!Version.TryParse(evidence.AssemblyVersion, out var version)
+                    || version.Build < 0
+                    || version.Revision < 0) {
+                issues.Add($"{label} version is invalid");
+            }
+            if (string.IsNullOrWhiteSpace(evidence.InformationalVersion)) {
+                issues.Add($"{label} informational version is missing");
+            }
+            if (string.IsNullOrWhiteSpace(evidence.Location)
+                    || !Path.IsPathRooted(evidence.Location)) {
+                issues.Add($"{label} location is missing or not absolute");
+            }
+            if (!IsSha256(evidence.Sha256)) {
+                issues.Add($"{label} SHA-256 is invalid");
+            }
+            if (!Guid.TryParseExact(evidence.ModuleVersionId, "D", out var mvid)
+                    || mvid == Guid.Empty) {
+                issues.Add($"{label} MVID is invalid");
             }
         }
 
