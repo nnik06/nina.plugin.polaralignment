@@ -169,6 +169,115 @@ public class TppaActualExposureEvidenceProducerTest {
             "independent continuity validation"));
     }
 
+    [Test]
+    public void HashConsistentTransientStateChangeFailsClosed() {
+        var manifest = Manifest(
+            Utc("2026-08-02T19:59:50Z"), Utc("2026-08-02T20:18:40Z"));
+        var state = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(
+            manifest.StateReceiptPath));
+        var samples = (Newtonsoft.Json.Linq.JArray)state["Samples"]!;
+        ((Newtonsoft.Json.Linq.JObject)samples[samples.Count / 2]!["State"]!)["filter"] = "Ha";
+        File.WriteAllText(manifest.StateReceiptPath, state.ToString(),
+            new UTF8Encoding(false));
+        manifest = manifest with {
+            StateReceiptSha256 = Sha256(manifest.StateReceiptPath)
+        };
+
+        var result = TppaActualExposureEvidenceProducer.Produce(manifest);
+
+        result.Produced.Should().BeFalse();
+        result.Issues.Should().Contain(issue => issue.Contains(
+            "changed state sample"));
+    }
+
+    [Test]
+    public void HashConsistentLongStateSamplingGapFailsClosed() {
+        var manifest = Manifest(
+            Utc("2026-08-02T19:59:50Z"), Utc("2026-08-02T20:18:40Z"));
+        var state = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(
+            manifest.StateReceiptPath));
+        var samples = (Newtonsoft.Json.Linq.JArray)state["Samples"]!;
+        var middle = samples.Count / 2;
+        samples.RemoveAt(middle);
+        samples.RemoveAt(middle);
+        samples.RemoveAt(middle);
+        state["SampleCount"] = samples.Count;
+        state["MaximumObservedSampleGapSeconds"] = 20.0;
+        File.WriteAllText(manifest.StateReceiptPath, state.ToString(),
+            new UTF8Encoding(false));
+        manifest = manifest with {
+            StateReceiptSha256 = Sha256(manifest.StateReceiptPath)
+        };
+
+        var result = TppaActualExposureEvidenceProducer.Produce(manifest);
+
+        result.Produced.Should().BeFalse();
+        result.Issues.Should().Contain(issue => issue.Contains(
+            "cadence, coverage, or summary"));
+    }
+
+    [Test]
+    public void HashConsistentPermissiveStateSummaryFailsRawCrossCheck() {
+        var manifest = Manifest(
+            Utc("2026-08-02T19:59:50Z"), Utc("2026-08-02T20:18:40Z"));
+        var state = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(
+            manifest.StateReceiptPath));
+        state["MaximumAllowedSampleGapSeconds"] = 500.0;
+        state["MaximumObservedSampleGapSeconds"] = 400.0;
+        File.WriteAllText(manifest.StateReceiptPath, state.ToString(),
+            new UTF8Encoding(false));
+        manifest = manifest with {
+            StateReceiptSha256 = Sha256(manifest.StateReceiptPath)
+        };
+
+        var result = TppaActualExposureEvidenceProducer.Produce(manifest);
+
+        result.Produced.Should().BeFalse();
+        result.Issues.Should().Contain(issue => issue.Contains(
+            "cadence, coverage, or summary"));
+    }
+
+    [Test]
+    public void StatePHD2ConfigurationMismatchFailsCrossCheck() {
+        var manifest = Manifest(
+            Utc("2026-08-02T19:59:50Z"), Utc("2026-08-02T20:18:40Z"));
+        var summary = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(
+            manifest.Phd2SummaryPath));
+        summary["Phd2Profile"] = "Wrong profile";
+        File.WriteAllText(manifest.Phd2SummaryPath, summary.ToString(),
+            new UTF8Encoding(false));
+        manifest = manifest with {
+            Phd2SummarySha256 = Sha256(manifest.Phd2SummaryPath)
+        };
+
+        var result = TppaActualExposureEvidenceProducer.Produce(manifest);
+
+        result.Produced.Should().BeFalse();
+        result.Issues.Should().Contain(issue => issue.Contains(
+            "does not match its independent summary"));
+    }
+
+    [Test]
+    public void HashConsistentStateChangingNinaEndpointFailsClosed() {
+        var manifest = Manifest(
+            Utc("2026-08-02T19:59:50Z"), Utc("2026-08-02T20:18:40Z"));
+        var state = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(
+            manifest.StateReceiptPath));
+        state["StateChangingNinaEndpoints"] = new Newtonsoft.Json.Linq.JArray(
+            "equipment/mount/slew");
+        File.WriteAllText(manifest.StateReceiptPath, state.ToString(),
+            new UTF8Encoding(false));
+        manifest = manifest with {
+            StateReceiptSha256 = Sha256(manifest.StateReceiptPath)
+        };
+
+        var result = TppaActualExposureEvidenceProducer.Produce(manifest);
+
+        result.Produced.Should().BeFalse();
+        result.Issues.Should().Contain(issue => issue.Contains(
+            "identity, authority, or bracket coverage"));
+    }
+
     private TppaActualExposureEvidenceManifest Manifest(
             DateTime phd2Start, DateTime phd2End) {
         var policy = Policy();
@@ -211,6 +320,10 @@ public class TppaActualExposureEvidenceProducerTest {
             StateChangingRpcMethods = Array.Empty<string>(),
             EventsSha256 = Sha256(events),
             GuideStepsSha256 = Sha256(guideSteps),
+            Phd2Profile = "OAG-L",
+            Phd2ExposureMilliseconds = 1500,
+            Phd2AlgorithmStateDigest = new string('c', 64),
+            PHD2ConfigurationContinuityQualified = true,
             GrantsMountMotionAuthority = false,
             GrantsUpasAuthority = false,
             GrantsAbsoluteAccuracyClaim = false
@@ -233,14 +346,34 @@ public class TppaActualExposureEvidenceProducerTest {
             ["filter"] = "OIII", ["gain"] = "100", ["offset"] = "50",
             ["binning"] = "1x1", ["readoutMode"] = "Default",
             ["focusPosition"] = "12345", ["coolerSetPointC"] = "-10",
-            ["trackingMode"] = "Sidereal", ["phd2Profile"] = "OAG-L",
+            ["coolerOn"] = "true", ["trackingMode"] = "Sidereal",
+            ["trackingEnabled"] = "true", ["mountConnected"] = "true",
+            ["cameraConnected"] = "true", ["filterWheelConnected"] = "true",
+            ["focuserConnected"] = "true", ["rotatorConnected"] = "true",
+            ["mountSlewing"] = "false", ["filterWheelMoving"] = "false",
+            ["focuserMoving"] = "false", ["focuserSettling"] = "false",
+            ["rotatorMoving"] = "false", ["phd2Profile"] = "OAG-L",
             ["phd2ExposureMs"] = "1500",
             ["phd2AlgorithmStateDigest"] = new string('c', 64)
         };
+        var stateStart = Utc("2026-08-02T19:59:45Z");
+        var stateEnd = Utc("2026-08-02T20:18:40Z");
+        var stateSamples = new List<TppaActualExposureStateSample>();
+        for (var timestamp = stateStart; timestamp <= stateEnd;
+                timestamp = timestamp.AddSeconds(5)) {
+            stateSamples.Add(new(timestamp,
+                (timestamp - stateStart).TotalSeconds,
+                new Dictionary<string, string>(state)));
+        }
         WriteJson(statePath, new TppaActualExposureStateReceipt(
-            1, policy.OpticalTrainId,
-            Utc("2026-08-02T19:59:45Z"), Utc("2026-08-02T20:18:40Z"),
-            state, false, false, false));
+            2, "ReadOnlySampledStateContinuityWitness", policy.OpticalTrainId,
+            stateStart, stateEnd, state, stateSamples, stateSamples.Count,
+            5.0, 5.0, 15.0, true,
+            new[] {
+                "equipment/mount/info", "equipment/camera/info",
+                "equipment/filterwheel/info", "equipment/focuser/info",
+                "equipment/rotator/info"
+            }, Array.Empty<string>(), false, false, false));
         var frames = sources.Select(source => new TppaActualExposureEvidenceFrame(
             source.Role, source.FitsPath, Sha256(source.FitsPath),
             source.AstapCatalogPath, Sha256(source.AstapCatalogPath))).ToArray();

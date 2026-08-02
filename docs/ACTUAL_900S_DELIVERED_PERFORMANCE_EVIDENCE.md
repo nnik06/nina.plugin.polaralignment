@@ -18,21 +18,27 @@ mirror motion, cable forces, differential flexure, or focus drift.
    frame. Do not register or stack the controls.
 2. Keep target, pier side, rotator, filter, gain, offset, binning, readout mode,
    focus, cooling, tracking, PHD2 profile/exposure, and guiding algorithms fixed.
-3. Start `tools/capture_phd2_guided_evidence.ps1` before the first control. Its
-   qualified interval must contain the complete bracket plus the configured
+3. Start `tools/capture_phd2_guided_evidence.ps1` before the first control and
+   supply the exact policy `OpticalTrainId`. The default five-second state probe
+   cadence must remain enabled. The one read-only collector writes PHD2 events,
+   `guidesteps.csv`, `summary.json`, and sampled `state.json`.
+4. Its qualified interval must contain the complete bracket plus the configured
    margin. The evidence producer independently reparses the hash-bound
    `guidesteps.csv`; contiguous frame numbers, monotonic UTC/monotonic clocks,
    bounded cadence gaps, and first-to-last coverage of the complete imaging
    bracket are mandatory even when the collector summary says it qualified.
-4. Produce the orientation-independent OAG geometry receipt for the same train.
-5. Record the required state fields in a schema-1
-   `TppaActualExposureStateReceipt` spanning the complete bracket.
-6. Every FITS file must retain a current WCS whose measured pixel scale agrees
+5. The schema-2 state receipt samples NINA mount, camera, filter wheel, focuser
+   and rotator state throughout the bracket. It also binds the PHD2 profile,
+   exposure and guide-algorithm parameter digest. Every sample, clock, cadence,
+   summary statistic and bracket boundary is independently revalidated; a
+   transient changed sample that later returns to baseline still fails.
+6. Produce the orientation-independent OAG geometry receipt for the same train.
+7. Every FITS file must retain a current WCS whose measured pixel scale agrees
    with the hash-bound optical-train policy within its preregistered tolerance.
-7. Run `tools/analyze_actual_exposure_bracket.ps1` offline. It copies source
+8. Run `tools/analyze_actual_exposure_bracket.ps1` offline. It copies source
    FITS files, runs hash-pinned ASTAP `-extract2` only on the copies, validates
    the exact seven-column catalog schema, and binds every artifact SHA-256.
-8. Recompute the deterministic receipt with
+9. Recompute the deterministic receipt with
    `tppa-qualify verify-actual-exposure --manifest manifest.json --receipt receipt.json`.
 
 The analyzer first defines the eligible population from stars that survive every

@@ -12,12 +12,26 @@ internal sealed record TppaActualExposureEvidenceFrame(
     string AstapCsvPath,
     string AstapCsvSha256);
 
+internal sealed record TppaActualExposureStateSample(
+    DateTime TimestampUtc,
+    double MonotonicSeconds,
+    IReadOnlyDictionary<string, string> State);
+
 internal sealed record TppaActualExposureStateReceipt(
     int SchemaVersion,
+    string EvidenceMode,
     string OpticalTrainId,
-    DateTime ValidFromUtc,
-    DateTime ValidThroughUtc,
-    IReadOnlyDictionary<string, string> State,
+    DateTime CaptureStartUtc,
+    DateTime CaptureCompletedUtc,
+    IReadOnlyDictionary<string, string> BaselineState,
+    IReadOnlyList<TppaActualExposureStateSample> Samples,
+    int SampleCount,
+    double ObservedMedianSampleCadenceSeconds,
+    double MaximumObservedSampleGapSeconds,
+    double MaximumAllowedSampleGapSeconds,
+    bool StateContinuityQualified,
+    IReadOnlyList<string> ReadOnlyNinaEndpoints,
+    IReadOnlyList<string> StateChangingNinaEndpoints,
     bool GrantsMountMotionAuthority,
     bool GrantsUpasAuthority,
     bool GrantsAbsoluteAccuracyClaim);
@@ -78,12 +92,43 @@ internal sealed record TppaActualExposureEvidenceProductionResult(
 internal static class TppaActualExposureEvidenceProducer {
     public const int CurrentManifestSchemaVersion = 1;
     public const int CurrentReceiptSchemaVersion = 1;
+    private const int CurrentStateSchemaVersion = 2;
+    private const int MinimumStateSamples = 10;
+    private const double MaximumStateGapSeconds = 15.0;
+    private const double MaximumTargetCoordinateDeltaDegrees = 1.0 / 60.0;
+    private const double MaximumRotatorDeltaDegrees = 0.02;
+    private const double MaximumCoolerSetPointDeltaC = 0.1;
+    private static readonly string[] RequiredReadOnlyNinaEndpoints = {
+        "equipment/mount/info", "equipment/camera/info",
+        "equipment/filterwheel/info", "equipment/focuser/info",
+        "equipment/rotator/info"
+    };
     private static readonly string[] RequiredStateKeys = {
         "targetRaDegrees", "targetDecDegrees", "pierSide", "rotatorAngleDegrees",
         "filter", "gain", "offset", "binning", "readoutMode", "focusPosition",
-        "coolerSetPointC", "trackingMode", "phd2Profile", "phd2ExposureMs",
+        "coolerSetPointC", "coolerOn", "trackingMode", "trackingEnabled",
+        "mountConnected", "cameraConnected", "filterWheelConnected",
+        "focuserConnected", "rotatorConnected", "mountSlewing",
+        "filterWheelMoving", "focuserMoving", "focuserSettling",
+        "rotatorMoving", "phd2Profile", "phd2ExposureMs",
         "phd2AlgorithmStateDigest"
     };
+    private static readonly IReadOnlyDictionary<string, string>
+        RequiredInvariantState = new Dictionary<string, string> {
+            ["coolerOn"] = "true",
+            ["trackingMode"] = "Sidereal",
+            ["trackingEnabled"] = "true",
+            ["mountConnected"] = "true",
+            ["cameraConnected"] = "true",
+            ["filterWheelConnected"] = "true",
+            ["focuserConnected"] = "true",
+            ["rotatorConnected"] = "true",
+            ["mountSlewing"] = "false",
+            ["filterWheelMoving"] = "false",
+            ["focuserMoving"] = "false",
+            ["focuserSettling"] = "false",
+            ["rotatorMoving"] = "false"
+        };
 
     public static TppaActualExposureEvidenceProductionResult Produce(
             TppaActualExposureEvidenceManifest manifest) {
@@ -178,8 +223,8 @@ internal static class TppaActualExposureEvidenceProducer {
             ValidateGeometry(manifest.OagGeometryReceiptPath, issues);
         }
         if (stateDigest != null && intervals.Count == sources.Count && sources.Count > 0) {
-            ValidateState(manifest.StateReceiptPath, manifest.Policy?.OpticalTrainId,
-                bracketStart, bracketEnd, issues);
+            ValidateState(manifest.StateReceiptPath, manifest.Phd2SummaryPath,
+                manifest.Policy?.OpticalTrainId, bracketStart, bracketEnd, issues);
         }
 
         TppaActualExposureStarShapeResult starShape = null;
@@ -227,6 +272,10 @@ internal static class TppaActualExposureEvidenceProducer {
                     || json.Value<bool?>("GuidingContinuityQualified") != true
                     || json.Value<bool?>("GuideOutputContinuouslyEnabled") != true
                     || json.Value<bool?>("GuideStepCoverageQualified") != true
+                    || json.Value<bool?>("PHD2ConfigurationContinuityQualified") != true
+                    || string.IsNullOrWhiteSpace(json.Value<string>("Phd2Profile"))
+                    || !(json.Value<int?>("Phd2ExposureMilliseconds") > 0)
+                    || !IsSha256(json.Value<string>("Phd2AlgorithmStateDigest"))
                     || json.Value<bool?>("GrantsMountMotionAuthority") != false
                     || json.Value<bool?>("GrantsUpasAuthority") != false
                     || json.Value<bool?>("GrantsAbsoluteAccuracyClaim") != false) {
@@ -371,28 +420,165 @@ internal static class TppaActualExposureEvidenceProducer {
         }
     }
 
-    private static void ValidateState(string path, string opticalTrainId,
-            DateTime bracketStart, DateTime bracketEnd, ICollection<string> issues) {
+    private static void ValidateState(string path, string phd2SummaryPath,
+            string opticalTrainId, DateTime bracketStart, DateTime bracketEnd,
+            ICollection<string> issues) {
         try {
             var state = JsonConvert.DeserializeObject<TppaActualExposureStateReceipt>(
                 File.ReadAllText(path), new JsonSerializerSettings {
                     MissingMemberHandling = MissingMemberHandling.Error,
                     DateTimeZoneHandling = DateTimeZoneHandling.RoundtripKind
                 });
-            if (state == null || state.SchemaVersion != 1
+            if (state == null || state.SchemaVersion != CurrentStateSchemaVersion
+                    || state.EvidenceMode != "ReadOnlySampledStateContinuityWitness"
                     || state.OpticalTrainId != opticalTrainId
-                    || !IsUtc(state.ValidFromUtc) || !IsUtc(state.ValidThroughUtc)
-                    || state.ValidFromUtc > bracketStart || state.ValidThroughUtc < bracketEnd
+                    || !IsUtc(state.CaptureStartUtc)
+                    || !IsUtc(state.CaptureCompletedUtc)
+                    || state.CaptureStartUtc >= state.CaptureCompletedUtc
+                    || state.CaptureStartUtc > bracketStart
+                    || state.CaptureCompletedUtc < bracketEnd
                     || state.GrantsMountMotionAuthority || state.GrantsUpasAuthority
                     || state.GrantsAbsoluteAccuracyClaim
-                    || state.State == null
-                    || RequiredStateKeys.Any(key => !state.State.TryGetValue(key, out var value)
-                        || string.IsNullOrWhiteSpace(value))) {
-                issues.Add("state-continuity receipt is incomplete or does not contain the bracket");
+                    || state.StateContinuityQualified != true
+                    || state.ReadOnlyNinaEndpoints == null
+                    || state.StateChangingNinaEndpoints == null
+                    || state.StateChangingNinaEndpoints.Count != 0
+                    || state.ReadOnlyNinaEndpoints.Count
+                        != RequiredReadOnlyNinaEndpoints.Length
+                    || RequiredReadOnlyNinaEndpoints.Any(endpoint =>
+                        !state.ReadOnlyNinaEndpoints.Contains(endpoint,
+                            StringComparer.Ordinal))
+                    || !ValidStateDictionary(state.BaselineState)
+                    || state.Samples == null
+                    || state.Samples.Count < MinimumStateSamples) {
+                issues.Add("sampled state-continuity receipt identity, authority, or bracket coverage is invalid");
+                return;
+            }
+
+            var samples = state.Samples.ToArray();
+            var gaps = new List<double>(samples.Length - 1);
+            for (var index = 0; index < samples.Length; index++) {
+                var sample = samples[index];
+                if (sample == null || !IsUtc(sample.TimestampUtc)
+                        || !double.IsFinite(sample.MonotonicSeconds)
+                        || sample.MonotonicSeconds < 0
+                        || !ValidStateDictionary(sample.State)
+                        || !StateMatchesBaseline(state.BaselineState, sample.State)) {
+                    issues.Add("sampled state-continuity evidence contains an invalid or changed state sample");
+                    return;
+                }
+                if (index == 0) { continue; }
+                var utcGap = (sample.TimestampUtc - samples[index - 1].TimestampUtc)
+                    .TotalSeconds;
+                var monotonicGap = sample.MonotonicSeconds
+                    - samples[index - 1].MonotonicSeconds;
+                if (utcGap <= 0 || monotonicGap <= 0
+                        || Math.Abs(utcGap - monotonicGap)
+                            > Math.Max(1.0, 0.1 * monotonicGap)) {
+                    issues.Add("sampled state-continuity timestamps are non-monotonic or clock-inconsistent");
+                    return;
+                }
+                gaps.Add(monotonicGap);
+            }
+
+            var medianCadence = Median(gaps);
+            var maximumObservedGap = gaps.Max();
+            var maximumAllowedGap = Math.Min(MaximumStateGapSeconds,
+                3.0 * medianCadence);
+            var startBoundaryGap = (samples[0].TimestampUtc
+                - state.CaptureStartUtc).TotalSeconds;
+            var endBoundaryGap = (state.CaptureCompletedUtc
+                - samples[^1].TimestampUtc).TotalSeconds;
+            if (!double.IsFinite(medianCadence) || medianCadence <= 0
+                    || maximumObservedGap > maximumAllowedGap
+                    || startBoundaryGap < 0 || startBoundaryGap > maximumAllowedGap
+                    || endBoundaryGap < 0 || endBoundaryGap > maximumAllowedGap
+                    || samples[0].TimestampUtc > bracketStart
+                    || samples[^1].TimestampUtc < bracketEnd
+                    || state.SampleCount != samples.Length
+                    || !NearlyEqual(state.ObservedMedianSampleCadenceSeconds,
+                        medianCadence)
+                    || !NearlyEqual(state.MaximumObservedSampleGapSeconds,
+                        maximumObservedGap)
+                    || !NearlyEqual(state.MaximumAllowedSampleGapSeconds,
+                        maximumAllowedGap)) {
+                issues.Add("sampled state-continuity cadence, coverage, or summary cross-check failed");
+                return;
+            }
+
+            var phd2 = ParseJsonWithoutDateCoercion(phd2SummaryPath);
+            if (phd2.Value<bool?>("PHD2ConfigurationContinuityQualified") != true
+                    || string.IsNullOrWhiteSpace(phd2.Value<string>("Phd2Profile"))
+                    || !(phd2.Value<int?>("Phd2ExposureMilliseconds") > 0)
+                    || !IsSha256(phd2.Value<string>("Phd2AlgorithmStateDigest"))
+                    || state.BaselineState["phd2Profile"]
+                        != phd2.Value<string>("Phd2Profile")
+                    || state.BaselineState["phd2ExposureMs"]
+                        != phd2.Value<int>("Phd2ExposureMilliseconds")
+                            .ToString(CultureInfo.InvariantCulture)
+                    || state.BaselineState["phd2AlgorithmStateDigest"]
+                        != phd2.Value<string>("Phd2AlgorithmStateDigest")) {
+                issues.Add("sampled state-continuity PHD2 configuration does not match its independent summary");
             }
         } catch (Exception exception) {
             issues.Add($"state-continuity receipt cannot be validated: {exception.Message}");
         }
+    }
+
+    private static bool ValidStateDictionary(
+            IReadOnlyDictionary<string, string> state) =>
+        state != null
+        && RequiredStateKeys.All(key => state.TryGetValue(key, out var value)
+            && !string.IsNullOrWhiteSpace(value))
+        && RequiredInvariantState.All(required =>
+            string.Equals(state[required.Key], required.Value,
+                StringComparison.Ordinal))
+        && IsSha256(state["phd2AlgorithmStateDigest"]);
+
+    private static bool StateMatchesBaseline(
+            IReadOnlyDictionary<string, string> baseline,
+            IReadOnlyDictionary<string, string> sample) {
+        foreach (var key in RequiredStateKeys) {
+            if (key == "targetRaDegrees") {
+                if (!WithinAngularTolerance(baseline[key], sample[key],
+                        MaximumTargetCoordinateDeltaDegrees)) { return false; }
+            } else if (key == "targetDecDegrees") {
+                if (!WithinNumericTolerance(baseline[key], sample[key],
+                        MaximumTargetCoordinateDeltaDegrees)) { return false; }
+            } else if (key == "rotatorAngleDegrees") {
+                if (!WithinAngularTolerance(baseline[key], sample[key],
+                        MaximumRotatorDeltaDegrees)) { return false; }
+            } else if (key == "coolerSetPointC") {
+                if (!WithinNumericTolerance(baseline[key], sample[key],
+                        MaximumCoolerSetPointDeltaC)) { return false; }
+            } else if (!string.Equals(baseline[key], sample[key],
+                    StringComparison.Ordinal)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static bool WithinNumericTolerance(string left, string right,
+            double tolerance) =>
+        double.TryParse(left, NumberStyles.Float, CultureInfo.InvariantCulture,
+            out var leftValue)
+        && double.TryParse(right, NumberStyles.Float, CultureInfo.InvariantCulture,
+            out var rightValue)
+        && double.IsFinite(leftValue) && double.IsFinite(rightValue)
+        && Math.Abs(leftValue - rightValue) <= tolerance;
+
+    private static bool WithinAngularTolerance(string left, string right,
+            double tolerance) {
+        if (!double.TryParse(left, NumberStyles.Float, CultureInfo.InvariantCulture,
+                out var leftValue)
+                || !double.TryParse(right, NumberStyles.Float,
+                    CultureInfo.InvariantCulture, out var rightValue)
+                || !double.IsFinite(leftValue) || !double.IsFinite(rightValue)) {
+            return false;
+        }
+        var delta = Math.Abs(leftValue - rightValue) % 360.0;
+        return Math.Min(delta, 360.0 - delta) <= tolerance;
     }
 
     private static string ValidateFile(string path, string expected,

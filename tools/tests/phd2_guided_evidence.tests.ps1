@@ -12,7 +12,9 @@ $ast = [Management.Automation.Language.Parser]::ParseFile(
 if ($errors.Count -gt 0) {
     throw "$toolPath parse errors: $($errors -join '; ')"
 }
-foreach ($functionName in @('Get-Median', 'Get-GuideStepContinuity')) {
+foreach ($functionName in @(
+        'Get-Median', 'Get-StateContinuity', 'Get-AngularDelta',
+        'Test-StateEquivalent', 'Get-GuideStepContinuity')) {
     $functionAst = $ast.Find({
         param($node)
         $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
@@ -22,6 +24,15 @@ foreach ($functionName in @('Get-Median', 'Get-GuideStepContinuity')) {
     . ([scriptblock]::Create($functionAst.Extent.Text))
 }
 $text = [IO.File]::ReadAllText($toolPath)
+$script:RequiredStateKeys = @(
+    'targetRaDegrees', 'targetDecDegrees', 'pierSide',
+    'rotatorAngleDegrees', 'filter', 'gain', 'offset', 'binning',
+    'readoutMode', 'focusPosition', 'coolerSetPointC', 'coolerOn',
+    'trackingMode', 'trackingEnabled', 'mountConnected', 'cameraConnected',
+    'filterWheelConnected', 'focuserConnected', 'rotatorConnected',
+    'mountSlewing', 'filterWheelMoving', 'focuserMoving', 'focuserSettling',
+    'rotatorMoving', 'phd2Profile', 'phd2ExposureMs',
+    'phd2AlgorithmStateDigest')
 
 Describe 'read-only guided PHD2 evidence collector contract' {
     It 'uses a second client with a strict read-only RPC allow-list' {
@@ -29,7 +40,9 @@ Describe 'read-only guided PHD2 evidence collector contract' {
         foreach ($method in @(
                 'get_app_state', 'get_connected', 'get_calibrated',
                 'get_guide_output_enabled', 'get_exposure',
-                'get_lock_position', 'get_pixel_scale')) {
+                'get_lock_position', 'get_pixel_scale', 'get_profile',
+                'get_current_equipment', 'get_algo_param_names',
+                'get_algo_param')) {
             $text.Contains("'$method'") | Should Be $true
         }
         foreach ($method in @(
@@ -101,6 +114,75 @@ Describe 'read-only guided PHD2 evidence collector contract' {
         $result.Qualified | Should Be $false
         ($result.MaximumObservedGapSeconds -gt
             $result.MaximumAllowedGapSeconds) | Should Be $true
+    }
+
+    It 'samples and seals the complete NINA and PHD2 fixed state' {
+        $text.Contains("[ValidateRange(1, 10)]") | Should Be $true
+        $text.Contains("StateProbeCadenceSeconds = 5") | Should Be $true
+        foreach ($device in @('mount', 'camera', 'filterwheel', 'focuser', 'rotator')) {
+            $text.Contains("Invoke-NinaInfo '$device'") | Should Be $true
+        }
+        foreach ($key in @(
+                'targetRaDegrees', 'targetDecDegrees', 'pierSide',
+                'rotatorAngleDegrees', 'filter', 'gain', 'offset', 'binning',
+                'readoutMode', 'focusPosition', 'coolerSetPointC',
+                'trackingMode', 'phd2Profile', 'phd2ExposureMs',
+                'phd2AlgorithmStateDigest')) {
+            $text.Contains("'$key'") | Should Be $true
+        }
+        $text.Contains("EvidenceMode = 'ReadOnlySampledStateContinuityWitness'") |
+            Should Be $true
+        $text.Contains('PHD2ConfigurationContinuityQualified = $true') |
+            Should Be $true
+        $text.Contains('Write-CreateNewUtf8 $statePath') | Should Be $true
+        $text.Contains('StateChangingNinaEndpoints = @()') | Should Be $true
+    }
+
+    It 'fails closed on fixed-state changes and cadence gaps' {
+        $text.Contains('Test-StateEquivalent') | Should Be $true
+        $text.Contains("throw 'A fixed-state sample changed") | Should Be $true
+        $text.Contains('[Math]::Min(15.0, 3.0 * $median)') | Should Be $true
+        $text.Contains('$Samples.Count -lt 10') | Should Be $true
+        $text.Contains('Get-Phd2Configuration') | Should Be $true
+        $text.Contains('$finalConfiguration.CanonicalJson -cne') | Should Be $true
+    }
+
+    It 'accepts a cadence-bounded sampled state stream' {
+        $samples = @()
+        foreach ($second in 1, 6, 11, 16, 21, 26, 31, 36, 41, 46) {
+            $samples += [pscustomobject]@{ MonotonicSeconds = [double]$second }
+        }
+        $result = Get-StateContinuity $samples 0.0 47.0
+        $result.Qualified | Should Be $true
+        $result.MaximumAllowedGapSeconds | Should Be 15.0
+    }
+
+    It 'rejects a sampled state blind interval' {
+        $samples = @()
+        foreach ($second in 1, 6, 11, 16, 21, 41, 46, 51, 56, 61) {
+            $samples += [pscustomobject]@{ MonotonicSeconds = [double]$second }
+        }
+        (Get-StateContinuity $samples 0.0 62.0).Qualified | Should Be $false
+    }
+
+    It 'detects a transient state change even when the final state returns' {
+        $baseline = [ordered]@{
+            targetRaDegrees='100'; targetDecDegrees='20'; pierSide='pierWest'
+            rotatorAngleDegrees='0'; filter='Oiii'; gain='100'; offset='50'
+            binning='1x1'; readoutMode='0'; focusPosition='12345'
+            coolerSetPointC='-10'; coolerOn='true'; trackingMode='Sidereal'
+            trackingEnabled='true'; mountConnected='true'; cameraConnected='true'
+            filterWheelConnected='true'; focuserConnected='true'; rotatorConnected='true'
+            mountSlewing='false'; filterWheelMoving='false'; focuserMoving='false'
+            focuserSettling='false'; rotatorMoving='false'; phd2Profile='OAG-L'
+            phd2ExposureMs='1500'; phd2AlgorithmStateDigest=('c' * 64)
+        }
+        $changed = [ordered]@{}
+        foreach ($key in $baseline.Keys) { $changed[$key] = $baseline[$key] }
+        $changed.filter = 'Ha'
+        (Test-StateEquivalent $baseline $baseline) | Should Be $true
+        (Test-StateEquivalent $baseline $changed) | Should Be $false
+        (Test-StateEquivalent $baseline $baseline) | Should Be $true
     }
 
     It 'seals evidence without granting PA or movement authority' {

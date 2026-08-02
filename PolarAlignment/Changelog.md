@@ -1,3 +1,14 @@
+## Version 2.2.6.91
+
+- Replace the asserted schema-1 fixed-state interval with a schema-2 sampled
+  continuity witness covering the complete actual-exposure bracket.
+- Poll read-only NINA mount, camera, filter-wheel, focuser and rotator state at
+  bounded cadence while independently sealing the PHD2 profile, exposure,
+  equipment and guide-algorithm parameter digest.
+- Independently reparse every state sample and reject transient state changes,
+  cadence gaps, clock inconsistency, summary inflation, bracket undercoverage
+  or a PHD2 configuration mismatch.
+
 ## Version 2.2.6.90
 
 - Anchor actual-exposure stars in all ten short controls and gate explicit
