@@ -1,3 +1,12 @@
+## Version 2.2.6.83
+
+- Add an orientation-independent OAG geometry bound from simultaneous main and
+  guide WCS centres, sensor dimensions, and measured pixel scales. The result
+  replaces the provisional 8000-pixel guide-to-corner assumption with a
+  source-bound conservative radius for each optical train.
+- Document separate OAG geometry receipts for the reduced GT81 IV and reduced
+  EdgeHD 9.25 before judging 900-second field-rotation performance.
+
 ## Version 2.2.6.82
 
 - Add an authority-free synchronized PA discriminator that records main-camera

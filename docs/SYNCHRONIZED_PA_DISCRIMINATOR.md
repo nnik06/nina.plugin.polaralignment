@@ -53,6 +53,31 @@ still be based on measured WCS rotation and star-shape residuals in 900-second
 frames at representative declinations. Passing this imaging criterion does not
 by itself establish the absolute true-pole error.
 
+### Replace The Planning Radius
+
+Before a 900-second acceptance run, acquire a fixed-state main-camera solve and
+a blind ASTAP solution of a PHD2 guide frame at the same field. Record both
+source hashes, pixel scales, and sensor dimensions. Run:
+
+```powershell
+pwsh -NoProfile -File .\tools\calculate_oag_geometry_bound.ps1 `
+  -MainCenterRightAscensionDegrees <main-ra-deg> `
+  -MainCenterDeclinationDegrees <main-dec-deg> `
+  -GuideCenterRightAscensionDegrees <guide-ra-deg> `
+  -GuideCenterDeclinationDegrees <guide-dec-deg> `
+  -MainPixelScaleArcseconds <main-scale> `
+  -GuidePixelScaleArcseconds <guide-scale> `
+  -MainSolutionSource <main-artifact> `
+  -GuideSolutionSource <guide-artifact>
+```
+
+Without a measured PHD2 lock position, the result conservatively admits any
+guide star in the full ASI220 frame. With both lock offsets supplied, it uses
+the measured radial lock offset. The spherical triangle bound deliberately
+does not depend on NINA/ASTAP position-angle sign conventions. Produce separate
+source-bound geometry receipts for the reduced GT81 IV and reduced EdgeHD 9.25;
+do not reuse one optical train's radius for the other.
+
 ## Measurement Meaning
 
 - TPPA and iPolar estimate an RA-axis relation through different optical and
