@@ -1,3 +1,10 @@
+## Version 2.2.6.86
+
+- Mark the passive physical-roll witness explicitly non-inferential for polar
+  alignment. A low roll rate, especially near the celestial pole, does not
+  bound the polar-error vector without a qualified geometry-sensitivity model.
+- Pin the transported-roll sign in the synthetic RA-zero-crossing regression.
+
 ## Version 2.2.6.85
 
 - Compare solved camera orientation only after exact shortest-geodesic parallel

@@ -107,10 +107,14 @@ implausible adjacent transported-roll jumps fail closed.
 
 A pass is `PassivePhysicalRotationWitnessQualified`: the passive tracking run
 bounded physical camera roll within the configured guide-to-corner budget. It
-never sets `OperationalGuidedExposureRotationQualified`. Guided operational
-qualification requires a synchronized PHD2-guided run and a real 900-second
-subframe star-shape check on each optical train. Neither verdict establishes
-absolute true-pole accuracy or authorizes mount/UPAS movement.
+never sets `PolarAlignmentInferenceQualified` or
+`OperationalGuidedExposureRotationQualified`. A low roll rate does not bound
+the polar-error vector because the coupling between polar error and field
+rotation depends on hour angle and declination and becomes weak near the
+celestial pole. Guided operational qualification requires a synchronized
+PHD2-guided run and a real 900-second subframe star-shape check on each optical
+train. Neither verdict establishes absolute true-pole accuracy or authorizes
+mount/UPAS movement.
 
 ## Measurement Meaning
 
@@ -127,6 +131,10 @@ absolute true-pole accuracy or authorizes mount/UPAS movement.
 - A full PA vector requires multiple qualified geometries. The restricted
   north/west balcony can provide information, but conditioning and component
   separation must be computed rather than assumed.
+- A deliberate UPAS perturbation validates sign and scale only when the applied
+  physical angle is independently traceable. Open-loop controller units and the
+  two-degree factory scale ticks are not an arcminute reference and cannot
+  establish absolute accuracy.
 
 ## Recorder
 

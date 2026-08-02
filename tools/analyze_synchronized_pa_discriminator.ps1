@@ -571,6 +571,10 @@ $result = [pscustomobject][ordered]@{
     FirstLastDisagreementSmearPixels = $windowDisagreementSmear
     FailureReasons = @($reasons)
     PassivePhysicalRotationWitnessQualified = $qualified
+    PolarAlignmentInferenceQualified = $false
+    PolarAlignmentInferenceQualificationReason =
+        'Physical roll alone does not bound the polar-error vector without a qualified geometry-sensitivity model.'
+    RotationSensitivityToPolarErrorComputed = $false
     OperationalGuidedExposureRotationQualified = $false
     OperationalGuidedExposureRotationQualificationReason =
         'This analyzer consumes a passive unguided tracking run; guided operational qualification requires a synchronized guided run.'

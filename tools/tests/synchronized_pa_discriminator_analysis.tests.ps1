@@ -187,6 +187,9 @@ Describe 'synchronized PA discriminator operational analyzer' {
         $result = & $tool -RunDirectory $run -GeometryReceiptPath $geometry
 
         $result.PassivePhysicalRotationWitnessQualified | Should Be $true
+        $result.PolarAlignmentInferenceQualified | Should Be $false
+        $result.RotationSensitivityToPolarErrorComputed | Should Be $false
+        $result.PolarAlignmentInferenceQualificationReason | Should Match 'does not bound'
         $result.OperationalGuidedExposureRotationQualified | Should Be $false
         $result.RequiresSynchronizedGuidedEvidence | Should Be $true
         [Math]::Abs($result.FullFit.SlopeDegreesPerHour - 0.001) |
@@ -375,6 +378,7 @@ Describe 'synchronized PA discriminator operational analyzer' {
 
         $result = & $tool -RunDirectory $run -GeometryReceiptPath $geometry
 
+        $result.FullFit.SlopeDegreesPerHour | Should BeGreaterThan 0.0
         [Math]::Abs($result.FullFit.SlopeDegreesPerHour - 0.005) |
             Should BeLessThan 0.000001
     }
