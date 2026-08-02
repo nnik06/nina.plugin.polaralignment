@@ -256,7 +256,22 @@ $root = [ordered]@{
 $json = $root | ConvertTo-Json -Depth 32
 $json = $json -replace "`r?`n", "`r`n"
 $utf8NoBom = [Text.UTF8Encoding]::new($false)
-[IO.File]::WriteAllText($fullOutputPath, $json + "`r`n", $utf8NoBom)
+$temporaryPath = Join-Path $outputDirectory (
+    '.' + [IO.Path]::GetFileName($fullOutputPath) + '.' +
+    [Guid]::NewGuid().ToString('N') + '.tmp')
+try {
+    [IO.File]::WriteAllText($temporaryPath, $json + "`r`n", $utf8NoBom)
+    [IO.File]::Move($temporaryPath, $fullOutputPath, $false)
+} catch [IO.IOException] {
+    if ([IO.File]::Exists($fullOutputPath)) {
+        throw "Refusing to overwrite existing sequence: $fullOutputPath"
+    }
+    throw
+} finally {
+    if ([IO.File]::Exists($temporaryPath)) {
+        [IO.File]::Delete($temporaryPath)
+    }
+}
 
 [pscustomobject]@{
     OutputPath = $fullOutputPath

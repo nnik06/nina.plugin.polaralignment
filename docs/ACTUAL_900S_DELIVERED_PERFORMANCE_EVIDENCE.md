@@ -24,9 +24,13 @@ mirror motion, cable forces, differential flexure, or focus drift.
    `pwsh -NoProfile -File tools/new_actual_exposure_sequence.ps1 -OutputPath C:\tmp\edge-witness.json -OpticalTrainId EdgeHD-9.25-0.7-OAG-L-ASI2600MM-gain100-bin1`
 
    Load the generated file only after the complete field preflight. Do not
-   register or stack the controls.
+   register or stack the controls. On first use with each NINA build, load it
+   without starting and visually verify the exact `5 + 1 + 5` tree; preserve
+   that check with the run artifacts.
 2. Keep target, pier side, rotator, filter, gain, offset, binning, readout mode,
    focus, cooling, tracking, PHD2 profile/exposure, and guiding algorithms fixed.
+   Preserve the complete NINA imaging profile and vendor camera configuration;
+   sampled state does not expose every driver setting such as USB bandwidth.
 3. Start `tools/capture_phd2_guided_evidence.ps1` before the first control and
    supply the exact policy `OpticalTrainId`. The default five-second state probe
    cadence must remain enabled. The one read-only collector writes PHD2 events,
@@ -47,6 +51,10 @@ mirror motion, cable forces, differential flexure, or focus drift.
    receipt when interpreting a run. Keep the default five-second cadence during
    guiding; the one-second option is for compatibility diagnosis, not routine
    evidence collection.
+   The short controls observe the bracket endpoints, not every instant inside
+   the 900-second exposure. The long image contains the delivered effect of an
+   interior disturbance, but neither endpoint controls nor sampled state prove
+   that the interior was transient-free or uniquely identify the disturbance.
 6. Produce the orientation-independent OAG geometry receipt for the same train.
 7. Every FITS file must retain a current WCS whose measured pixel scale agrees
    with the hash-bound optical-train policy within its preregistered tolerance.

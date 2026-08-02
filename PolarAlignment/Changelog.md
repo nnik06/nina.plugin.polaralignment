@@ -4,6 +4,9 @@
   900-second witness: exactly five short controls, one long light, and five
   short controls with no equipment, pointing, guiding, filter, focus, tracking
   or shutdown actions.
+- Publish through an exclusive atomic rename, test the complete emitted NINA
+  type allow-list and zeroed loop counters, and document first-load schema and
+  sampled-interior limitations.
 
 ## Version 2.2.6.91
 

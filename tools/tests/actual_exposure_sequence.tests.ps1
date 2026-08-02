@@ -40,6 +40,8 @@ Describe 'actual 900-second NINA sequence generator' {
         $post = $bracket.Items.'$values'[3]
         $pre.Conditions.'$values'[0].Iterations | Should Be 5
         $post.Conditions.'$values'[0].Iterations | Should Be 5
+        $pre.Conditions.'$values'[0].CompletedIterations | Should Be 0
+        $post.Conditions.'$values'[0].CompletedIterations | Should Be 0
         $pre.Items.'$values'[0].ExposureTime | Should Be 30
         $long.ExposureTime | Should Be 900
         $post.Items.'$values'[0].ExposureTime | Should Be 30
@@ -64,15 +66,29 @@ Describe 'actual 900-second NINA sequence generator' {
         }
     }
 
-    It 'contains no equipment, pointing, guiding, or configuration action' {
+    It 'emits only the exact passive NINA type allow-list' {
         $path = Join-Path $TestDrive 'passive.json'
         New-TestSequence $path | Out-Null
         $json = [IO.File]::ReadAllText($path)
-        foreach ($forbidden in @(
-                'StartGuiding', 'StopGuiding', 'Slew', 'SwitchFilter',
-                'Autofocus', 'Connect', 'SetTracking', 'Park')) {
-            $json.Contains($forbidden) | Should Be $false
-        }
+        $actualTypes = @([regex]::Matches($json, '"\$type"\s*:\s*"([^"]+)"') |
+            ForEach-Object { $_.Groups[1].Value } |
+            Sort-Object -Unique)
+        $expectedTypes = @(
+            'NINA.Core.Model.Equipment.BinningMode, NINA.Core',
+            'NINA.Sequencer.Conditions.LoopCondition, NINA.Sequencer',
+            'NINA.Sequencer.Container.EndAreaContainer, NINA.Sequencer',
+            'NINA.Sequencer.Container.ExecutionStrategy.SequentialStrategy, NINA.Sequencer',
+            'NINA.Sequencer.Container.SequenceRootContainer, NINA.Sequencer',
+            'NINA.Sequencer.Container.SequentialContainer, NINA.Sequencer',
+            'NINA.Sequencer.Container.StartAreaContainer, NINA.Sequencer',
+            'NINA.Sequencer.Container.TargetAreaContainer, NINA.Sequencer',
+            'NINA.Sequencer.SequenceItem.Imaging.TakeExposure, NINA.Sequencer',
+            'NINA.Sequencer.SequenceItem.Utility.Annotation, NINA.Sequencer',
+            'System.Collections.ObjectModel.ObservableCollection`1[[NINA.Sequencer.Conditions.ISequenceCondition, NINA.Sequencer]], System.ObjectModel',
+            'System.Collections.ObjectModel.ObservableCollection`1[[NINA.Sequencer.SequenceItem.ISequenceItem, NINA.Sequencer]], System.ObjectModel',
+            'System.Collections.ObjectModel.ObservableCollection`1[[NINA.Sequencer.Trigger.ISequenceTrigger, NINA.Sequencer]], System.ObjectModel' |
+            Sort-Object)
+        ($actualTypes -join "`n") | Should Be ($expectedTypes -join "`n")
     }
 
     It 'refuses to overwrite an existing sequence' {
@@ -87,6 +103,8 @@ Describe 'actual 900-second NINA sequence generator' {
         }
         $threw | Should Be $true
         [IO.File]::ReadAllText($path) | Should Be 'do not replace'
+        [IO.Directory]::GetFiles($TestDrive, '.existing.json.*.tmp').Count |
+            Should Be 0
     }
 
     It 'rejects an unsupported optical train' {
@@ -125,19 +143,20 @@ Describe 'actual 900-second NINA sequence generator' {
         }
     }
 
-    It 'serializes numeric values invariantly under a comma-decimal culture' {
-        $path = Join-Path $TestDrive 'culture.json'
+    It 'serializes invariantly under comma-decimal and Turkish cultures' {
         $priorCulture = [Globalization.CultureInfo]::CurrentCulture
         $priorUiCulture = [Globalization.CultureInfo]::CurrentUICulture
         try {
-            [Globalization.CultureInfo]::CurrentCulture =
-                [Globalization.CultureInfo]::GetCultureInfo('de-DE')
-            [Globalization.CultureInfo]::CurrentUICulture =
-                [Globalization.CultureInfo]::GetCultureInfo('de-DE')
-            $root = New-TestSequence $path
-            $root.Items.'$values'[1].Items.'$values'[0].Items.'$values'[2].ExposureTime |
-                Should Be 900
-            [IO.File]::ReadAllText($path).Contains('900,0') | Should Be $false
+            foreach ($cultureName in @('de-DE', 'tr-TR')) {
+                $culture = [Globalization.CultureInfo]::GetCultureInfo($cultureName)
+                [Globalization.CultureInfo]::CurrentCulture = $culture
+                [Globalization.CultureInfo]::CurrentUICulture = $culture
+                $path = Join-Path $TestDrive "culture-$cultureName.json"
+                $root = New-TestSequence $path
+                $root.Items.'$values'[1].Items.'$values'[0].Items.'$values'[2].ExposureTime |
+                    Should Be 900
+                [IO.File]::ReadAllText($path).Contains('900,0') | Should Be $false
+            }
         } finally {
             [Globalization.CultureInfo]::CurrentCulture = $priorCulture
             [Globalization.CultureInfo]::CurrentUICulture = $priorUiCulture
