@@ -1,3 +1,13 @@
+## Version 2.2.6.84
+
+- Add a fail-closed analyzer for synchronized passive PA evidence. It verifies
+  every manifest artifact hash, unwraps main-camera WCS position angle, fits
+  robust full/first/last-window rotation rates, and converts a conservative
+  rate into a 900-second guide-to-corner smear bound.
+- Keep the new verdict operational only: passing means measured field rotation
+  is within the configured imaging budget and still requires a real 900-second
+  star-shape validation; it does not establish absolute true-pole accuracy.
+
 ## Version 2.2.6.83
 
 - Add an orientation-independent OAG geometry bound from simultaneous main and

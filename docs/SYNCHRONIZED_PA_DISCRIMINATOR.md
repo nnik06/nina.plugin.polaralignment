@@ -78,6 +78,30 @@ does not depend on NINA/ASTAP position-angle sign conventions. Produce separate
 source-bound geometry receipts for the reduced GT81 IV and reduced EdgeHD 9.25;
 do not reuse one optical train's radius for the other.
 
+### Judge Delivered Rotation
+
+After the synchronized run and optical-train-specific geometry receipt exist,
+run the authority-free analyzer:
+
+```powershell
+pwsh -NoProfile -File .\tools\analyze_synchronized_pa_discriminator.ps1 `
+  -RunDirectory <synchronized-run-directory> `
+  -GeometryReceiptPath <optical-train-oag-geometry.json> `
+  -ExposureSeconds 900 `
+  -AllowedSmearPixels 0.5
+```
+
+The analyzer verifies the manifest and all artifact hashes before reading the
+main-camera position-angle series. It unwraps circular position angles and
+uses Theil-Sen fits over the full run and the first and last ten-minute
+windows. The conservative rate includes a residual-MAD margin; first/last
+disagreement and implausible adjacent jumps fail closed.
+
+A pass means only that measured field rotation is within the configured
+guide-to-corner budget for the requested exposure. It still requires a real
+900-second subframe star-shape check on each optical train and cannot establish
+absolute true-pole accuracy or authorize mount/UPAS movement.
+
 ## Measurement Meaning
 
 - TPPA and iPolar estimate an RA-axis relation through different optical and
