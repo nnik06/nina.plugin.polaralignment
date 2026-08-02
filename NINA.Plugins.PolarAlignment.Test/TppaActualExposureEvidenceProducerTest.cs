@@ -66,6 +66,236 @@ public class TppaActualExposureEvidenceProducerTest {
     }
 
     [Test]
+    public void TamperedOagMainSolutionSourceFailsHashBinding() {
+        var manifest = Manifest(
+            Utc("2026-08-02T19:59:50Z"), Utc("2026-08-02T20:18:40Z"));
+        var geometry = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(
+            manifest.OagGeometryReceiptPath));
+        var source = Path.Combine(Path.GetDirectoryName(
+            manifest.OagGeometryReceiptPath)!, (string)geometry["MainSolutionSource"]!);
+        File.AppendAllText(source, "tamper", new UTF8Encoding(false));
+
+        var result = TppaActualExposureEvidenceProducer.Produce(manifest);
+
+        result.Produced.Should().BeFalse();
+        result.Issues.Should().Contain(issue => issue.Contains(
+            "OAG main solution source SHA-256 does not match"));
+    }
+
+    [Test]
+    public void MissingOagGuideSolutionSourceFailsClosed() {
+        var manifest = Manifest(
+            Utc("2026-08-02T19:59:50Z"), Utc("2026-08-02T20:18:40Z"));
+        var geometry = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(
+            manifest.OagGeometryReceiptPath));
+        var source = Path.Combine(Path.GetDirectoryName(
+            manifest.OagGeometryReceiptPath)!, (string)geometry["GuideSolutionSource"]!);
+        File.Delete(source);
+
+        var result = TppaActualExposureEvidenceProducer.Produce(manifest);
+
+        result.Produced.Should().BeFalse();
+        result.Issues.Should().Contain(issue => issue.Contains(
+            "OAG geometry source is missing"));
+    }
+
+    [Test]
+    public void ReusedOagSolutionArtifactFailsClosed() {
+        var manifest = Manifest(
+            Utc("2026-08-02T19:59:50Z"), Utc("2026-08-02T20:18:40Z"));
+        var geometry = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(
+            manifest.OagGeometryReceiptPath));
+        geometry["GuideSolutionSource"] = geometry["MainSolutionSource"];
+        geometry["GuideSolutionSha256"] = geometry["MainSolutionSha256"];
+        File.WriteAllText(manifest.OagGeometryReceiptPath, geometry.ToString(),
+            new UTF8Encoding(false));
+        manifest = manifest with {
+            OagGeometryReceiptSha256 = Sha256(manifest.OagGeometryReceiptPath)
+        };
+
+        var result = TppaActualExposureEvidenceProducer.Produce(manifest);
+
+        result.Produced.Should().BeFalse();
+        result.Issues.Should().Contain(issue => issue.Contains(
+            "must be distinct artifacts"));
+    }
+
+    [Test]
+    public void TamperedDerivedOagValueFailsIndependentRecomputation() {
+        var manifest = Manifest(
+            Utc("2026-08-02T19:59:50Z"), Utc("2026-08-02T20:18:40Z"));
+        var geometry = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(
+            manifest.OagGeometryReceiptPath));
+        geometry["GuideToFarthestMainCornerUpperBoundPixels"] =
+            geometry.Value<double>("GuideToFarthestMainCornerUpperBoundPixels") + 1.0;
+        File.WriteAllText(manifest.OagGeometryReceiptPath, geometry.ToString(),
+            new UTF8Encoding(false));
+        manifest = manifest with {
+            OagGeometryReceiptSha256 = Sha256(manifest.OagGeometryReceiptPath)
+        };
+
+        var result = TppaActualExposureEvidenceProducer.Produce(manifest);
+
+        result.Produced.Should().BeFalse();
+        result.Issues.Should().Contain(issue => issue.Contains(
+            "does not reproduce its WCS sources"));
+    }
+
+    [Test]
+    public void OperatorAttestedSchemaOneOagReceiptFailsClosed() {
+        var manifest = Manifest(
+            Utc("2026-08-02T19:59:50Z"), Utc("2026-08-02T20:18:40Z"));
+        var geometry = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(
+            manifest.OagGeometryReceiptPath));
+        geometry["SchemaVersion"] = 1;
+        geometry["GeometryProvenance"] = "operator-attested-diagnostic";
+        File.WriteAllText(manifest.OagGeometryReceiptPath, geometry.ToString(),
+            new UTF8Encoding(false));
+        manifest = manifest with {
+            OagGeometryReceiptSha256 = Sha256(manifest.OagGeometryReceiptPath)
+        };
+
+        var result = TppaActualExposureEvidenceProducer.Produce(manifest);
+
+        result.Produced.Should().BeFalse();
+        result.Issues.Should().Contain(issue => issue.Contains(
+            "unsupported or grants forbidden authority"));
+    }
+
+    [TestCase(true)]
+    [TestCase(false)]
+    public void NonportableOagSourcePathFailsClosed(bool rooted) {
+        var manifest = Manifest(
+            Utc("2026-08-02T19:59:50Z"), Utc("2026-08-02T20:18:40Z"));
+        var geometry = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(
+            manifest.OagGeometryReceiptPath));
+        geometry["MainSolutionSource"] = rooted
+            ? Path.Combine(root, "main-solution.wcs")
+            : Path.Combine("..", "main-solution.wcs");
+        File.WriteAllText(manifest.OagGeometryReceiptPath, geometry.ToString(),
+            new UTF8Encoding(false));
+        manifest = manifest with {
+            OagGeometryReceiptSha256 = Sha256(manifest.OagGeometryReceiptPath)
+        };
+
+        var result = TppaActualExposureEvidenceProducer.Produce(manifest);
+
+        result.Produced.Should().BeFalse();
+        result.Issues.Should().Contain(issue => issue.Contains(rooted
+            ? "bundle-relative paths"
+            : "escapes the receipt directory"));
+    }
+
+    [Test]
+    public void UppercaseOagSourceHashesRemainValid() {
+        var manifest = Manifest(
+            Utc("2026-08-02T19:59:50Z"), Utc("2026-08-02T20:18:40Z"));
+        var geometry = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(
+            manifest.OagGeometryReceiptPath));
+        geometry["MainSolutionSha256"] =
+            geometry.Value<string>("MainSolutionSha256")!.ToUpperInvariant();
+        geometry["GuideSolutionSha256"] =
+            geometry.Value<string>("GuideSolutionSha256")!.ToUpperInvariant();
+        File.WriteAllText(manifest.OagGeometryReceiptPath, geometry.ToString(),
+            new UTF8Encoding(false));
+        manifest = manifest with {
+            OagGeometryReceiptSha256 = Sha256(manifest.OagGeometryReceiptPath)
+        };
+
+        var result = TppaActualExposureEvidenceProducer.Produce(manifest);
+
+        result.Produced.Should().BeTrue(string.Join("; ", result.Issues));
+    }
+
+    [Test]
+    public void DistortedOagWcsFailsClosedEvenWithUpdatedHashes() {
+        var manifest = Manifest(
+            Utc("2026-08-02T19:59:50Z"), Utc("2026-08-02T20:18:40Z"));
+        var geometry = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(
+            manifest.OagGeometryReceiptPath));
+        var source = Path.Combine(Path.GetDirectoryName(
+            manifest.OagGeometryReceiptPath)!,
+            geometry.Value<string>("MainSolutionSource")!);
+        File.AppendAllText(source, Environment.NewLine + "PV1_0   = 0",
+            new UTF8Encoding(false));
+        geometry["MainSolutionSha256"] = Sha256(source);
+        File.WriteAllText(manifest.OagGeometryReceiptPath, geometry.ToString(),
+            new UTF8Encoding(false));
+        manifest = manifest with {
+            OagGeometryReceiptSha256 = Sha256(manifest.OagGeometryReceiptPath)
+        };
+
+        var result = TppaActualExposureEvidenceProducer.Produce(manifest);
+
+        result.Produced.Should().BeFalse();
+        result.Issues.Should().Contain(issue => issue.Contains(
+            "distortion or PC-matrix"));
+    }
+
+    [Test]
+    public void TimeIncoherentOagSourcesFailEvenWithUpdatedHashes() {
+        var manifest = Manifest(
+            Utc("2026-08-02T19:59:50Z"), Utc("2026-08-02T20:18:40Z"));
+        var geometry = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(
+            manifest.OagGeometryReceiptPath));
+        var source = Path.Combine(Path.GetDirectoryName(
+            manifest.OagGeometryReceiptPath)!,
+            geometry.Value<string>("GuideSolutionSource")!);
+        var text = File.ReadAllText(source).Replace(
+            "2026-08-02T20:00:00Z", "2026-08-02T20:02:00Z");
+        File.WriteAllText(source, text, new UTF8Encoding(false));
+        geometry["GuideSolutionSha256"] = Sha256(source);
+        File.WriteAllText(manifest.OagGeometryReceiptPath, geometry.ToString(),
+            new UTF8Encoding(false));
+        manifest = manifest with {
+            OagGeometryReceiptSha256 = Sha256(manifest.OagGeometryReceiptPath)
+        };
+
+        var result = TppaActualExposureEvidenceProducer.Produce(manifest);
+
+        result.Produced.Should().BeFalse();
+        result.Issues.Should().Contain(issue => issue.Contains("not time-coherent"));
+    }
+
+    [Test]
+    public void DuplicateOagReceiptPropertyFailsClosed() {
+        var manifest = Manifest(
+            Utc("2026-08-02T19:59:50Z"), Utc("2026-08-02T20:18:40Z"));
+        var text = File.ReadAllText(manifest.OagGeometryReceiptPath).TrimEnd();
+        text = text[..^1] + ",\"SchemaVersion\":2}";
+        File.WriteAllText(manifest.OagGeometryReceiptPath, text,
+            new UTF8Encoding(false));
+        manifest = manifest with {
+            OagGeometryReceiptSha256 = Sha256(manifest.OagGeometryReceiptPath)
+        };
+
+        var result = TppaActualExposureEvidenceProducer.Produce(manifest);
+
+        result.Produced.Should().BeFalse();
+        result.Issues.Should().Contain(issue => issue.Contains("cannot be validated"));
+    }
+
+    [Test]
+    public void UnknownOagReceiptPropertyFailsClosed() {
+        var manifest = Manifest(
+            Utc("2026-08-02T19:59:50Z"), Utc("2026-08-02T20:18:40Z"));
+        var geometry = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(
+            manifest.OagGeometryReceiptPath));
+        geometry["OperatorOverride"] = true;
+        File.WriteAllText(manifest.OagGeometryReceiptPath, geometry.ToString(),
+            new UTF8Encoding(false));
+        manifest = manifest with {
+            OagGeometryReceiptSha256 = Sha256(manifest.OagGeometryReceiptPath)
+        };
+
+        var result = TppaActualExposureEvidenceProducer.Produce(manifest);
+
+        result.Produced.Should().BeFalse();
+        result.Issues.Should().Contain(issue => issue.Contains(
+            "properties do not exactly match"));
+    }
+
+    [Test]
     public void Phd2IntervalMissingPostBracketFailsClosed() {
         var manifest = Manifest(
             Utc("2026-08-02T19:59:50Z"), Utc("2026-08-02T20:18:20Z"));
@@ -371,13 +601,60 @@ public class TppaActualExposureEvidenceProducerTest {
             GrantsUpasAuthority = false,
             GrantsAbsoluteAccuracyClaim = false
         });
+        var mainGeometrySource = Path.Combine(root, "main-solution.wcs");
+        var guideGeometrySource = Path.Combine(root, "guide-solution.wcs");
+        File.WriteAllLines(mainGeometrySource,
+            WcsHeader(120.0, 30.0, 6248, 4176, 0.4715),
+            new UTF8Encoding(false));
+        File.WriteAllLines(guideGeometrySource,
+            WcsHeader(120.0002, 30.0001, 1920, 1080, 0.501),
+            new UTF8Encoding(false));
+        var mainGeometry = TppaAstapWcsGeometryParser.Parse(mainGeometrySource);
+        var guideGeometry = TppaAstapWcsGeometryParser.Parse(guideGeometrySource);
+        var bound = TppaOagGeometryBoundCalculator.Compute(
+            mainGeometry, guideGeometry);
         var geometry = Path.Combine(root, "oag-geometry.json");
         WriteJson(geometry, new {
-            SchemaVersion = 1,
+            SchemaVersion = 2,
             Model = "orientation-independent-spherical-triangle-upper-bound",
-            MainSolutionSha256 = new string('a', 64),
-            GuideSolutionSha256 = new string('b', 64),
-            GuideToFarthestMainCornerUpperBoundPixels = 3200.0,
+            FormulaVersion =
+                "orientation-independent-spherical-triangle-upper-bound/v2",
+            GeometryProvenance = "derived-astap-wcs",
+            MainSolutionSource = Path.GetFileName(mainGeometrySource),
+            MainSolutionSha256 = Sha256(mainGeometrySource),
+            GuideSolutionSource = Path.GetFileName(guideGeometrySource),
+            GuideSolutionSha256 = Sha256(guideGeometrySource),
+            MainCenterRightAscensionDegrees = mainGeometry.RightAscensionDegrees,
+            MainCenterDeclinationDegrees = mainGeometry.DeclinationDegrees,
+            MainObservationUtc = mainGeometry.ObservationUtc.ToString("O"),
+            MainWidthPixels = mainGeometry.WidthPixels,
+            MainHeightPixels = mainGeometry.HeightPixels,
+            MainPixelScaleXArcseconds = mainGeometry.PixelScaleXArcseconds,
+            MainPixelScaleYArcseconds = mainGeometry.PixelScaleYArcseconds,
+            MainScaleModel = mainGeometry.ScaleModel,
+            GuideCenterRightAscensionDegrees = guideGeometry.RightAscensionDegrees,
+            GuideCenterDeclinationDegrees = guideGeometry.DeclinationDegrees,
+            GuideObservationUtc = guideGeometry.ObservationUtc.ToString("O"),
+            GuideWidthPixels = guideGeometry.WidthPixels,
+            GuideHeightPixels = guideGeometry.HeightPixels,
+            GuidePixelScaleXArcseconds = guideGeometry.PixelScaleXArcseconds,
+            GuidePixelScaleYArcseconds = guideGeometry.PixelScaleYArcseconds,
+            GuideScaleModel = guideGeometry.ScaleModel,
+            ObservationDeltaSeconds = 0.0,
+            MaximumObservationDeltaSeconds = 60.0,
+            GuideLockOffsetXFromCenterPixels = (double?)null,
+            GuideLockOffsetYFromCenterPixels = (double?)null,
+            MainPixelScaleUsedArcseconds = bound.MainPixelScaleUsedArcseconds,
+            GuidePixelScaleUsedArcseconds = bound.GuidePixelScaleUsedArcseconds,
+            CenterSeparationArcseconds = bound.CenterSeparationArcseconds,
+            CenterSeparationMainPixels = bound.CenterSeparationMainPixels,
+            MainHalfDiagonalPixels = bound.MainHalfDiagonalPixels,
+            GuideRadialEvidenceKind = bound.GuideRadialEvidenceKind,
+            GuideRadialPixels = bound.GuideRadialPixels,
+            GuideRadialArcseconds = bound.GuideRadialArcseconds,
+            GuideRadialMainPixels = bound.GuideRadialMainPixels,
+            GuideToFarthestMainCornerUpperBoundPixels =
+                bound.GuideToFarthestMainCornerUpperBoundPixels,
             UsesOrientationConvention = false,
             GrantsMotionAuthority = false,
             GrantsAbsolutePolarAccuracyClaim = false
@@ -435,6 +712,27 @@ public class TppaActualExposureEvidenceProducerTest {
     private static DateTime Utc(string value) =>
         DateTime.Parse(value, null, System.Globalization.DateTimeStyles.RoundtripKind)
             .ToUniversalTime();
+    private static IEnumerable<string> WcsHeader(double ra, double dec,
+            int width, int height, double scaleArcseconds) {
+        var invariant = System.Globalization.CultureInfo.InvariantCulture;
+        var scaleDegrees = scaleArcseconds / 3600.0;
+        return new[] {
+            "NAXIS   = 2",
+            $"NAXIS1  = {width}",
+            $"NAXIS2  = {height}",
+            "CTYPE1  = 'RA---TAN'",
+            "CTYPE2  = 'DEC--TAN'",
+            "DATE-OBS= '2026-08-02T20:00:00Z'",
+            $"CRVAL1  = {ra.ToString("R", invariant)}",
+            $"CRVAL2  = {dec.ToString("R", invariant)}",
+            $"CRPIX1  = {(0.5 * (width + 1)).ToString("R", invariant)}",
+            $"CRPIX2  = {(0.5 * (height + 1)).ToString("R", invariant)}",
+            $"CD1_1   = {(-scaleDegrees).ToString("R", invariant)}",
+            "CD1_2   = 0",
+            "CD2_1   = 0",
+            $"CD2_2   = {scaleDegrees.ToString("R", invariant)}"
+        };
+    }
     private static void WriteJson(string path, object value) =>
         File.WriteAllText(path, JsonConvert.SerializeObject(value), new UTF8Encoding(false));
     private static string Sha256(string path) =>

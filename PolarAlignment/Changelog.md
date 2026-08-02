@@ -1,3 +1,22 @@
+## Version 2.2.6.93
+
+- Reopen and hash-verify the distinct main- and guide-camera WCS sources named
+  by every actual-exposure OAG geometry receipt; a hash-shaped claim alone no
+  longer satisfies delivered-performance qualification.
+- Add create-new sealed OAG receipt output that resolves source paths, computes
+  their hashes, rejects mismatches, and preserves the no-motion/no-absolute-PA
+  authority boundary.
+- Require schema-v2 OAG receipts derived from strict undistorted ASTAP WCS,
+  portable bundle-relative source paths, and independent reproduction of every
+  parsed and computed geometry field. Keep the hand-entered calculator
+  explicitly diagnostic-only.
+- Bind each WCS digest to the exact immutable bytes reparsed by qualification,
+  reject duplicate or unknown receipt fields, reparse-point/ADS-style paths,
+  sheared or implausible WCS matrices, and main/guide observations separated by
+  more than 60 seconds.
+- Project each geometric sensor centre through its TAN WCS instead of assuming
+  `CRVAL` is the sensor centre when `CRPIX` is offset.
+
 ## Version 2.2.6.92
 
 - Add a deterministic NINA Advanced Sequencer generator for the actual

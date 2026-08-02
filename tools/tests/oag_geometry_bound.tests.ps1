@@ -70,6 +70,72 @@ Describe 'OAG guide-to-main-corner geometry bound' {
         $valid.GuideSolutionSha256 | Should Be ('b' * 64)
     }
 
+    It 'writes a create-new receipt with automatically sealed source artifacts' {
+        $main = Join-Path $TestDrive 'main-solution.json'
+        $guide = Join-Path $TestDrive 'guide-solution.wcs'
+        $output = Join-Path $TestDrive 'geometry-receipt.json'
+        [IO.File]::WriteAllText($main, 'main', [Text.UTF8Encoding]::new($false))
+        [IO.File]::WriteAllText($guide, 'guide', [Text.UTF8Encoding]::new($false))
+        $sealed = @{} + $common
+        $sealed.MainSolutionSource = $main
+        $sealed.GuideSolutionSource = $guide
+
+        & $tool @sealed -OutputPath $output | Out-Null
+
+        $receipt = [IO.File]::ReadAllText($output) | ConvertFrom-Json
+        $receipt.MainSolutionSource | Should Be ([IO.Path]::GetFileName($main))
+        $receipt.GuideSolutionSource | Should Be ([IO.Path]::GetFileName($guide))
+        $receipt.MainSolutionSha256 | Should Be `
+            (Get-FileHash $main -Algorithm SHA256).Hash.ToLowerInvariant()
+        $receipt.GuideSolutionSha256 | Should Be `
+            (Get-FileHash $guide -Algorithm SHA256).Hash.ToLowerInvariant()
+        $receipt.GeometryProvenance | Should Be 'operator-attested-diagnostic'
+        $receipt.FormulaVersion | Should Be `
+            'orientation-independent-spherical-triangle-upper-bound/v1-diagnostic'
+    }
+
+    It 'refuses to overwrite a sealed geometry receipt' {
+        $main = Join-Path $TestDrive 'overwrite-main.json'
+        $guide = Join-Path $TestDrive 'overwrite-guide.wcs'
+        $output = Join-Path $TestDrive 'existing-receipt.json'
+        [IO.File]::WriteAllText($main, 'main', [Text.UTF8Encoding]::new($false))
+        [IO.File]::WriteAllText($guide, 'guide', [Text.UTF8Encoding]::new($false))
+        [IO.File]::WriteAllText($output, 'preserve', [Text.UTF8Encoding]::new($false))
+        $sealed = @{} + $common
+        $sealed.MainSolutionSource = $main
+        $sealed.GuideSolutionSource = $guide
+
+        $rejected = $false
+        try {
+            & $tool @sealed -OutputPath $output | Out-Null
+        } catch {
+            $rejected = $true
+        }
+        $rejected | Should Be $true
+        [IO.File]::ReadAllText($output) | Should Be 'preserve'
+    }
+
+    It 'rejects a declared source hash that does not match sealed bytes' {
+        $main = Join-Path $TestDrive 'hash-main.json'
+        $guide = Join-Path $TestDrive 'hash-guide.wcs'
+        $output = Join-Path $TestDrive 'hash-receipt.json'
+        [IO.File]::WriteAllText($main, 'main', [Text.UTF8Encoding]::new($false))
+        [IO.File]::WriteAllText($guide, 'guide', [Text.UTF8Encoding]::new($false))
+        $sealed = @{} + $common
+        $sealed.MainSolutionSource = $main
+        $sealed.GuideSolutionSource = $guide
+
+        $rejected = $false
+        try {
+            & $tool @sealed -MainSolutionSha256 ('0' * 64) `
+                -OutputPath $output | Out-Null
+        } catch {
+            $rejected = $true
+        }
+        $rejected | Should Be $true
+        Test-Path -LiteralPath $output | Should Be $false
+    }
+
     It 'does not grant movement or absolute-accuracy authority' {
         $result = & $tool @common
         $result.GrantsMotionAuthority | Should Be $false

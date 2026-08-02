@@ -98,6 +98,29 @@ internal static class TppaActualExposureEvidenceProducer {
     private const double MaximumTargetCoordinateDeltaDegrees = 1.0 / 60.0;
     private const double MaximumRotatorDeltaDegrees = 0.02;
     private const double MaximumCoolerSetPointDeltaC = 0.1;
+    private const double MaximumGeometryObservationDeltaSeconds = 60.0;
+    private const int MaximumGeometrySourceBytes = 1_000_000;
+    private static readonly HashSet<string> GeometryReceiptProperties = new(
+        StringComparer.Ordinal) {
+            "SchemaVersion", "Model", "FormulaVersion", "GeometryProvenance",
+            "MainSolutionSource", "MainSolutionSha256", "GuideSolutionSource",
+            "GuideSolutionSha256", "MainCenterRightAscensionDegrees",
+            "MainCenterDeclinationDegrees", "MainObservationUtc", "MainWidthPixels",
+            "MainHeightPixels", "MainPixelScaleXArcseconds",
+            "MainPixelScaleYArcseconds", "MainScaleModel",
+            "GuideCenterRightAscensionDegrees", "GuideCenterDeclinationDegrees",
+            "GuideObservationUtc", "GuideWidthPixels", "GuideHeightPixels",
+            "GuidePixelScaleXArcseconds", "GuidePixelScaleYArcseconds",
+            "GuideScaleModel", "ObservationDeltaSeconds",
+            "MaximumObservationDeltaSeconds", "GuideLockOffsetXFromCenterPixels",
+            "GuideLockOffsetYFromCenterPixels", "MainPixelScaleUsedArcseconds",
+            "GuidePixelScaleUsedArcseconds", "CenterSeparationArcseconds",
+            "CenterSeparationMainPixels", "MainHalfDiagonalPixels",
+            "GuideRadialEvidenceKind", "GuideRadialPixels",
+            "GuideRadialArcseconds", "GuideRadialMainPixels",
+            "GuideToFarthestMainCornerUpperBoundPixels", "UsesOrientationConvention",
+            "GrantsMotionAuthority", "GrantsAbsolutePolarAccuracyClaim"
+        };
     private static readonly string[] RequiredReadOnlyNinaEndpoints = {
         "equipment/mount/info", "equipment/camera/info",
         "equipment/filterwheel/info", "equipment/focuser/info",
@@ -404,19 +427,220 @@ internal static class TppaActualExposureEvidenceProducer {
     private static void ValidateGeometry(string path, ICollection<string> issues) {
         try {
             var json = ParseJsonWithoutDateCoercion(path);
-            if (json.Value<int?>("SchemaVersion") != 1
+            var mainSource = json.Value<string>("MainSolutionSource");
+            var guideSource = json.Value<string>("GuideSolutionSource");
+            var mainSha256 = json.Value<string>("MainSolutionSha256");
+            var guideSha256 = json.Value<string>("GuideSolutionSha256");
+            RequireExactGeometryProperties(json);
+            if (json.Value<int?>("SchemaVersion") != 2
                     || json.Value<string>("Model")
                         != "orientation-independent-spherical-triangle-upper-bound"
+                    || json.Value<string>("FormulaVersion")
+                        != "orientation-independent-spherical-triangle-upper-bound/v2"
+                    || json.Value<string>("GeometryProvenance") != "derived-astap-wcs"
                     || json.Value<bool?>("UsesOrientationConvention") != false
                     || json.Value<bool?>("GrantsMotionAuthority") != false
                     || json.Value<bool?>("GrantsAbsolutePolarAccuracyClaim") != false
-                    || !IsSha256(json.Value<string>("MainSolutionSha256"))
-                    || !IsSha256(json.Value<string>("GuideSolutionSha256"))
+                    || string.IsNullOrWhiteSpace(mainSource)
+                    || string.IsNullOrWhiteSpace(guideSource)
+                    || !IsSha256(mainSha256)
+                    || !IsSha256(guideSha256)
                     || !(json.Value<double?>("GuideToFarthestMainCornerUpperBoundPixels") > 0)) {
                 issues.Add("OAG geometry receipt is unsupported or grants forbidden authority");
+                return;
             }
+
+            var receiptDirectory = Path.GetDirectoryName(Path.GetFullPath(path))
+                ?? throw new IOException("OAG geometry receipt has no parent directory");
+            var mainPath = ResolveGeometrySource(receiptDirectory, mainSource);
+            var guidePath = ResolveGeometrySource(receiptDirectory, guideSource);
+            var mainSourceBytes = ReadGeometrySource(mainPath, mainSha256,
+                "OAG main solution source");
+            var guideSourceBytes = ReadGeometrySource(guidePath, guideSha256,
+                "OAG guide solution source");
+            if (string.Equals(mainPath, guidePath, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(mainSourceBytes.Digest, guideSourceBytes.Digest,
+                        StringComparison.OrdinalIgnoreCase)) {
+                issues.Add("OAG main and guide solution sources must be distinct artifacts");
+                return;
+            }
+
+            var main = TppaAstapWcsGeometryParser.Parse(mainSourceBytes.Bytes);
+            var guide = TppaAstapWcsGeometryParser.Parse(guideSourceBytes.Bytes);
+            var observationDelta = Math.Abs(
+                (main.ObservationUtc - guide.ObservationUtc).TotalSeconds);
+            if (observationDelta > MaximumGeometryObservationDeltaSeconds) {
+                issues.Add("OAG main and guide WCS observations are not time-coherent");
+                return;
+            }
+            var lockX = json.Value<double?>("GuideLockOffsetXFromCenterPixels");
+            var lockY = json.Value<double?>("GuideLockOffsetYFromCenterPixels");
+            var computed = TppaOagGeometryBoundCalculator.Compute(
+                main, guide, lockX, lockY);
+            RequireGeometryValue(json, "MainCenterRightAscensionDegrees",
+                main.RightAscensionDegrees, issues);
+            RequireGeometryValue(json, "MainCenterDeclinationDegrees",
+                main.DeclinationDegrees, issues);
+            RequireGeometryUtc(json, "MainObservationUtc", main.ObservationUtc, issues);
+            RequireGeometryInteger(json, "MainWidthPixels", main.WidthPixels, issues);
+            RequireGeometryInteger(json, "MainHeightPixels", main.HeightPixels, issues);
+            RequireGeometryValue(json, "MainPixelScaleXArcseconds",
+                main.PixelScaleXArcseconds, issues);
+            RequireGeometryValue(json, "MainPixelScaleYArcseconds",
+                main.PixelScaleYArcseconds, issues);
+            RequireGeometryString(json, "MainScaleModel", main.ScaleModel, issues);
+            RequireGeometryValue(json, "GuideCenterRightAscensionDegrees",
+                guide.RightAscensionDegrees, issues);
+            RequireGeometryValue(json, "GuideCenterDeclinationDegrees",
+                guide.DeclinationDegrees, issues);
+            RequireGeometryUtc(json, "GuideObservationUtc", guide.ObservationUtc, issues);
+            RequireGeometryInteger(json, "GuideWidthPixels", guide.WidthPixels, issues);
+            RequireGeometryInteger(json, "GuideHeightPixels", guide.HeightPixels, issues);
+            RequireGeometryValue(json, "GuidePixelScaleXArcseconds",
+                guide.PixelScaleXArcseconds, issues);
+            RequireGeometryValue(json, "GuidePixelScaleYArcseconds",
+                guide.PixelScaleYArcseconds, issues);
+            RequireGeometryString(json, "GuideScaleModel", guide.ScaleModel, issues);
+            RequireGeometryValue(json, "ObservationDeltaSeconds",
+                observationDelta, issues);
+            RequireGeometryValue(json, "MaximumObservationDeltaSeconds",
+                MaximumGeometryObservationDeltaSeconds, issues);
+            RequireGeometryValue(json, "MainPixelScaleUsedArcseconds",
+                computed.MainPixelScaleUsedArcseconds, issues);
+            RequireGeometryValue(json, "GuidePixelScaleUsedArcseconds",
+                computed.GuidePixelScaleUsedArcseconds, issues);
+            RequireGeometryValue(json, "CenterSeparationArcseconds",
+                computed.CenterSeparationArcseconds, issues);
+            RequireGeometryValue(json, "CenterSeparationMainPixels",
+                computed.CenterSeparationMainPixels, issues);
+            RequireGeometryValue(json, "MainHalfDiagonalPixels",
+                computed.MainHalfDiagonalPixels, issues);
+            RequireGeometryString(json, "GuideRadialEvidenceKind",
+                computed.GuideRadialEvidenceKind, issues);
+            RequireGeometryValue(json, "GuideRadialPixels",
+                computed.GuideRadialPixels, issues);
+            RequireGeometryValue(json, "GuideRadialArcseconds",
+                computed.GuideRadialArcseconds, issues);
+            RequireGeometryValue(json, "GuideRadialMainPixels",
+                computed.GuideRadialMainPixels, issues);
+            RequireGeometryValue(json,
+                "GuideToFarthestMainCornerUpperBoundPixels",
+                computed.GuideToFarthestMainCornerUpperBoundPixels, issues);
         } catch (Exception exception) {
             issues.Add($"OAG geometry receipt cannot be validated: {exception.Message}");
+        }
+    }
+
+    private static string ResolveGeometrySource(string receiptDirectory,
+            string source) {
+        if (Path.IsPathRooted(source) || source.IndexOf(':') >= 0
+                || source.IndexOf('\0') >= 0) {
+            throw new InvalidDataException(
+                "OAG geometry sources must use bundle-relative paths.");
+        }
+        var segments = source.Split(
+            new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar },
+            StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length == 0 || segments.Any(segment =>
+                segment != "." && segment != ".."
+                && (segment.EndsWith(' ') || segment.EndsWith('.')))) {
+            throw new InvalidDataException("OAG geometry source path is ambiguous.");
+        }
+        var resolved = Path.GetFullPath(Path.Combine(receiptDirectory, source));
+        var relative = Path.GetRelativePath(receiptDirectory, resolved);
+        if (relative == ".." || relative.StartsWith(".." + Path.DirectorySeparatorChar,
+                StringComparison.Ordinal)
+                || relative.StartsWith(".." + Path.AltDirectorySeparatorChar,
+                    StringComparison.Ordinal)) {
+            throw new InvalidDataException(
+                "OAG geometry source escapes the receipt directory.");
+        }
+        if (!File.Exists(resolved)) {
+            throw new InvalidDataException("OAG geometry source is missing.");
+        }
+        EnsureNoReparsePoints(receiptDirectory, relative);
+        return resolved;
+    }
+
+    private static void EnsureNoReparsePoints(string receiptDirectory, string relative) {
+        var current = Path.GetFullPath(receiptDirectory);
+        if ((File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0) {
+            throw new InvalidDataException("OAG geometry bundle uses a reparse point.");
+        }
+        foreach (var segment in relative.Split(
+                new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar },
+                StringSplitOptions.RemoveEmptyEntries)) {
+            current = Path.Combine(current, segment);
+            if ((File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0) {
+                throw new InvalidDataException("OAG geometry source uses a reparse point.");
+            }
+        }
+    }
+
+    private static VerifiedGeometrySource ReadGeometrySource(string path,
+            string expected, string label) {
+        if (!File.Exists(path) || !IsSha256(expected)) {
+            throw new InvalidDataException(
+                $"{label} path or declared SHA-256 is invalid");
+        }
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read,
+            FileShare.Read);
+        if (stream.Length <= 0 || stream.Length > MaximumGeometrySourceBytes) {
+            throw new InvalidDataException($"{label} size is invalid");
+        }
+        using var buffer = new MemoryStream((int)stream.Length);
+        stream.CopyTo(buffer);
+        var bytes = buffer.ToArray();
+        var digest = Sha256(bytes);
+        if (!digest.Equals(expected, StringComparison.OrdinalIgnoreCase)) {
+            throw new InvalidDataException($"{label} SHA-256 does not match the supplied bytes");
+        }
+        return new(bytes, digest);
+    }
+
+    private static void RequireExactGeometryProperties(JObject json) {
+        var actual = json.Properties().Select(property => property.Name).ToHashSet(
+            StringComparer.Ordinal);
+        if (!actual.SetEquals(GeometryReceiptProperties)) {
+            throw new InvalidDataException(
+                "OAG geometry receipt properties do not exactly match schema 2.");
+        }
+    }
+
+    private static void RequireGeometryValue(JObject json, string name,
+            double expected, ICollection<string> issues) {
+        var actual = json.Value<double?>(name);
+        var tolerance = Math.Max(1e-9, Math.Abs(expected) * 1e-10);
+        if (!actual.HasValue || !double.IsFinite(actual.Value)
+                || Math.Abs(actual.Value - expected) > tolerance) {
+            issues.Add($"OAG derived geometry field {name} does not reproduce its WCS sources");
+        }
+    }
+
+    private static void RequireGeometryUtc(JObject json, string name,
+            DateTimeOffset expected, ICollection<string> issues) {
+        var value = json.Value<string>(name);
+        if (string.IsNullOrWhiteSpace(value)
+                || !DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture,
+                    DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                    out var actual)
+                || actual.ToUniversalTime() != expected.ToUniversalTime()) {
+            issues.Add($"OAG derived geometry field {name} does not reproduce its WCS sources");
+        }
+    }
+
+    private static void RequireGeometryInteger(JObject json, string name,
+            int expected, ICollection<string> issues) {
+        if (json.Value<int?>(name) != expected) {
+            issues.Add($"OAG derived geometry field {name} does not reproduce its WCS sources");
+        }
+    }
+
+    private static void RequireGeometryString(JObject json, string name,
+            string expected, ICollection<string> issues) {
+        if (!string.Equals(json.Value<string>(name), expected,
+                StringComparison.Ordinal)) {
+            issues.Add($"OAG derived geometry field {name} does not reproduce its WCS sources");
         }
     }
 
@@ -600,7 +824,11 @@ internal static class TppaActualExposureEvidenceProducer {
         using var reader = new JsonTextReader(stream) {
             DateParseHandling = DateParseHandling.None
         };
-        return JObject.Load(reader);
+        return JObject.Load(reader, new JsonLoadSettings {
+            DuplicatePropertyNameHandling = DuplicatePropertyNameHandling.Error,
+            CommentHandling = CommentHandling.Ignore,
+            LineInfoHandling = LineInfoHandling.Ignore
+        });
     }
 
     private static DateTime ParseUtc(string value) {
@@ -617,6 +845,7 @@ internal static class TppaActualExposureEvidenceProducer {
         Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
     private static string Serialize(object value) =>
         JsonConvert.SerializeObject(value, Formatting.Indented);
+    private sealed record VerifiedGeometrySource(byte[] Bytes, string Digest);
     private static TppaActualExposureEvidenceProductionResult Invalid(string issue) =>
         new(false, null, null, new[] { issue });
 }

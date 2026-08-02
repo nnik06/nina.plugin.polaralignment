@@ -52,8 +52,19 @@ bracket:
    satisfy the 3.0-arcminute true-pole planning gate.
 8. Record pressure, temperature and humidity from an explicit qualified source
    without connecting NINA Weather or Safety devices.
-9. Produce a same-field OAG geometry receipt from blind guide-camera and
-   main-camera WCS. Never reuse a receipt across optical trains or camera
+9. Preserve strict undistorted ASTAP WCS files from blind guide-camera and
+   main-camera solves no more than 60 seconds apart inside the evidence bundle.
+   Both must retain valid UTC `DATE-OBS`, and the train must remain stationary
+   and mechanically unchanged between them. Produce the
+   create-new schema-v2 receipt with
+   `tools/new_derived_oag_geometry_receipt.ps1`. Qualification reopens both
+   files once, binds each digest to the same bytes it reparses, projects the
+   true sensor centres through TAN WCS, and independently reproduces every
+   parsed and computed geometry field. Duplicate/unknown receipt properties,
+   stale pairs, path indirection, and distorted or ill-conditioned WCS fail
+   closed.
+   The hand-entered `calculate_oag_geometry_bound.ps1` result is
+   diagnostic-only. Never reuse a receipt across optical trains or camera
    geometry changes.
 10. Replace each nominal policy pixel scale with the same-session measured WCS
    scale and preserve the resulting policy file and SHA-256.

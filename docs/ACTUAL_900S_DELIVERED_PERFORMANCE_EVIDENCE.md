@@ -55,7 +55,19 @@ mirror motion, cable forces, differential flexure, or focus drift.
    the 900-second exposure. The long image contains the delivered effect of an
    interior disturbance, but neither endpoint controls nor sampled state prove
    that the interior was transient-free or uniquely identify the disturbance.
-6. Produce the orientation-independent OAG geometry receipt for the same train.
+6. Preserve strict undistorted ASTAP WCS files from main- and guide-camera
+   blind solves no more than 60 seconds apart inside the same bundle. Both
+   files must retain valid UTC `DATE-OBS`; solve the unchanged, stationary
+   optical train without refocus, rotation, slew, or OAG adjustment between
+   them. Run
+   `tools/new_derived_oag_geometry_receipt.ps1` to create the schema-v2 OAG
+   receipt. It records portable relative source paths and hashes. Qualification
+   hashes and reparses the same immutable source bytes, projects each physical
+   sensor centre through TAN WCS, and independently reproduces every field. It
+   rejects duplicate or unknown receipt fields, path indirection, distorted or
+   ill-conditioned WCS, and stale source pairs. The
+   hand-entered `calculate_oag_geometry_bound.ps1` result is planning-only and
+   structurally ineligible for qualification.
 7. Every FITS file must retain a current WCS whose measured pixel scale agrees
    with the hash-bound optical-train policy within its preregistered tolerance.
 8. Run `tools/analyze_actual_exposure_bracket.ps1` offline. It copies source
