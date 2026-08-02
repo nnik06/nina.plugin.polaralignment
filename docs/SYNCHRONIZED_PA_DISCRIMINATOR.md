@@ -105,16 +105,27 @@ ten-minute windows. The conservative rate includes both a residual-MAD margin
 and a nonzero angular measurement floor; first/last disagreement and
 implausible adjacent transported-roll jumps fail closed.
 
-A pass is `PassivePhysicalRotationWitnessQualified`: the passive tracking run
-bounded physical camera roll within the configured guide-to-corner budget. It
-never sets `PolarAlignmentInferenceQualified` or
-`OperationalGuidedExposureRotationQualified`. A low roll rate does not bound
-the polar-error vector because the coupling between polar error and field
+In passive mode, a pass is `PassivePhysicalRotationWitnessQualified`: the
+unguided tracking run bounded physical camera roll within the configured
+guide-to-corner budget. In guided mode, a pass is
+`GuidedDeliveredRotationWitnessQualified`: PHD2 remained continuously guiding
+with output enabled while the synchronized main-camera WCS series bounded
+physical roll. The guided collector is a second read-only PHD2 client; it does
+not start or stop guiding, change output, dither, settle, or restore state.
+
+Both modes keep `PolarAlignmentInferenceQualified` and
+`OperationalGuidedExposureRotationQualified` false. A low roll rate does not
+bound the polar-error vector because coupling between polar error and field
 rotation depends on hour angle and declination and becomes weak near the
-celestial pole. Guided operational qualification requires a synchronized
-PHD2-guided run and a real 900-second subframe star-shape check on each optical
-train. Neither verdict establishes absolute true-pole accuracy or authorizes
+celestial pole. Guided WCS evidence is also not an actual long exposure: a real
+900-second subframe and star-shape check remain required on each optical train.
+Neither verdict establishes absolute true-pole accuracy or authorizes
 mount/UPAS movement.
+
+The guided collector's RPC and event vocabulary is pinned to
+`OpenPHDGuiding/phd2@4a13cf245d7e485e79533697f87b032b304df952`,
+`src/event_server.cpp`. Coverage is based on `GuideStep` events, not correction
+pulses; a well-tracking mount may legitimately emit few or no pulses.
 
 ## Measurement Meaning
 
@@ -174,6 +185,47 @@ pwsh -NoProfile -File .\tools\run_synchronized_pa_discriminator.ps1 `
 
 Do not connect the NINA Weather or Safety Monitor devices. Environment values
 come from the explicitly named external source.
+
+## Guided Rotation Witness
+
+Use guided mode only after PHD2 is already connected, calibrated, guiding a
+fixed star, and has guide output enabled. Complete any dither and settle before
+starting. The runner does not change PHD2 state and rejects any observed
+dither, settle, star/lock change, calibration, pause, looping transition,
+guiding-parameter change, configuration change, or alert during the interval.
+
+Example 30-minute synchronized guided witness:
+
+```powershell
+pwsh -NoProfile -File .\tools\run_synchronized_guided_rotation.ps1 `
+  -DurationSeconds 1800 `
+  -MainSolveCadenceSeconds 30 `
+  -Phd2StateProbeCadenceSeconds 30 `
+  -PressureHpa 997.4 `
+  -TemperatureCelsius 34.2 `
+  -RelativeHumidityPercent 68.0 `
+  -AtmosphereSource manual-qualified-meter `
+  -AtmosphereObservedUtc 2026-08-02T20:00:00Z `
+  -ExpectedPierSide West
+```
+
+Analyze that schema-3 run explicitly as guided evidence:
+
+```powershell
+pwsh -NoProfile -File .\tools\analyze_synchronized_pa_discriminator.ps1 `
+  -RunDirectory <synchronized-guided-run-directory> `
+  -GeometryReceiptPath <optical-train-oag-geometry.json> `
+  -ExpectedEvidenceMode GuidedTrackingRollWitness `
+  -ExposureSeconds 900 `
+  -AllowedSmearPixels 0.5
+```
+
+A guided pass means only that delivered WCS roll stayed within the declared
+900-second corner-smear budget under the sampled geometry and guiding state.
+It does not prove the same result at a different target geometry, prove round
+stars in an uninterrupted 900-second subframe, or identify an absolute PA
+vector. Keep `ActualLongExposureArtifactPresent=false` until a separately
+sealed exposure artifact exists; this runner never upgrades that field.
 
 ## Preregistered Sequence
 

@@ -1,3 +1,14 @@
+## Version 2.2.6.87
+
+- Add a read-only PHD2 evidence client for synchronized guided rotation trials.
+  It requires an already calibrated and guiding PHD2 session, observes
+  `GuideStep` coverage, and fails closed on guide-output loss, dither, settling,
+  lock-position changes, star loss, calibration, or configuration changes.
+- Add a schema-3 guided runner and analyzer mode that can qualify only a
+  delivered-rotation witness. It cannot qualify an actual 900-second artifact,
+  infer the polar-error vector, claim absolute accuracy, or authorize movement.
+- Pin the guided event and RPC contract to the inspected official PHD2 source.
+
 ## Version 2.2.6.86
 
 - Mark the passive physical-roll witness explicitly non-inferential for polar

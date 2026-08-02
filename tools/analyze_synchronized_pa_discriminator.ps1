@@ -21,6 +21,8 @@ param(
     [double]$PositionAngleNoiseFloorArcseconds = 1.0,
     [ValidateRange(0.01, 5.0)]
     [double]$MaximumWindowDisagreementSmearPixels = 0.25,
+    [ValidateSet('PassiveUnguidedTracking', 'GuidedTrackingRollWitness')]
+    [string]$ExpectedEvidenceMode = 'PassiveUnguidedTracking',
     [ValidateSet('Object', 'Json')]
     [string]$OutputFormat = 'Object'
 )
@@ -209,15 +211,38 @@ if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
     throw "Synchronized manifest is missing: $manifestPath"
 }
 $manifest = [IO.File]::ReadAllText($manifestPath) | ConvertFrom-Json
-if ([int]$manifest.SchemaVersion -notin @(1, 2)) {
-    throw "Unsupported synchronized manifest schema: $($manifest.SchemaVersion)"
-}
 $evidenceMode = if ($manifest.PSObject.Properties.Name -contains 'EvidenceMode') {
     [string]$manifest.EvidenceMode
 } else { 'LegacyPassiveUnspecified' }
-if ([int]$manifest.SchemaVersion -eq 2 -and
-        $evidenceMode -ne 'PassiveUnguidedTracking') {
-    throw "Unsupported synchronized evidence mode for passive analysis: $evidenceMode"
+$schemaVersion = [int]$manifest.SchemaVersion
+$guidedEvidencePrerequisitesVerified = $false
+$actualLongExposureArtifactPresent = $false
+if ($ExpectedEvidenceMode -eq 'PassiveUnguidedTracking') {
+    if ($schemaVersion -notin @(1, 2)) {
+        throw "Unsupported synchronized manifest schema for passive analysis: $schemaVersion"
+    }
+    if ($schemaVersion -eq 2 -and $evidenceMode -ne 'PassiveUnguidedTracking') {
+        throw "Unsupported synchronized evidence mode for passive analysis: $evidenceMode"
+    }
+} else {
+    if ($schemaVersion -ne 3 -or $evidenceMode -ne 'GuidedTrackingRollWitness') {
+        throw "Unsupported synchronized manifest for guided roll analysis: schema=$schemaVersion mode=$evidenceMode"
+    }
+    foreach ($required in @(
+            'GuidingContinuityQualified', 'GuideOutputContinuouslyEnabled',
+            'GuideStepCoverageQualified', 'ActualLongExposureArtifactPresent')) {
+        if ($manifest.PSObject.Properties.Name -notcontains $required) {
+            throw "Guided synchronized manifest is missing '$required'."
+        }
+    }
+    if (-not [bool]$manifest.GuidingContinuityQualified -or
+            -not [bool]$manifest.GuideOutputContinuouslyEnabled -or
+            -not [bool]$manifest.GuideStepCoverageQualified) {
+        throw 'Guided synchronized manifest did not pass guiding continuity, guide-output, and GuideStep-coverage gates.'
+    }
+    $guidedEvidencePrerequisitesVerified = $true
+    $actualLongExposureArtifactPresent =
+        [bool]$manifest.ActualLongExposureArtifactPresent
 }
 if (-not [bool]$manifest.CoverageQualified -or
         -not [bool]$manifest.ClockQualified100Milliseconds) {
@@ -534,9 +559,14 @@ if ($conservativeSmear -gt $AllowedSmearPixels) {
         $AllowedSmearPixels))
 }
 $qualified = $reasons.Count -eq 0
+$analysisModel = if ($ExpectedEvidenceMode -eq 'GuidedTrackingRollWitness') {
+    'synchronized-common-tangent-guided-roll-witness'
+} else {
+    'synchronized-common-tangent-roll-passive-bound'
+}
 $result = [pscustomobject][ordered]@{
     SchemaVersion = 2
-    Model = 'synchronized-common-tangent-roll-passive-bound'
+    Model = $analysisModel
     NinaPositionAngleConventionSource =
         'isbeorn/nina@f360a7bab50bae776af928fe0e5dbde4c996506e: PlateSolveResult.cs, WorldCoordinateSystem.cs, ASTAPSolver.cs'
     RunDirectory = $root
@@ -549,7 +579,10 @@ $result = [pscustomobject][ordered]@{
     AllowedSmearPixels = $AllowedSmearPixels
     SampleCount = $points.Count
     SpanMinutes = $spanMinutes
+    ExpectedEvidenceMode = $ExpectedEvidenceMode
     EvidenceMode = $evidenceMode
+    GuidedEvidencePrerequisitesVerified = $guidedEvidencePrerequisitesVerified
+    ActualLongExposureArtifactPresent = $actualLongExposureArtifactPresent
     NinaPositionAngleConvention =
         'image-up axis east of celestial north; constant 180-degree ASTAP offset is slope-invariant'
     SolveParityFlipped = $solveParity
@@ -570,15 +603,19 @@ $result = [pscustomobject][ordered]@{
     FirstLastRateDifferenceDegreesPerHour = $windowRateDifference
     FirstLastDisagreementSmearPixels = $windowDisagreementSmear
     FailureReasons = @($reasons)
-    PassivePhysicalRotationWitnessQualified = $qualified
+    PassivePhysicalRotationWitnessQualified =
+        $ExpectedEvidenceMode -eq 'PassiveUnguidedTracking' -and $qualified
+    GuidedDeliveredRotationWitnessQualified =
+        $ExpectedEvidenceMode -eq 'GuidedTrackingRollWitness' -and $qualified
     PolarAlignmentInferenceQualified = $false
     PolarAlignmentInferenceQualificationReason =
         'Physical roll alone does not bound the polar-error vector without a qualified geometry-sensitivity model.'
     RotationSensitivityToPolarErrorComputed = $false
     OperationalGuidedExposureRotationQualified = $false
     OperationalGuidedExposureRotationQualificationReason =
-        'This analyzer consumes a passive unguided tracking run; guided operational qualification requires a synchronized guided run.'
-    RequiresSynchronizedGuidedEvidence = $true
+        'A synchronized roll series is not a real long-exposure star-shape qualification.'
+    RequiresSynchronizedGuidedEvidence =
+        $ExpectedEvidenceMode -ne 'GuidedTrackingRollWitness'
     RequiresActualExposureStarShapeValidation = $true
     GrantsMountMotionAuthority = $false
     GrantsUpasAuthority = $false

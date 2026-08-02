@@ -454,4 +454,66 @@ Describe 'synchronized PA discriminator operational analyzer' {
         }
         $rejected | Should Be $true
     }
+
+    It 'qualifies only a guided delivered-rotation witness from a schema-3 manifest' {
+        $run = Join-Path $TestDrive 'guided-witness'
+        New-SyntheticRun $run { param($hours) 0.001 * $hours } | Out-Null
+        $geometry = Join-Path $TestDrive 'guided-witness-geometry.json'
+        New-GeometryReceipt $geometry
+        $manifestPath = Join-Path $run 'manifest.json'
+        $manifest = [IO.File]::ReadAllText($manifestPath) | ConvertFrom-Json
+        $manifest.SchemaVersion = 3
+        $manifest.EvidenceMode = 'GuidedTrackingRollWitness'
+        $manifest | Add-Member -NotePropertyName GuidingContinuityQualified `
+            -NotePropertyValue $true
+        $manifest | Add-Member -NotePropertyName GuideOutputContinuouslyEnabled `
+            -NotePropertyValue $true
+        $manifest | Add-Member -NotePropertyName GuideStepCoverageQualified `
+            -NotePropertyValue $true
+        $manifest | Add-Member -NotePropertyName ActualLongExposureArtifactPresent `
+            -NotePropertyValue $false
+        Write-Utf8 $manifestPath ($manifest | ConvertTo-Json -Depth 8)
+
+        $result = & $tool -RunDirectory $run -GeometryReceiptPath $geometry `
+            -ExpectedEvidenceMode GuidedTrackingRollWitness
+
+        $result.GuidedDeliveredRotationWitnessQualified | Should Be $true
+        $result.PassivePhysicalRotationWitnessQualified | Should Be $false
+        $result.GuidedEvidencePrerequisitesVerified | Should Be $true
+        $result.ActualLongExposureArtifactPresent | Should Be $false
+        $result.OperationalGuidedExposureRotationQualified | Should Be $false
+        $result.PolarAlignmentInferenceQualified | Should Be $false
+        $result.RequiresSynchronizedGuidedEvidence | Should Be $false
+        $result.RequiresActualExposureStarShapeValidation | Should Be $true
+        $result.Model | Should Be `
+            'synchronized-common-tangent-guided-roll-witness'
+    }
+
+    It 'rejects guided evidence without GuideStep coverage' {
+        $run = Join-Path $TestDrive 'guided-no-coverage'
+        New-SyntheticRun $run { param($hours) 0.001 * $hours } | Out-Null
+        $geometry = Join-Path $TestDrive 'guided-no-coverage-geometry.json'
+        New-GeometryReceipt $geometry
+        $manifestPath = Join-Path $run 'manifest.json'
+        $manifest = [IO.File]::ReadAllText($manifestPath) | ConvertFrom-Json
+        $manifest.SchemaVersion = 3
+        $manifest.EvidenceMode = 'GuidedTrackingRollWitness'
+        $manifest | Add-Member -NotePropertyName GuidingContinuityQualified `
+            -NotePropertyValue $true
+        $manifest | Add-Member -NotePropertyName GuideOutputContinuouslyEnabled `
+            -NotePropertyValue $true
+        $manifest | Add-Member -NotePropertyName GuideStepCoverageQualified `
+            -NotePropertyValue $false
+        $manifest | Add-Member -NotePropertyName ActualLongExposureArtifactPresent `
+            -NotePropertyValue $false
+        Write-Utf8 $manifestPath ($manifest | ConvertTo-Json -Depth 8)
+        $rejected = $false
+        try {
+            & $tool -RunDirectory $run -GeometryReceiptPath $geometry `
+                -ExpectedEvidenceMode GuidedTrackingRollWitness | Out-Null
+        } catch {
+            $rejected = $_.Exception.Message -match 'GuideStep-coverage'
+        }
+        $rejected | Should Be $true
+    }
 }
