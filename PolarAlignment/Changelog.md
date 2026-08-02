@@ -4,6 +4,8 @@
   long-frame attrition so a degraded 900-second frame cannot pass on survivors.
 - Require measured FITS WCS scale, two-pixel control-PSF sampling, bounded
   control-frame scatter, finite pixels, and complete PHD2 event provenance.
+- Independently reparse the hash-bound PHD2 guide-step CSV for contiguous frame
+  numbers, monotonic clocks, bounded cadence gaps, and full bracket coverage.
 - Add adversarial regressions for attrition, quadrant-localized degradation,
   wrong WCS scale, nonfinite pixels, undersampling, and unstable controls.
 

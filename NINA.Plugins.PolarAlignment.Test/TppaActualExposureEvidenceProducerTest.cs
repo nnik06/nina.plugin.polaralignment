@@ -123,6 +123,52 @@ public class TppaActualExposureEvidenceProducerTest {
         result.Issues.Should().Contain(issue => issue.Contains("hash-mismatched"));
     }
 
+    [Test]
+    public void HashConsistentGuideStepSequenceGapFailsIndependentValidation() {
+        var manifest = Manifest(
+            Utc("2026-08-02T19:59:50Z"), Utc("2026-08-02T20:18:40Z"));
+        var guideStepsPath = Path.Combine(root, "guidesteps.csv");
+        var rows = File.ReadAllLines(guideStepsPath).ToList();
+        rows.RemoveAt(10);
+        File.WriteAllLines(guideStepsPath, rows, new UTF8Encoding(false));
+        var summary = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(
+            manifest.Phd2SummaryPath));
+        summary["GuideStepsSha256"] = Sha256(guideStepsPath);
+        summary["GuideStepCount"] = rows.Count - 1;
+        File.WriteAllText(manifest.Phd2SummaryPath, summary.ToString(),
+            new UTF8Encoding(false));
+        manifest = manifest with {
+            Phd2SummarySha256 = Sha256(manifest.Phd2SummaryPath)
+        };
+
+        var result = TppaActualExposureEvidenceProducer.Produce(manifest);
+
+        result.Produced.Should().BeFalse();
+        result.Issues.Should().Contain(issue => issue.Contains(
+            "independent continuity validation"));
+    }
+
+    [Test]
+    public void HashConsistentPermissiveCadenceSummaryFailsRawCrossCheck() {
+        var manifest = Manifest(
+            Utc("2026-08-02T19:59:50Z"), Utc("2026-08-02T20:18:40Z"));
+        var summary = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(
+            manifest.Phd2SummaryPath));
+        summary["MaximumAllowedGuideStepGapSeconds"] = 500.0;
+        summary["MaximumObservedGuideStepGapSeconds"] = 400.0;
+        File.WriteAllText(manifest.Phd2SummaryPath, summary.ToString(),
+            new UTF8Encoding(false));
+        manifest = manifest with {
+            Phd2SummarySha256 = Sha256(manifest.Phd2SummaryPath)
+        };
+
+        var result = TppaActualExposureEvidenceProducer.Produce(manifest);
+
+        result.Produced.Should().BeFalse();
+        result.Issues.Should().Contain(issue => issue.Contains(
+            "independent continuity validation"));
+    }
+
     private TppaActualExposureEvidenceManifest Manifest(
             DateTime phd2Start, DateTime phd2End) {
         var policy = Policy();
@@ -132,10 +178,20 @@ public class TppaActualExposureEvidenceProducerTest {
         File.WriteAllBytes(astap, Encoding.ASCII.GetBytes("pinned-test-astap"));
         var events = Path.Combine(root, "events.jsonl");
         var guideSteps = Path.Combine(root, "guidesteps.csv");
-        File.WriteAllText(events, "{\"Event\":\"GuideStep\"}\n",
-            new UTF8Encoding(false));
-        File.WriteAllText(guideSteps, "Frame,ReceivedUtc\n1,2026-08-02T20:00:00Z\n",
-            new UTF8Encoding(false));
+        var stepStart = phd2Start.AddSeconds(1);
+        var stepEnd = phd2End.AddSeconds(-1);
+        var stepRows = new List<string> {
+            "timestamp_utc,monotonic_s,frame,camera_dx_px,camera_dy_px,ra_raw_px,dec_raw_px,ra_guide_px,dec_guide_px,ra_ms,dec_ms,snr,hfd,star_mass,event_json"
+        };
+        var eventRows = new List<string>();
+        var frameNumber = 1L;
+        for (var timestamp = stepStart; timestamp <= stepEnd;
+                timestamp = timestamp.AddSeconds(5), frameNumber++) {
+            stepRows.Add($"{timestamp:o},{1000 + 5 * (frameNumber - 1):F3},{frameNumber},0,0,0,0,0,0,0,0,20,3,1000,{{}} ");
+            eventRows.Add($"{{\"Event\":\"GuideStep\",\"Frame\":{frameNumber}}}");
+        }
+        File.WriteAllLines(events, eventRows, new UTF8Encoding(false));
+        File.WriteAllLines(guideSteps, stepRows, new UTF8Encoding(false));
         var phd2 = Path.Combine(root, "phd2-summary.json");
         WriteJson(phd2, new {
             SchemaVersion = 1,
@@ -145,6 +201,12 @@ public class TppaActualExposureEvidenceProducerTest {
             GuidingContinuityQualified = true,
             GuideOutputContinuouslyEnabled = true,
             GuideStepCoverageQualified = true,
+            GuideStepCount = stepRows.Count - 1,
+            GuideStepFrameSequenceContiguous = true,
+            GuideStepTimeSequenceMonotonic = true,
+            ObservedMedianGuideStepCadenceSeconds = 5.0,
+            MaximumAllowedGuideStepGapSeconds = 15.0,
+            MaximumObservedGuideStepGapSeconds = 5.0,
             InvalidatingEvents = Array.Empty<string>(),
             StateChangingRpcMethods = Array.Empty<string>(),
             EventsSha256 = Sha256(events),

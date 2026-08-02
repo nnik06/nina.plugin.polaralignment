@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -241,6 +242,13 @@ internal static class TppaActualExposureEvidenceProducer {
                 issues.Add("PHD2 summary event provenance is incomplete or contains state changes");
                 return;
             }
+            var start = ParseUtc(json.Value<string>("CaptureStartUtc"));
+            var end = ParseUtc(json.Value<string>("CaptureCompletedUtc"));
+            if (start > bracketStart.AddSeconds(-marginSeconds)
+                    || end < bracketEnd.AddSeconds(marginSeconds)) {
+                issues.Add("PHD2 guided evidence does not contain the complete exposure bracket plus margin");
+                return;
+            }
             var directory = Path.GetDirectoryName(Path.GetFullPath(path));
             var eventsPath = Path.Combine(directory!, "events.jsonl");
             var guideStepsPath = Path.Combine(directory!, "guidesteps.csv");
@@ -254,15 +262,94 @@ internal static class TppaActualExposureEvidenceProducer {
                 issues.Add("PHD2 raw event or guide-step artifact is missing or hash-mismatched");
                 return;
             }
-            var start = ParseUtc(json.Value<string>("CaptureStartUtc"));
-            var end = ParseUtc(json.Value<string>("CaptureCompletedUtc"));
-            if (start > bracketStart.AddSeconds(-marginSeconds)
-                    || end < bracketEnd.AddSeconds(marginSeconds)) {
-                issues.Add("PHD2 guided evidence does not contain the complete exposure bracket plus margin");
+            if (!ValidateGuideSteps(guideStepsPath, json, bracketStart,
+                    bracketEnd, out var guideStepIssue)) {
+                issues.Add(guideStepIssue);
+                return;
             }
         } catch (Exception exception) {
             issues.Add($"PHD2 summary cannot be validated: {exception.Message}");
         }
+    }
+
+    private static bool ValidateGuideSteps(string path, JObject summary,
+            DateTime bracketStart, DateTime bracketEnd, out string issue) {
+        issue = "PHD2 guide-step artifact fails independent continuity validation";
+        var lines = File.ReadAllLines(path);
+        const string expectedHeader = "timestamp_utc,monotonic_s,frame,camera_dx_px,camera_dy_px,ra_raw_px,dec_raw_px,ra_guide_px,dec_guide_px,ra_ms,dec_ms,snr,hfd,star_mass,event_json";
+        if (lines.Length < 11 || lines[0] != expectedHeader) { return false; }
+        var timestamps = new List<DateTime>(lines.Length - 1);
+        var monotonic = new List<double>(lines.Length - 1);
+        var frames = new List<long>(lines.Length - 1);
+        foreach (var line in lines.Skip(1)) {
+            var columns = line.Split(',', 4);
+            if (columns.Length < 4
+                    || !DateTime.TryParse(columns[0], CultureInfo.InvariantCulture,
+                        DateTimeStyles.RoundtripKind, out var timestamp)
+                    || !IsUtc(timestamp)
+                    || !double.TryParse(columns[1], NumberStyles.Float,
+                        CultureInfo.InvariantCulture, out var monotonicSeconds)
+                    || !double.IsFinite(monotonicSeconds)
+                    || !long.TryParse(columns[2], NumberStyles.Integer,
+                        CultureInfo.InvariantCulture, out var frame)) {
+                return false;
+            }
+            timestamps.Add(timestamp);
+            monotonic.Add(monotonicSeconds);
+            frames.Add(frame);
+        }
+        var gaps = new List<double>(frames.Count - 1);
+        for (var index = 1; index < frames.Count; index++) {
+            if (frames[index] != frames[index - 1] + 1
+                    || timestamps[index] <= timestamps[index - 1]
+                    || monotonic[index] <= monotonic[index - 1]) {
+                return false;
+            }
+            gaps.Add(monotonic[index] - monotonic[index - 1]);
+        }
+        var medianCadence = Median(gaps);
+        var maximumGap = gaps.Max();
+        var maximumAllowedGap = 3.0 * medianCadence;
+        var reportedMaximumAllowedGap = summary.Value<double?>(
+            "MaximumAllowedGuideStepGapSeconds");
+        var reportedMaximumObservedGap = summary.Value<double?>(
+            "MaximumObservedGuideStepGapSeconds");
+        if (!double.IsFinite(medianCadence) || medianCadence <= 0
+                || maximumGap > maximumAllowedGap
+                || timestamps[0] > bracketStart
+                || timestamps[^1] < bracketEnd
+                || summary.Value<long?>("GuideStepCount") != frames.Count
+                || summary.Value<bool?>("GuideStepFrameSequenceContiguous") != true
+                || summary.Value<bool?>("GuideStepTimeSequenceMonotonic") != true
+                || !NearlyEqual(summary.Value<double?>(
+                    "ObservedMedianGuideStepCadenceSeconds"), medianCadence)
+                || !NearlyEqual(reportedMaximumAllowedGap,
+                    maximumAllowedGap)
+                || !WithinReportedRange(reportedMaximumObservedGap,
+                    maximumGap, maximumAllowedGap)) {
+            return false;
+        }
+        issue = string.Empty;
+        return true;
+    }
+
+    private static double Median(IEnumerable<double> values) {
+        var ordered = values.OrderBy(value => value).ToArray();
+        var middle = ordered.Length / 2;
+        return ordered.Length % 2 == 1 ? ordered[middle]
+            : 0.5 * (ordered[middle - 1] + ordered[middle]);
+    }
+
+    private static bool NearlyEqual(double? left, double right) =>
+        left.HasValue && double.IsFinite(left.Value)
+        && Math.Abs(left.Value - right) <= Math.Max(0.001, 0.01 * right);
+
+    private static bool WithinReportedRange(double? value, double minimum,
+            double maximum) {
+        if (!value.HasValue || !double.IsFinite(value.Value)) { return false; }
+        var tolerance = Math.Max(0.001, 0.01 * maximum);
+        return value.Value >= minimum - tolerance
+            && value.Value <= maximum + tolerance;
     }
 
     private static void ValidateGeometry(string path, ICollection<string> issues) {

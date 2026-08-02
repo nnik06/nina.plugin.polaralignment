@@ -20,7 +20,10 @@ mirror motion, cable forces, differential flexure, or focus drift.
    focus, cooling, tracking, PHD2 profile/exposure, and guiding algorithms fixed.
 3. Start `tools/capture_phd2_guided_evidence.ps1` before the first control. Its
    qualified interval must contain the complete bracket plus the configured
-   margin.
+   margin. The evidence producer independently reparses the hash-bound
+   `guidesteps.csv`; contiguous frame numbers, monotonic UTC/monotonic clocks,
+   bounded cadence gaps, and first-to-last coverage of the complete imaging
+   bracket are mandatory even when the collector summary says it qualified.
 4. Produce the orientation-independent OAG geometry receipt for the same train.
 5. Record the required state fields in a schema-1
    `TppaActualExposureStateReceipt` spanning the complete bracket.
