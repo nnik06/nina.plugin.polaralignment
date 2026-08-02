@@ -16,6 +16,8 @@ namespace NINA.Plugins.PolarAlignment {
         string Reason);
 
     internal static class TppaFastAlignmentExecutionBudget {
+        public const int MaximumFreshFeedbackMoves = 1;
+
         public const double MaximumRuntimeSeconds = 300;
         // The clean field maximum was 72.726s for a same-arc three-point
         // determination and return solve at the qualified 30s settle setting.
@@ -28,7 +30,7 @@ namespace NINA.Plugins.PolarAlignment {
         // Before any move, reserve both independent post-move feedback and the
         // mandatory stationary confirmation. A retry may still exhaust the hard
         // deadline, but no subsequent movement is then authorized.
-        public const double CompleteMoveAndConfirmationReserveSeconds =
+        public const double MinimumCompleteMoveAndConfirmationReserveSeconds =
             MoveAndFreshFeedbackReserveSeconds + FreshDeterminationReserveSeconds;
         public const double ContinuousSolveReserveSeconds = 20;
         public const double QualifiedFastSettleSeconds = 30;
@@ -63,6 +65,28 @@ namespace NINA.Plugins.PolarAlignment {
                 eligible
                     ? "five-minute configuration is eligible"
                     : "five-minute configuration is ineligible: " + string.Join("; ", reasons));
+        }
+
+        public static TppaFastAlignmentBudgetDecision EvaluateBeforeMove(
+                TimeSpan elapsed,
+                double maximumRuntimeSeconds = MaximumRuntimeSeconds) {
+            if (elapsed < TimeSpan.Zero) {
+                throw new ArgumentOutOfRangeException(nameof(elapsed));
+            }
+
+            // Total pre-move runtime is a deliberately conservative proxy for
+            // the cadence of each future fresh determination. It catches slow
+            // solve/settle nights before physical motion instead of assuming
+            // every post-move determination will match the 75s clean minimum.
+            var observedCadenceSeconds = Math.Max(
+                FreshDeterminationReserveSeconds,
+                elapsed.TotalSeconds);
+            var requiredReserveSeconds = UpasMoveReserveSeconds
+                + 2 * observedCadenceSeconds;
+            return Evaluate(
+                elapsed,
+                requiredReserveSeconds,
+                maximumRuntimeSeconds);
         }
 
         public static TppaFastAlignmentBudgetDecision Evaluate(

@@ -19,32 +19,55 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
-        public void CompleteMoveTailIncludesFeedbackAndStationaryConfirmation() {
-            TppaFastAlignmentExecutionBudget.CompleteMoveAndConfirmationReserveSeconds
+        public void MinimumCompleteMoveTailIncludesFeedbackAndStationaryConfirmation() {
+            TppaFastAlignmentExecutionBudget.MinimumCompleteMoveAndConfirmationReserveSeconds
                 .Should().Be(
                     TppaFastAlignmentExecutionBudget.UpasMoveReserveSeconds
                     + 2 * TppaFastAlignmentExecutionBudget.FreshDeterminationReserveSeconds);
         }
 
         [Test]
-        public void RealisticInitialDeterminationPermitsOneMoveAndBothFreshChecks() {
-            var result = TppaFastAlignmentExecutionBudget.Evaluate(
-                TimeSpan.FromSeconds(90),
-                TppaFastAlignmentExecutionBudget.CompleteMoveAndConfirmationReserveSeconds);
+        public void FastContractExplicitlyPermitsOnlyOneFreshFeedbackMove() {
+            TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMoves.Should().Be(1);
+        }
+
+        [Test]
+        public void CleanInitialDeterminationUsesMinimumMoveTail() {
+            var result = TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
+                TimeSpan.FromSeconds(60));
 
             result.CanStart.Should().BeTrue(result.Reason);
-            result.RemainingSeconds.Should().Be(210);
             result.RequiredReserveSeconds.Should().Be(165);
         }
 
         [Test]
-        public void RejectsMoveWhenFeedbackAndConfirmationCannotBothFit() {
-            var result = TppaFastAlignmentExecutionBudget.Evaluate(
-                TimeSpan.FromSeconds(135.001),
-                TppaFastAlignmentExecutionBudget.CompleteMoveAndConfirmationReserveSeconds);
+        public void ObservedNinetySecondCadencePermitsOneMoveAndBothFreshChecks() {
+            var result = TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
+                TimeSpan.FromSeconds(90));
+
+            result.CanStart.Should().BeTrue(result.Reason);
+            result.RemainingSeconds.Should().Be(210);
+            result.RequiredReserveSeconds.Should().Be(195);
+        }
+
+        [Test]
+        public void ObservedCadencePermitsMoveAtExactDynamicBoundary() {
+            var result = TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
+                TimeSpan.FromSeconds(95));
+
+            result.CanStart.Should().BeTrue(result.Reason);
+            result.RemainingSeconds.Should().Be(205);
+            result.RequiredReserveSeconds.Should().Be(205);
+        }
+
+        [Test]
+        public void RejectsMoveBeyondDynamicCadenceBoundary() {
+            var result = TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
+                TimeSpan.FromSeconds(95.001));
 
             result.CanStart.Should().BeFalse();
-            result.RemainingSeconds.Should().BeApproximately(164.999, 0.0001);
+            result.RemainingSeconds.Should().BeApproximately(204.999, 0.0001);
+            result.RequiredReserveSeconds.Should().BeApproximately(205.002, 0.0001);
         }
 
         [Test]

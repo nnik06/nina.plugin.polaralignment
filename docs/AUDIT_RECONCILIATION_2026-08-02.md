@@ -12,6 +12,14 @@ reconciliation checks their actionable findings against the later committed
 baseline and the 2.2.6.80 cancellation hardening at
 `02b4bb7ca8085870ea54e7c6e13b560822c20c0f`.
 
+The verification-round synthesis at
+`C:\Users\nnik0\AI\claude\upas_nina_tppa_audit_verify\SYNTHESIS_VERIFY.md`
+audited the earlier `7be2f99` checkpoint. Its strongest new finding, that the
+default five-minute path could authorize only one move while advertising an
+18-move loop, remained present in 2.2.6.80 and was independently confirmed
+against current source. Other recommendations are adjudicated below rather
+than inherited wholesale.
+
 Two verdicts must remain separate:
 
 1. **Software/deployment readiness:** the audit's repository and executable-path
@@ -22,13 +30,22 @@ Two verdicts must remain separate:
 
 ## Original Critical Findings
 
-### C1 - Unsatisfiable five-minute movement budget: closed
+### C1 - Five-minute movement budget: closed as an explicit one-shot contract
 
-The pre-move reserve is now 165 seconds: a 15-second UPAS move plus two
-75-second fresh determinations. A realistic 90-second initial determination
-therefore leaves 210 seconds and permits one guarded move. Positive-path,
-boundary, and denial tests are in `TppaFastAlignmentExecutionBudgetTest.cs`.
-The movement call site reserves the complete move/feedback/stationary tail.
+The verification round correctly found that the default 300-second path could
+never reach its advertised 18-move ceiling. Version 2.2.6.81 now declares one
+fresh-feedback move for the five-minute path while preserving the historical
+18-move ceiling when the operator explicitly disables the fast contract.
+
+Before that one move, admission reserves the 15-second move and two independent
+fresh determinations. Each determination is budgeted at the larger of the
+75-second clean-field minimum or the complete observed pre-move runtime. Thus a
+90-second pre-move cadence reserves 195 seconds and passes with 210 seconds
+remaining; a cadence above approximately 95 seconds is denied before physical
+movement. The post-move fresh result and stationary confirmation remain
+mandatory. Automatic rollback is deliberately not added: UPAS is open-loop,
+and an unverified reverse move after a solve failure could worsen the physical
+state.
 
 ### C2 - Untracked QualificationCore and CLI: closed
 
@@ -80,10 +97,12 @@ software sequence.
 
 ## Verification
 
-- Focused GRBL/status tests: 40/40 passed.
-- Complete NUnit suite: 636/636 passed.
-- PowerShell contract suite: 132/132 passed.
-- Release solution build: passed; existing package-compatibility warnings only.
+- Focused GRBL/status tests for 2.2.6.80: 40/40 passed.
+- Focused fast-budget tests for 2.2.6.81: 23/23 passed.
+- Complete NUnit suite for 2.2.6.81: 639/639 passed.
+- PowerShell contract suite for 2.2.6.81: 132/132 passed.
+- Release build passed through the test build; existing package-compatibility
+  warnings only.
 
 ## Exact Field Package
 
@@ -105,9 +124,32 @@ The package was copied to
 `C:\Users\nnik0\Documents\TPPA-deploy\tppa-2.2.6.80-02b4bb7` on Mele and
 validated there against the manifest. It is staged only. NINA was still
 running with TPPA 2.2.6.71 loaded, so activation was correctly refused.
-Deploy only after a controlled park/panel-close/NINA-close gate, preserve the
-existing installation as rollback, and independently hash the modules loaded
-after restart.
+Version 2.2.6.81 is source- and test-qualified only; it has not been packaged,
+deployed, or field-qualified. Deploy only after a controlled
+park/panel-close/NINA-close gate, preserve the existing installation as
+rollback, and independently hash the modules loaded after restart.
+
+## Verification-Round Adjudication
+
+- **Accepted:** the default fast controller was one-shot in practice and
+  misdescribed by its 18-move loop. Version 2.2.6.81 makes that contract
+  explicit and cadence-aware.
+- **Rejected:** retargeting the project to 3-5 arcminutes or deleting the
+  qualification boundary. The standing project objectives are less than one
+  arcminute absolute TPPA error and 30-arcsecond iPolar accuracy; lowering the
+  goal would answer a different question.
+- **Rejected:** the claim that the 300-second actuator budget blocks stationary
+  diagnostics. The budget is armed only when actuator movement is enabled.
+- **Qualified:** a 30-40 minute synchronized fixed-point experiment is the
+  highest-value discriminator for the 2.73 arcsec/min walk and approximately
+  two-degree iPolar/TPPA gap. Use passive main-camera solves, guide-camera
+  displacement, iPolar output, mount telemetry, environment data, and exact UTC
+  timestamps in one fixed mechanical state. Opposite pier-side states must be
+  separate repeated epochs; the mount cannot be both parked and on both sides
+  simultaneously.
+- **Deferred, not deleted:** a universal physical X/Y sign convention remains
+  unproven. Runtime witnessed calibration remains required until the frame
+  disagreement is classified.
 
 ## Remaining Blockers To The Accuracy Goal
 

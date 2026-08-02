@@ -958,7 +958,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     var sw = Stopwatch.StartNew();
                     var completionGuard = new AutomatedAlignmentCompletionGuard();
                     var freshFeedbackMoveCount = 0;
-                    const int MaximumFreshFeedbackMoves = 18;
+                    const int MaximumExtendedFreshFeedbackMoves = 18;
                     do {
                         await WaitIfPaused(localCTS.Token, progress);
 
@@ -1167,15 +1167,28 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                 }
                                 localCTS.Token.ThrowIfCancellationRequested();
                                 if (TPAPAVM.AutomatedAdjustmentRequiresFreshMeasurementFeedback
-                                    && freshFeedbackMoveCount >= MaximumFreshFeedbackMoves) {
-                                    throw new InvalidOperationException($"UPAS automated alignment stopped after {MaximumFreshFeedbackMoves} fresh-measured moves without converging.");
+                                        && enforceFastRuntimeBudget
+                                        && freshFeedbackMoveCount >= TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMoves) {
+                                    throw new InvalidOperationException("UPAS five-minute automated alignment is one-shot and stopped after its fresh-measured move did not converge. No second UPAS movement was authorized.");
+                                }
+                                if (TPAPAVM.AutomatedAdjustmentRequiresFreshMeasurementFeedback
+                                        && !enforceFastRuntimeBudget
+                                        && freshFeedbackMoveCount >= MaximumExtendedFreshFeedbackMoves) {
+                                    throw new InvalidOperationException($"UPAS automated alignment stopped after {MaximumExtendedFreshFeedbackMoves} fresh-measured moves without converging.");
                                 }
 
-                                if (executionPolicy.AllowActuatorMovement
+                                if (enforceFastRuntimeBudget
+                                        && executionPolicy.AllowActuatorMovement
                                         && TPAPAVM.ActiveAlignmentSystemVM?.DoAutomatedAdjustments == true) {
-                                    EnsureFastRuntimeBudget(
-                                        "UPAS move, independent fresh response, and stationary confirmation",
-                                        TppaFastAlignmentExecutionBudget.CompleteMoveAndConfirmationReserveSeconds);
+                                    var moveDecision = TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
+                                        alignmentRuntime.Elapsed);
+                                    Logger.Info(
+                                        $"TPPA_FAST_RUNTIME_BUDGET operation=one-shot UPAS move, independent fresh response, and stationary confirmation; " +
+                                        $"elapsedSeconds={moveDecision.ElapsedSeconds:F1}; remainingSeconds={moveDecision.RemainingSeconds:F1}; " +
+                                        $"requiredReserveSeconds={moveDecision.RequiredReserveSeconds:F1}; allowed={moveDecision.CanStart}.");
+                                    if (!moveDecision.CanStart) {
+                                        throw new SequenceEntityFailedException($"Automated polar alignment cannot complete the one-shot UPAS move and both required fresh determinations inside the five-minute runtime contract: {moveDecision.Reason}. No UPAS movement was authorized.");
+                                    }
                                 }
                                 var moved = executionPolicy.AllowActuatorMovement
                                     && await TPAPAVM.MoveCloser(progress, localCTS.Token);

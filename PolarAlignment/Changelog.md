@@ -1,3 +1,12 @@
+## Version 2.2.6.81
+
+- Make the five-minute UPAS correction contract explicitly one-shot instead of
+  advertising an unreachable 18-move feedback loop.
+- Before the one permitted move, reserve the move plus two independent fresh
+  determinations using the observed pre-move runtime as a conservative cadence
+  floor. Slow runs now fail before physical movement rather than relying on the
+  75-second clean-field minimum for both post-move determinations.
+
 ## Version 2.2.6.80
 
 - Exercise the complete GRBL jog-cancellation orchestration with injected
