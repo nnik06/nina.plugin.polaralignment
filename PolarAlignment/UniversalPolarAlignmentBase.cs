@@ -34,6 +34,7 @@ namespace NINA.Plugins.PolarAlignment {
         internal const byte GrblJogCancelRealtimeCommand = 0x85;
         private const int RequiredStoppedStatusConfirmations = 2;
         private const int MaximumJogCancelStatusAttempts = 10;
+        private static readonly TimeSpan JogCancelStatusConfirmationInterval = TimeSpan.FromMilliseconds(300);
 
         protected UniversalPolarAlignmentBase() {
             var comPorts = SerialPort.GetPortNames();
@@ -330,23 +331,31 @@ namespace NINA.Plugins.PolarAlignment {
             try {
                 port.Write(new[] { GrblJogCancelRealtimeCommand }, 0, 1);
                 var stoppedConfirmations = 0;
+                (float X, float Y, float Z)? previousIdlePosition = null;
                 for (var attempt = 1; attempt <= MaximumJogCancelStatusAttempts; attempt++) {
-                    Thread.Sleep(100);
+                    Thread.Sleep(JogCancelStatusConfirmationInterval);
                     UpdateStatus();
-                    if (IsControllerStoppedStatus(Status)) {
-                        stoppedConfirmations++;
+                    var currentPosition = (X: XPosition, Y: YPosition, Z: ZPosition);
+                    if (IsJogCancellationTerminalStatus(Status)) {
+                        stoppedConfirmations = previousIdlePosition.HasValue
+                            && AreControllerPositionsStable(previousIdlePosition.Value, currentPosition)
+                                ? stoppedConfirmations + 1
+                                : 1;
+                        previousIdlePosition = currentPosition;
                         if (stoppedConfirmations >= RequiredStoppedStatusConfirmations) {
                             Logger.Warning(
                                 $"Confirmed {SystemName} GRBL jog stopped after failure; " +
-                                $"status={Status}; confirmations={stoppedConfirmations}.");
+                                $"status={Status}; confirmations={stoppedConfirmations}; " +
+                                $"position=({currentPosition.X:F3},{currentPosition.Y:F3},{currentPosition.Z:F3}).");
                             return;
                         }
                     } else {
                         stoppedConfirmations = 0;
+                        previousIdlePosition = null;
                     }
                 }
                 throw new TimeoutException(
-                    $"GRBL jog cancellation was sent but two stopped-status confirmations were not observed; last status={Status}.");
+                    $"GRBL jog cancellation was sent but two stable Idle confirmations were not observed; last status={Status}.");
             } catch (Exception abortFailure) {
                 Logger.Error(abortFailure);
                 throw new AggregateException(
@@ -497,12 +506,23 @@ namespace NINA.Plugins.PolarAlignment {
         }
 
         internal static bool IsControllerStoppedStatus(string status) {
-            var normalizedStatus = status?.Split(':')[0].Trim();
+            var normalizedStatus = status?.Trim();
             return string.Equals(normalizedStatus, "Idle", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(normalizedStatus, "Hold", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(normalizedStatus, "Door", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalizedStatus, "Hold:0", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalizedStatus, "Door:0", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalizedStatus, "Door:1", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(normalizedStatus, "Alarm", StringComparison.OrdinalIgnoreCase);
         }
+
+        internal static bool IsJogCancellationTerminalStatus(string status) =>
+            string.Equals(status?.Trim(), "Idle", StringComparison.OrdinalIgnoreCase);
+
+        internal static bool AreControllerPositionsStable(
+            (float X, float Y, float Z) previous,
+            (float X, float Y, float Z) current) =>
+            Math.Abs(previous.X - current.X) <= TargetPositionTolerance
+            && Math.Abs(previous.Y - current.Y) <= TargetPositionTolerance
+            && Math.Abs(previous.Z - current.Z) <= TargetPositionTolerance;
 
         public async Task RefreshStatus(CancellationToken token) {
             await semaphore.WaitAsync(token);

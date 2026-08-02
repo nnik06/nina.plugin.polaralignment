@@ -1,3 +1,8 @@
+## Version 2.2.6.78
+
+- Harden GRBL jog cancellation after a movement failure: require two 300 ms-spaced `Idle` reports with stable X/Y/Z positions before cancellation is considered verified.
+- Treat only completed GRBL hold/door substates as stationary, preventing `Hold:1`, `Door:2`, or `Door:3` deceleration/resume states from satisfying movement-stop checks.
+
 ## Version 2.2.6.77
 
 - Add a fail-closed runtime-package installer that refuses to operate while

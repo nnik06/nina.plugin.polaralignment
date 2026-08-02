@@ -92,12 +92,39 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
         [TestCase("Idle", true)]
         [TestCase("Hold:0", true)]
+        [TestCase("Hold:1", false)]
+        [TestCase("Door:0", true)]
         [TestCase("Door:1", true)]
+        [TestCase("Door:2", false)]
+        [TestCase("Door:3", false)]
         [TestCase("Alarm", true)]
         [TestCase("Jog", false)]
         [TestCase("Run", false)]
         public void IsControllerStoppedStatus_RecognizesNonMovingStates(string status, bool expected) {
             UniversalPolarAlignmentBase.IsControllerStoppedStatus(status).Should().Be(expected);
+        }
+
+        [TestCase("Idle", true)]
+        [TestCase(" idle ", true)]
+        [TestCase("Hold:0", false)]
+        [TestCase("Hold:1", false)]
+        [TestCase("Door:0", false)]
+        [TestCase("Door:1", false)]
+        [TestCase("Alarm", false)]
+        [TestCase("Jog", false)]
+        public void IsJogCancellationTerminalStatus_RequiresIdle(string status, bool expected) {
+            UniversalPolarAlignmentBase.IsJogCancellationTerminalStatus(status).Should().Be(expected);
+        }
+
+        [Test]
+        public void AreControllerPositionsStable_RequiresEveryAxisWithinTolerance() {
+            UniversalPolarAlignmentBase.AreControllerPositionsStable(
+                (1f, 2f, 3f),
+                (1.009f, 1.991f, 3.01f)).Should().BeTrue();
+
+            UniversalPolarAlignmentBase.AreControllerPositionsStable(
+                (1f, 2f, 3f),
+                (1.011f, 2f, 3f)).Should().BeFalse();
         }
     }
 }
