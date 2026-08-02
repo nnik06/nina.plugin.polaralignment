@@ -6,7 +6,11 @@ repeatability alone must never be reported as absolute qualification.
 
 Date: 2026-07-31
 Status: unit-tested admission policy; field qualification pending
-TPPA working checkpoint: `8e4bf3c8e77a0d86949fce03657f75cb520c11a8` plus the explicitly listed uncommitted 2.2.6.61 qualification changes
+TPPA field-package source checkpoint:
+`02b4bb7ca8085870ea54e7c6e13b560822c20c0f` (2.2.6.80), runtime-manifest
+SHA-256
+`7D082FC7D99B7D13E00E99EC2A5699EB3963900E4FA763F428D7B96DA7544D47`.
+The package is staged on Mele but not active.
 UPAS supervisor checkpoint: `5e335800aa245adc919738a47b149e6ea1f0bb87`
 
 ## Claims
@@ -216,11 +220,10 @@ Remain `UNPROVEN` until:
   `src\upas_control\ipolar_fast_path.py`
 - iPolar policy tests:
   `tests\unit\test_ipolar_fast_path.py`
-- TPPA full suite: 451 passed.
-- UPAS supervisor intended-scope suite: 850 passed, 2 skipped, with 5 unrelated
-  modified P20 commissioning fixture tests explicitly deselected. Those five
-  quarantined tests must be reconciled by their owner before claiming a wholly
-  green repository.
+- TPPA full suite at the field-package checkpoint: 636 passed.
+- Focused current iPolar extractor/adapter/controller suite: 79 passed. The
+  companion supervisor working tree is concurrently dirty, so this is test
+  evidence for the inspected tree, not a releasable supervisor checkpoint.
 
 These modules are not permission to actuate. They are executable admission
 criteria for the next controlled field campaign.
