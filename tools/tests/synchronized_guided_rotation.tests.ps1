@@ -5,13 +5,20 @@ $toolsRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path
 $runnerPath = Join-Path $toolsRoot 'run_synchronized_guided_rotation.ps1'
 $tokens = $null
 $errors = $null
-[Management.Automation.Language.Parser]::ParseFile(
+$ast = [Management.Automation.Language.Parser]::ParseFile(
     $runnerPath,
     [ref]$tokens,
-    [ref]$errors) | Out-Null
+    [ref]$errors)
 if ($errors.Count -gt 0) {
     throw "$runnerPath parse errors: $($errors -join '; ')"
 }
+$azimuthFunction = $ast.Find({
+    param($node)
+    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+        $node.Name -eq 'Test-AzimuthWithinLimits'
+}, $true)
+if ($null -eq $azimuthFunction) { throw 'Missing Test-AzimuthWithinLimits' }
+. ([scriptblock]::Create($azimuthFunction.Extent.Text))
 $text = [IO.File]::ReadAllText($runnerPath)
 
 Describe 'synchronized guided rotation witness contract' {
@@ -37,7 +44,7 @@ Describe 'synchronized guided rotation witness contract' {
         $text.Contains('Test-AzimuthWithinLimits') | Should Be $true
         $text.Contains('$MinimumAzimuthDegrees = 270.0') | Should Be $true
         $text.Contains('$MaximumAzimuthDegrees = 10.0') | Should Be $true
-        $text.Contains('$MinimumAzimuthDegrees -le $MaximumAzimuthDegrees') |
+        $text.Contains('$azimuth -ge $minimum -or $azimuth -le $maximum') |
             Should Be $true
         $text.Contains('Get-ClockProbe') | Should Be $true
         $text.Contains('Qualified100Milliseconds') | Should Be $true
@@ -46,6 +53,18 @@ Describe 'synchronized guided rotation witness contract' {
         $text.Contains('$minimumFraction = 0.80') | Should Be $true
         $text.Contains('$phd2Rows.Count -eq [int]$phd2Summary.GuideStepCount') |
             Should Be $true
+        $text.Contains('$phd2Summary.ExpectedGuideSteps') | Should Be $false
+    }
+
+    It 'executes wrapped and normalized azimuth boundaries correctly' {
+        $script:MinimumAzimuthDegrees = 270.0
+        $script:MaximumAzimuthDegrees = 10.0
+        foreach ($inside in @(-5.0, 0.0, 10.0, 270.0, 355.0, 360.0, 365.0)) {
+            (Test-AzimuthWithinLimits $inside) | Should Be $true
+        }
+        foreach ($outside in @(-100.0, 11.0, 269.0, 260.0)) {
+            (Test-AzimuthWithinLimits $outside) | Should Be $false
+        }
     }
 
     It 'emits only schema-3 guided witness authority' {

@@ -28,6 +28,9 @@ $script:CaptureStartUtc = $null
 $script:Stopwatch = [Diagnostics.Stopwatch]::StartNew()
 $script:GuideStepCount = 0
 $script:GuideStepWithPulseCount = 0
+$script:GuideStepFrames = [System.Collections.Generic.List[long]]::new()
+$script:GuideStepMonotonicSeconds = [System.Collections.Generic.List[double]]::new()
+$script:MaximumObservedLockShiftPixels = 0.0
 $script:InvalidatingEvents = [System.Collections.Generic.List[string]]::new()
 
 function Write-CreateNewUtf8([string]$Path, [string]$Text) {
@@ -78,6 +81,90 @@ function Add-InvalidatingEvent([string]$Reason) {
     }
 }
 
+function Get-Median([double[]]$Values) {
+    if ($null -eq $Values -or $Values.Count -eq 0) { return [double]::NaN }
+    $sorted = @($Values | Sort-Object)
+    $middle = [Math]::Floor($sorted.Count / 2)
+    if ($sorted.Count % 2 -eq 1) { return [double]$sorted[$middle] }
+    ([double]$sorted[$middle - 1] + [double]$sorted[$middle]) / 2.0
+}
+
+function Get-GuideStepContinuity(
+        [long[]]$Frames,
+        [double[]]$MonotonicSeconds,
+        [double]$CaptureStartSeconds,
+        [double]$CaptureEndSeconds) {
+    $minimumSteps = 10
+    $frameSequenceContiguous = $Frames.Count -eq $MonotonicSeconds.Count -and
+        $Frames.Count -ge $minimumSteps
+    $timeSequenceMonotonic = $frameSequenceContiguous
+    $cadences = [System.Collections.Generic.List[double]]::new()
+    if ($Frames.Count -eq $MonotonicSeconds.Count) {
+        for ($index = 1; $index -lt $Frames.Count; $index += 1) {
+            if ($Frames[$index] -ne $Frames[$index - 1] + 1) {
+                $frameSequenceContiguous = $false
+            }
+            $gap = $MonotonicSeconds[$index] - $MonotonicSeconds[$index - 1]
+            if ($gap -le 0.0) { $timeSequenceMonotonic = $false }
+            $cadences.Add($gap)
+        }
+    }
+    $medianCadence = Get-Median @($cadences)
+    $maximumAllowedGap = if ([double]::IsNaN($medianCadence)) {
+        0.0
+    } else {
+        3.0 * $medianCadence
+    }
+    $startGap = if ($MonotonicSeconds.Count -gt 0) {
+        [double]$MonotonicSeconds[0] - $CaptureStartSeconds
+    } else { [double]::PositiveInfinity }
+    $endGap = if ($MonotonicSeconds.Count -gt 0) {
+        $CaptureEndSeconds - [double]$MonotonicSeconds[-1]
+    } else { [double]::PositiveInfinity }
+    $allGaps = @($cadences) + @($startGap, $endGap)
+    $maximumObservedGap = ($allGaps | Measure-Object -Maximum).Maximum
+    $qualified = $frameSequenceContiguous -and $timeSequenceMonotonic -and
+        $startGap -ge 0.0 -and $endGap -ge 0.0 -and
+        $maximumAllowedGap -gt 0.0 -and
+        $maximumObservedGap -le $maximumAllowedGap
+    [pscustomobject]@{
+        MinimumGuideSteps = $minimumSteps
+        FrameSequenceContiguous = $frameSequenceContiguous
+        TimeSequenceMonotonic = $timeSequenceMonotonic
+        MedianCadenceSeconds = $medianCadence
+        MaximumAllowedGapSeconds = $maximumAllowedGap
+        MaximumObservedGapSeconds = [double]$maximumObservedGap
+        StartBoundaryGapSeconds = $startGap
+        EndBoundaryGapSeconds = $endGap
+        Qualified = $qualified
+    }
+}
+
+function Test-Phd2Disconnected($Connection) {
+    try {
+        $socket = $Connection.Client.Client
+        $socket.Poll(0, [Net.Sockets.SelectMode]::SelectRead) -and
+            $socket.Available -eq 0
+    } catch {
+        $true
+    }
+}
+
+function Assert-LockPositionStable($Connection, [double[]]$InitialPosition) {
+    $position = @(Invoke-Phd2ReadOnly $Connection 'get_lock_position')
+    if ($position.Count -lt 2) { throw 'PHD2 lock position became unavailable.' }
+    $deltaX = [double]$position[0] - $InitialPosition[0]
+    $deltaY = [double]$position[1] - $InitialPosition[1]
+    $shift = [Math]::Sqrt($deltaX * $deltaX + $deltaY * $deltaY)
+    if ($shift -gt $script:MaximumObservedLockShiftPixels) {
+        $script:MaximumObservedLockShiftPixels = $shift
+    }
+    if ($shift -gt 0.25) {
+        throw "PHD2 lock position shifted by $shift px during guided evidence."
+    }
+    @([double]$position[0], [double]$position[1])
+}
+
 function Observe-Phd2Line([string]$Line) {
     if ([string]::IsNullOrWhiteSpace($Line)) { return $null }
     Append-Utf8 $eventsPath $Line
@@ -87,6 +174,17 @@ function Observe-Phd2Line([string]$Line) {
 
     $eventName = [string](Get-JsonValue $object 'Event')
     if ($eventName -eq 'GuideStep') {
+        $receivedSeconds = $script:Stopwatch.Elapsed.TotalSeconds
+        $frame = 0L
+        try {
+            $frameValue = Get-JsonValue $object 'Frame'
+            if ($null -eq $frameValue) { throw 'GuideStep Frame is missing.' }
+            $frame = [long]$frameValue
+            $script:GuideStepFrames.Add($frame)
+            $script:GuideStepMonotonicSeconds.Add($receivedSeconds)
+        } catch {
+            Add-InvalidatingEvent 'MalformedGuideStepFrame'
+        }
         $script:GuideStepCount += 1
         $raDuration = Get-JsonValue $object 'RADuration'
         $decDuration = Get-JsonValue $object 'DECDuration'
@@ -100,9 +198,8 @@ function Observe-Phd2Line([string]$Line) {
         if ($hasPulse) { $script:GuideStepWithPulseCount += 1 }
         $cells = @(
             [DateTime]::UtcNow.ToString('o'),
-            $script:Stopwatch.Elapsed.TotalSeconds.ToString(
-                'F3', [Globalization.CultureInfo]::InvariantCulture),
-            (Get-JsonValue $object 'Frame'),
+            $receivedSeconds.ToString('F3', [Globalization.CultureInfo]::InvariantCulture),
+            $frame,
             (Get-JsonValue $object 'dx'),
             (Get-JsonValue $object 'dy'),
             (Get-JsonValue $object 'RADistanceRaw'),
@@ -132,6 +229,8 @@ function Observe-Phd2Line([string]$Line) {
             'GuideParamChange', 'ConfigurationChange', 'Alert') -contains
             $eventName) {
         Add-InvalidatingEvent $eventName
+    } elseif (-not [string]::IsNullOrWhiteSpace($eventName)) {
+        Add-InvalidatingEvent "UnknownEvent:$eventName"
     }
     $object
 }
@@ -177,7 +276,10 @@ function Invoke-Phd2ReadOnly(
     $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
     while ([DateTime]::UtcNow -lt $deadline) {
         $line = Read-Phd2Line $Connection 1000
-        if (-not $line) { continue }
+        if (-not $line) {
+            if (Test-Phd2Disconnected $Connection) { throw 'PHD2 event-server socket disconnected.' }
+            continue
+        }
         $object = Observe-Phd2Line $line
         if ($null -ne $object -and
                 $object.PSObject.Properties.Name -contains 'id' -and
@@ -254,41 +356,39 @@ try {
     $nextProbeUtc = [DateTime]::UtcNow.AddSeconds($StateProbeCadenceSeconds)
     while ([DateTime]::UtcNow -lt $endUtc) {
         $line = Read-Phd2Line $connection 1000
-        if ($line) { [void](Observe-Phd2Line $line) }
+        if ($line) {
+            [void](Observe-Phd2Line $line)
+        } elseif (Test-Phd2Disconnected $connection) {
+            throw 'PHD2 event-server socket disconnected during guided evidence.'
+        }
         if ($script:InvalidatingEvents.Count -gt 0) {
             throw "PHD2 guiding continuity failed: $($script:InvalidatingEvents -join ', ')."
         }
         if ([DateTime]::UtcNow -ge $nextProbeUtc) {
             [void](Assert-GuidedState $connection)
+            [void](Assert-LockPositionStable $connection @($initial.LockPosition))
             $nextProbeUtc = [DateTime]::UtcNow.AddSeconds(
                 $StateProbeCadenceSeconds)
         }
     }
-    $finalState = Assert-GuidedState $connection
+    $captureEndSeconds = $script:Stopwatch.Elapsed.TotalSeconds
     $script:CaptureActive = $false
+    $finalState = Assert-GuidedState $connection
     $finalLockPosition = @(
-        Invoke-Phd2ReadOnly $connection 'get_lock_position')
+        Assert-LockPositionStable $connection @($initial.LockPosition))
     $final = [ordered]@{
         State = $finalState.State
         GuideOutputEnabled = $finalState.GuideOutputEnabled
         LockPosition = @(
             [double]$finalLockPosition[0], [double]$finalLockPosition[1])
     }
-    $lockDeltaX =
-        [double]$final.LockPosition[0] - [double]$initial.LockPosition[0]
-    $lockDeltaY =
-        [double]$final.LockPosition[1] - [double]$initial.LockPosition[1]
-    $lockShift = [Math]::Sqrt(
-        $lockDeltaX * $lockDeltaX + $lockDeltaY * $lockDeltaY)
-    if ($lockShift -gt 0.25) {
-        throw "PHD2 lock position shifted by $lockShift px during guided evidence."
-    }
-    $expectedSteps = [Math]::Floor(
-        $DurationSeconds * 1000.0 / $initial.ExposureMilliseconds)
-    $coverageQualified = $script:GuideStepCount -ge
-        [Math]::Floor($expectedSteps * 0.60)
-    if (-not $coverageQualified) {
-        throw "PHD2 GuideStep coverage is incomplete: $($script:GuideStepCount)/$expectedSteps."
+    $continuity = Get-GuideStepContinuity `
+        @($script:GuideStepFrames) `
+        @($script:GuideStepMonotonicSeconds) `
+        $captureStartSeconds `
+        $captureEndSeconds
+    if (-not $continuity.Qualified) {
+        throw "PHD2 GuideStep stream is not contiguous: $($continuity | ConvertTo-Json -Compress)."
     }
 
     $summary = [ordered]@{
@@ -304,11 +404,17 @@ try {
         FinalPHD2 = $final
         GuideStepCount = $script:GuideStepCount
         GuideStepWithPulseCount = $script:GuideStepWithPulseCount
-        ExpectedGuideSteps = $expectedSteps
-        GuideStepCoverageQualified = $coverageQualified
+        GuideStepCoverageMethod = 'contiguous-frame-sequence-and-observed-cadence'
+        GuideStepCoverageQualified = $continuity.Qualified
+        GuideStepFrameSequenceContiguous = $continuity.FrameSequenceContiguous
+        GuideStepTimeSequenceMonotonic = $continuity.TimeSequenceMonotonic
+        ObservedMedianGuideStepCadenceSeconds = $continuity.MedianCadenceSeconds
+        MaximumObservedGuideStepGapSeconds = $continuity.MaximumObservedGapSeconds
+        MaximumAllowedGuideStepGapSeconds = $continuity.MaximumAllowedGapSeconds
         GuidingContinuityQualified = $true
         GuideOutputContinuouslyEnabled = $true
-        LockPositionShiftPixels = $lockShift
+        MaximumObservedLockPositionShiftPixels =
+            $script:MaximumObservedLockShiftPixels
         InvalidatingEvents = @($script:InvalidatingEvents)
         ReadOnlyRpcMethods = @(
             'get_app_state', 'get_connected', 'get_calibrated',

@@ -93,12 +93,14 @@ function Get-SignedCircularDegreesDelta([double]$Value, [double]$Reference) {
 }
 
 function Test-AzimuthWithinLimits([double]$AzimuthDegrees) {
-    if ($MinimumAzimuthDegrees -le $MaximumAzimuthDegrees) {
-        return $AzimuthDegrees -ge $MinimumAzimuthDegrees -and
-            $AzimuthDegrees -le $MaximumAzimuthDegrees
+    $azimuth = (($AzimuthDegrees % 360.0) + 360.0) % 360.0
+    $minimum = (($MinimumAzimuthDegrees % 360.0) + 360.0) % 360.0
+    $maximum = (($MaximumAzimuthDegrees % 360.0) + 360.0) % 360.0
+    if ($minimum -le $maximum) {
+        return $azimuth -ge $minimum -and
+            $azimuth -le $maximum
     }
-    $AzimuthDegrees -ge $MinimumAzimuthDegrees -or
-        $AzimuthDegrees -le $MaximumAzimuthDegrees
+    $azimuth -ge $minimum -or $azimuth -le $maximum
 }
 
 function Get-Mount {
@@ -359,7 +361,7 @@ $coverageQualified =
     $phd2Rows.Count -eq [int]$phd2Summary.GuideStepCount -and
     $telemetryRows.Count -ge [Math]::Floor($DurationSeconds * $minimumFraction)
 if (-not $coverageQualified) {
-    throw "Guided synchronized evidence coverage is incomplete: main=$($mainRows.Count)/$mainSamples, PHD2=$($phd2Rows.Count)/$($phd2Summary.ExpectedGuideSteps), telemetry=$($telemetryRows.Count)/$DurationSeconds."
+    throw "Guided synchronized evidence coverage is incomplete: main=$($mainRows.Count)/$mainSamples, PHD2_rows=$($phd2Rows.Count), PHD2_contiguous=$($phd2Summary.GuideStepCoverageQualified), telemetry=$($telemetryRows.Count)/$DurationSeconds."
 }
 
 $artifacts = @(Get-ChildItem -LiteralPath $runDirectory -Recurse -File |

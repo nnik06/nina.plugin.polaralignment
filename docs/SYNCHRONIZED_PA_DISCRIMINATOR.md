@@ -124,8 +124,12 @@ mount/UPAS movement.
 
 The guided collector's RPC and event vocabulary is pinned to
 `OpenPHDGuiding/phd2@4a13cf245d7e485e79533697f87b032b304df952`,
-`src/event_server.cpp`. Coverage is based on `GuideStep` events, not correction
-pulses; a well-tracking mount may legitimately emit few or no pulses.
+`src/event_server.cpp`. Continuity requires contiguous `GuideStep` frame numbers,
+monotonic receive times, and no internal or capture-boundary gap longer than
+three observed median cadences. It does not estimate cadence from exposure time.
+Unknown event names and a lost event-server socket fail closed. Lock position is
+sampled during the interval, not only at its endpoints. Correction pulses are
+informational; a well-tracking mount may legitimately emit few or no pulses.
 
 ## Measurement Meaning
 
@@ -190,9 +194,10 @@ come from the explicitly named external source.
 
 Use guided mode only after PHD2 is already connected, calibrated, guiding a
 fixed star, and has guide output enabled. Complete any dither and settle before
-starting. The runner does not change PHD2 state and rejects any observed
-dither, settle, star/lock change, calibration, pause, looping transition,
-guiding-parameter change, configuration change, or alert during the interval.
+starting. Use a fixed guide exposure; automatic exposure has not been field
+qualified. The runner does not change PHD2 state and rejects any observed dither,
+settle, star/lock change, calibration, pause, looping transition, guiding-
+parameter change, configuration change, unknown event, or alert during the interval.
 
 Example 30-minute synchronized guided witness:
 

@@ -1,3 +1,13 @@
+## Version 2.2.6.88
+
+- Replace permissive guided-event percentage coverage with a fail-closed
+  continuity gate: GuideStep frame numbers must be contiguous, receive times
+  monotonic, and all internal and boundary gaps within three observed median
+  cadences.
+- Sample lock position throughout the guided interval, reject socket loss and
+  unknown PHD2 events, and normalize mount azimuth before wrapped-sector tests.
+- Add executable continuity and wrapped-azimuth boundary tests.
+
 ## Version 2.2.6.87
 
 - Add a read-only PHD2 evidence client for synchronized guided rotation trials.
