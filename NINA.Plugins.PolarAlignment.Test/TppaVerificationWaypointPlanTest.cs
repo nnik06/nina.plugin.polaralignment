@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using FluentAssertions;
 using NINA.Astrometry;
 using NINA.Core.Utility;
@@ -19,6 +20,8 @@ namespace NINA.Plugins.PolarAlignment.Test {
             plan.Reciprocal[0].RADegrees.Should().BeApproximately(20, 1e-9);
             plan.Reciprocal[1].RADegrees.Should().BeApproximately(5, 1e-9);
             plan.Reciprocal[2].RADegrees.Should().BeApproximately(350, 1e-9);
+            plan.ReciprocalModelCheck.Select(point => point.RADegrees).Should().Equal(
+                20, 12.5, 5, 357.5, 350);
         }
 
         [Test]
@@ -33,6 +36,8 @@ namespace NINA.Plugins.PolarAlignment.Test {
             plan.Reciprocal[0].RADegrees.Should().BeApproximately(340, 1e-9);
             plan.Reciprocal[1].RADegrees.Should().BeApproximately(355, 1e-9);
             plan.Reciprocal[2].RADegrees.Should().BeApproximately(10, 1e-9);
+            plan.ReciprocalModelCheck.Select(point => point.RADegrees).Should().Equal(
+                340, 347.5, 355, 2.5, 10);
         }
 
         [Test]
@@ -41,7 +46,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
 
             var plan = TppaVerificationWaypointPlan.Create(start, 20, true);
 
-            foreach (var point in plan.Forward) {
+            foreach (var point in plan.Forward.Concat(plan.ReciprocalModelCheck)) {
                 point.Dec.Should().BeApproximately(48, 1e-9);
                 point.Epoch.Should().Be(Epoch.JNOW);
             }

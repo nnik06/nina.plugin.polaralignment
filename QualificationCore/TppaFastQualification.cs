@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using NINA.Plugins.PolarAlignment.Instructions;
 
 namespace NINA.Plugins.PolarAlignment {
     internal static class TppaFastQualificationConventions {
@@ -13,6 +12,8 @@ namespace NINA.Plugins.PolarAlignment {
             "qualified-local-weather-station";
         public const string IcrsObservationEpoch =
             "icrs-observation-epoch";
+        public const string TruePoleTarget =
+            "true-celestial-pole";
     }
 
     internal sealed record TppaFastQualificationPolicy(
@@ -148,7 +149,7 @@ namespace NINA.Plugins.PolarAlignment {
                 issues.Add("measurement closure is not qualified");
             }
             if (!input.RefractionAdjustmentEnabled
-                    || input.PoleTarget != RefractionAlignmentTarget.TruePoleTarget) {
+                    || input.PoleTarget != TppaFastQualificationConventions.TruePoleTarget) {
                 issues.Add("run did not target the true celestial pole");
             }
             if (input.AtmosphereSource
@@ -189,7 +190,7 @@ namespace NINA.Plugins.PolarAlignment {
                     "independent witness input path is missing or aliases the TPPA input path");
             }
             if (input.IndependentWitnessPoleTarget
-                    != RefractionAlignmentTarget.TruePoleTarget) {
+                    != TppaFastQualificationConventions.TruePoleTarget) {
                 issues.Add("independent witness does not use the true-pole convention");
             }
             if (string.IsNullOrWhiteSpace(input.IndependentWitnessCoordinateFrame)

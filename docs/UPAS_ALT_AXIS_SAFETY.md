@@ -46,3 +46,16 @@ After a power or control-path change, and only while safely away from either end
 3. Verify approximately +0.1 degree physical marker motion.
 4. Stop immediately if motion is opposite, unclear, or noisy.
 5. Re-enter the observed start and reconfirm the guard before automation.
+## Cross-axis coordinate contract
+
+- Supervisor requests use the physical frame `azEastPositive_altUpPositive`.
+- The verified ALT hardware fact is raw `Y+` moving the factory marker in its
+  positive scale direction. `AvalonReverseAltitude` maps the logical command to
+  that physical direction and changing it invalidates the marker confirmation.
+- No universal raw-X-to-east/west invariant is claimed. Cabling, bridge, or
+  controller changes require a fresh witnessed X probe. Runtime response
+  learning may then determine the sign, but it cannot replace the P20/factory-
+  scale witness required by the external supervisor.
+- A remembered response is valid only for the recorded reversal setting and
+  control-path epoch. It must be discarded after power, transport, or polarity
+  changes.

@@ -9,29 +9,37 @@ namespace NINA.Plugins.PolarAlignment.Test {
             var instruction = CreateInstruction();
 
             instruction.VerificationOnly.Should().BeFalse();
+            instruction.OverdeterminedShadowModelCheck.Should().BeFalse();
             instruction.DriftValidationOnly.Should().BeFalse();
+            instruction.EnforceFiveMinuteRuntimeBudget.Should().BeTrue();
         }
 
         [Test]
         public void VerificationOnlyIsCopiedWithoutChangingAlignmentTolerance() {
             var instruction = CreateInstruction();
             instruction.VerificationOnly = true;
+            instruction.OverdeterminedShadowModelCheck = true;
             instruction.AlignmentTolerance = 3.5;
             instruction.VerificationPointSettleTimeSeconds = 10.0;
+            instruction.EnforceFiveMinuteRuntimeBudget = false;
 
             var clone = (Instructions.PolarAlignment)instruction.Clone();
 
             clone.VerificationOnly.Should().BeTrue();
+            clone.OverdeterminedShadowModelCheck.Should().BeTrue();
             clone.AlignmentTolerance.Should().Be(3.5);
             clone.VerificationPointSettleTimeSeconds.Should().Be(10.0);
+            clone.EnforceFiveMinuteRuntimeBudget.Should().BeFalse();
         }
 
         [Test]
         public void VerificationOnlyRoundTripsThroughInstructionJson() {
             var instruction = CreateInstruction();
             instruction.VerificationOnly = true;
+            instruction.OverdeterminedShadowModelCheck = true;
             instruction.AlignmentTolerance = 4.5;
             instruction.VerificationPointSettleTimeSeconds = 10.0;
+            instruction.EnforceFiveMinuteRuntimeBudget = false;
 
             var json = JsonConvert.SerializeObject(instruction);
             var serialized = JObject.Parse(json);
@@ -40,10 +48,15 @@ namespace NINA.Plugins.PolarAlignment.Test {
 
             serialized[nameof(Instructions.PolarAlignment.VerificationOnly)]!.Value<bool>().Should().BeTrue();
             restored.VerificationOnly.Should().BeTrue();
+            serialized[nameof(Instructions.PolarAlignment.OverdeterminedShadowModelCheck)]!.Value<bool>().Should().BeTrue();
+            restored.OverdeterminedShadowModelCheck.Should().BeTrue();
             serialized[nameof(Instructions.PolarAlignment.VerificationPointSettleTimeSeconds)]!
                 .Value<double>().Should().Be(10.0);
             restored.AlignmentTolerance.Should().Be(4.5);
             restored.VerificationPointSettleTimeSeconds.Should().Be(10.0);
+            serialized[nameof(Instructions.PolarAlignment.EnforceFiveMinuteRuntimeBudget)]!
+                .Value<bool>().Should().BeFalse();
+            restored.EnforceFiveMinuteRuntimeBudget.Should().BeFalse();
         }
 
         [Test]
@@ -75,6 +88,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
             restored.VerificationOnly.Should().BeFalse();
             restored.AlignmentTolerance.Should().Be(4.5);
         }
+
 
         private static Instructions.PolarAlignment CreateInstruction() {
             return PolarAlignmentSolveCancellationTest.CreatePolarAlignment(null!, null!);

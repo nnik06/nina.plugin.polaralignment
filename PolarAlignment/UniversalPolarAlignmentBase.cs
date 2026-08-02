@@ -31,6 +31,9 @@ namespace NINA.Plugins.PolarAlignment {
         private const float StoppedPositionToleranceMultiplier = 5f;
         private const int MaxStoppedStatusChecks = 4;
         private const int MaxUnchangedPositionChecks = 15;
+        internal const byte GrblJogCancelRealtimeCommand = 0x85;
+        private const int RequiredStoppedStatusConfirmations = 2;
+        private const int MaximumJogCancelStatusAttempts = 10;
 
         protected UniversalPolarAlignmentBase() {
             var comPorts = SerialPort.GetPortNames();
@@ -103,6 +106,7 @@ namespace NINA.Plugins.PolarAlignment {
 
         public async Task MoveRelative(Axis axis, int speed, float position, CancellationToken token) {
             await semaphore.WaitAsync(token);
+            var jogCommandSent = false;
             try {
                 UpdateStatus();
                 var axisCommand = axis switch {
@@ -137,6 +141,7 @@ namespace NINA.Plugins.PolarAlignment {
                 Logger.Info($"Sending command: {command}");
                 FlushControllerInputLine(port, NewLineSequence);
                 port.WriteLine(command);
+                jogCommandSent = true;
                 var ok = ReadCommandAcknowledgement(port);
                 Logger.Info($"Response: {ok}");
 
@@ -201,6 +206,9 @@ namespace NINA.Plugins.PolarAlignment {
 
                     await Task.Delay(300, token);
                 }
+            } catch (Exception ex) when (jogCommandSent) {
+                CancelActiveJogAndConfirmStopped(ex);
+                throw;
             } finally {
                 semaphore.Release();
             }
@@ -208,6 +216,7 @@ namespace NINA.Plugins.PolarAlignment {
 
         public async Task MoveAbsolute(Axis axis, int speed, float position, CancellationToken token) {
             await semaphore.WaitAsync(token);
+            var jogCommandSent = false;
             try {
                 UpdateStatus();
                 var axisCommand = axis switch {
@@ -235,6 +244,7 @@ namespace NINA.Plugins.PolarAlignment {
                 Logger.Info($"Sending command: {command}");
                 FlushControllerInputLine(port, NewLineSequence);
                 port.WriteLine(command);
+                jogCommandSent = true;
                 var ok = ReadCommandAcknowledgement(port);
                 Logger.Info($"Response: {ok}");
 
@@ -306,11 +316,45 @@ namespace NINA.Plugins.PolarAlignment {
 
                     await Task.Delay(300, token);
                 }
+            } catch (Exception ex) when (jogCommandSent) {
+                CancelActiveJogAndConfirmStopped(ex);
+                throw;
             } finally {
                 semaphore.Release();
             }
         }
 
+        private void CancelActiveJogAndConfirmStopped(Exception movementFailure) {
+            Logger.Warning(
+                $"Cancelling active {SystemName} GRBL jog after movement failure: {movementFailure.Message}");
+            try {
+                port.Write(new[] { GrblJogCancelRealtimeCommand }, 0, 1);
+                var stoppedConfirmations = 0;
+                for (var attempt = 1; attempt <= MaximumJogCancelStatusAttempts; attempt++) {
+                    Thread.Sleep(100);
+                    UpdateStatus();
+                    if (IsControllerStoppedStatus(Status)) {
+                        stoppedConfirmations++;
+                        if (stoppedConfirmations >= RequiredStoppedStatusConfirmations) {
+                            Logger.Warning(
+                                $"Confirmed {SystemName} GRBL jog stopped after failure; " +
+                                $"status={Status}; confirmations={stoppedConfirmations}.");
+                            return;
+                        }
+                    } else {
+                        stoppedConfirmations = 0;
+                    }
+                }
+                throw new TimeoutException(
+                    $"GRBL jog cancellation was sent but two stopped-status confirmations were not observed; last status={Status}.");
+            } catch (Exception abortFailure) {
+                Logger.Error(abortFailure);
+                throw new AggregateException(
+                    $"{SystemName} movement failed and GRBL jog cancellation could not be verified.",
+                    movementFailure,
+                    abortFailure);
+            }
+        }
         internal static TimeSpan CalculateMovementTimeout(float startPosition, float targetPosition, int speed) {
             var distance = Math.Abs(targetPosition - startPosition);
             if (distance <= TargetPositionTolerance) {

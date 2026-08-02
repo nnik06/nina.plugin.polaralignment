@@ -114,3 +114,6 @@ firmware/
 /run_tppa_*.cmd
 /start_tppa_*.ps1
 /verify_tppa_hash.ps1
+
+/tmp-*.jpg
+/.codex-council-*

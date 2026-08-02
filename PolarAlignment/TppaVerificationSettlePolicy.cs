@@ -3,21 +3,41 @@ using System.Collections.Generic;
 
 namespace NINA.Plugins.PolarAlignment {
     internal static class TppaVerificationSettlePolicy {
-        public const double MaximumOverrideSeconds = 30.0;
+        public const double MaximumOverrideSeconds = 120.0;
+        // This threshold gates both verification evidence and automated actuator authority.
         public const double MinimumQualifiedSettleSeconds = 30.0;
-        public const double MinimumQualifiedTargetDistanceDegrees = 15.0;
+        public const double MinimumQualifiedTargetDistanceDegrees =
+            TppaThreePointGeometryQualificationPolicy.MinimumConfiguredLegDegrees;
 
         public static double Resolve(double profileSettleSeconds, double verificationOverrideSeconds) {
             var profile = double.IsFinite(profileSettleSeconds)
                 ? Math.Max(0.0, profileSettleSeconds)
                 : 0.0;
-            if (!double.IsFinite(verificationOverrideSeconds) || verificationOverrideSeconds <= 0.0) {
-                return profile;
-            }
-
-            return Math.Clamp(verificationOverrideSeconds, 0.0, MaximumOverrideSeconds);
+            return ResolveSequenceOverride(verificationOverrideSeconds) ?? profile;
         }
 
+        public static double? ResolveSequenceOverride(double configuredSeconds) {
+            if (!double.IsFinite(configuredSeconds) || configuredSeconds <= 0.0) {
+                return null;
+            }
+
+            return Math.Clamp(configuredSeconds, 0.0, MaximumOverrideSeconds);
+        }
+
+        public static IReadOnlyList<string> GetActuatorQualificationIssues(
+            double profileSettleSeconds,
+            double sequenceOverrideSeconds) {
+            var issues = new List<string>();
+            var effectiveSettleSeconds = Resolve(
+                profileSettleSeconds,
+                sequenceOverrideSeconds);
+            if (!(effectiveSettleSeconds >= MinimumQualifiedSettleSeconds)) {
+                issues.Add(
+                    $"Automated adjustments require an effective point settle time of at least {MinimumQualifiedSettleSeconds:F0} seconds until a shorter cadence is field-qualified.");
+            }
+
+            return issues;
+        }
         public static IReadOnlyList<string> GetQualificationIssues(
             double targetDistanceDegrees,
             double profileSettleSeconds,
@@ -30,7 +50,7 @@ namespace NINA.Plugins.PolarAlignment {
             }
 
             var effectiveSettleSeconds = Resolve(profileSettleSeconds, verificationOverrideSeconds);
-            if (effectiveSettleSeconds < MinimumQualifiedSettleSeconds) {
+            if (!(effectiveSettleSeconds >= MinimumQualifiedSettleSeconds)) {
                 issues.Add(
                     $"Verification-only effective point settle time must be at least {MinimumQualifiedSettleSeconds:F0} seconds.");
             }

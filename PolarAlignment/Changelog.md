@@ -1,3 +1,253 @@
+## Version 2.2.6.76
+
+- Make the five-minute automated path explicitly admissible only with the
+  qualified 30-second point settle, plate-solve exposures no longer than three
+  seconds, and auto-pause disabled; reject an ineligible configuration before
+  connecting to or moving UPAS.
+- Split clean and retry-capable measurement reserves. Before every physical
+  move, reserve the complete terminal chain of movement, independent fresh
+  response, and stationary fresh confirmation; deny late moves while retaining
+  the hard 300-second deadline.
+- Emit GRBL realtime jog cancel on any post-command cancellation or failure and
+  require two stopped-status confirmations before unwinding the move call.
+- Promote the headless qualification sources to a real `net8.0` project and
+  replace plugin/CLI source globs with explicit project references, preserving
+  the embedded policy-source digest in the owning assembly.
+- Make Bitbucket verification build the complete solution and run the WPF
+  NUnit suite on a self-hosted Windows runner before packaging; restore the
+  missing Release/Any CPU test-project build mapping and pin that mapping with
+  a CI contract test.
+- Update the headless CLI contract test to require the project boundary rather
+  than the removed source glob, and run it in CI through Pester `-EnableExit`
+  so a failed assertion cannot leave the verification step green; CI now runs
+  the complete PowerShell contract suite.
+- Package, Debug-deploy, and install-validate the qualification-core assembly
+  atomically with the main plugin. Generate one build-bound runtime manifest
+  containing source commit, version, and both DLL hashes; guarded launchers pin
+  that single manifest hash so independently valid artifacts cannot be mixed.
+  Document the witnessed physical-axis contract without asserting an
+  unverified universal raw-X polarity.
+
+## Version 2.2.6.75
+
+- Add a report-only common-mode bias observability policy for multi-arc TPPA
+  calibration campaigns bound to an independent mount-axis witness.
+- Require qualified dual-pier geometry, two-dimensional HA/Dec conditioning,
+  one mechanical/environment epoch, true-pole refraction, disjoint input paths,
+  and conservative witness + arc + field-variation uncertainty below 0.5'.
+- Reject large stable offsets such as the unresolved ~2 deg iPolar/TPPA gap;
+  the policy grants neither motion nor completion authority.
+## Version 2.2.6.74
+
+- Before authorizing an UPAS move under the five-minute contract, reserve time
+  for the complete terminal chain: actuator motion, independent fresh feedback,
+  and the mandatory stationary completion confirmation.
+- Fail before physical movement when feedback alone would fit but the required
+  confirmation would necessarily exceed the runtime ceiling. Under the current
+  300-second contract, the existing path must reach the move boundary within
+  35 seconds, so field runs will normally refuse motion until a faster terminal
+  protocol is separately implemented and qualified.
+
+## Version 2.2.6.73
+
+- Keep sub-30-second sequence-local settling available for measurement-only
+  cadence experiments, but deny automated UPAS movement unless the effective
+  profile or sequence settling interval is at least the field-qualified 30 seconds.
+- Enforce the settle-authority gate both during sequence validation and again
+  immediately before actuator-capable execution so stale UI state cannot bypass it.
+
+## Version 2.2.6.72
+
+- Emit one report-only `TPPA_MOVE_TIMING` JSON record for every automated RA
+  leg, including actual motion, stop-wait, requested and observed settle,
+  total duration, direction, adjusted rate, and terminal outcome.
+- Preserve all existing movement, timeout, settle, tracking, emergency-stop,
+  and acceptance behavior while making the five-minute execution budget
+  attributable from field logs.
+## Version 2.2.6.71
+
+- Require every solved TPPA leg to meet the same 15-degree on-sky span floor
+  used by the absolute-evidence contract before automated correction can move
+  UPAS; configured RA travel and triangle quality cannot substitute for span.
+- Add a declination-aware preflight that predicts on-sky separation from the
+  configured RA leg and rejects foreshortened high-declination arcs before any
+  UPAS preparation or movement.
+- Deny the legacy UPAS pre-measurement azimuth pre-seat unless a fresh solved-
+  geometry qualification is already bound, closing the preflight-pass/post-
+  solve-fail path that could otherwise move before solved geometry was known.
+- Synchronize geometry-qualification authority and its denial reason as one
+  snapshot so asynchronous continuations cannot observe stale movement authority.
+
+## Version 2.2.6.70
+
+- Allow the existing bounded, sequence-local point-settle override to apply to
+  ordinary automated TPPA as well as diagnostic modes, enabling controlled
+  standard-versus-guarded cadence tests without mutating the active NINA profile.
+- Report the source as a sequence override in movement-settle telemetry.
+
+## Version 2.2.6.69
+
+- Add report-only VerificationOnly point context evidence with explicit
+  per-point approach direction, requested RA travel, settle interval, exposure-
+  midpoint hour angle, apparent altitude, refraction drift, and the exact
+  atmosphere used. Unknown initial pre-positioning remains explicit, and the
+  evidence grants neither motion nor completion authority.
+## Version 2.2.6.68
+
+- Add an undeployed report-only A/B/C/A RA-witness runner with whole-trajectory
+  one-degree sampling, constant-pier prediction, a five-degree meridian
+  exclusion, realized-time re-preflight before every command, live NINA
+  trajectory watchdogs, atomic one-attempt observer requests, and a
+  live-watched return-to-A cleanup.
+- Add an exact-equatorial NINA slew child that emits immutable issue/completion
+  receipts and grants no UPAS or completion authority.
+- Set the default witness arc to the qualified 45-degree minimum. A geometry
+  sweep showed that a 50-degree arc cannot retain the 40-degree operational
+  altitude floor in the north-balcony opening, while a narrow 45-degree path
+  can.
+
+## Version 2.2.6.68
+
+- Add an undeployed report-only A/B/C/A RA-witness runner with whole-trajectory
+  one-degree sampling, constant-pier prediction, a five-degree meridian
+  exclusion, realized-time re-preflight before every command, live NINA
+  trajectory watchdogs, atomic one-attempt observer requests, and a
+  live-watched return-to-A cleanup.
+- Add an exact-equatorial NINA slew child that emits immutable issue/completion
+  receipts and grants no UPAS or completion authority.
+- Set the default witness arc to the qualified 45-degree minimum. A geometry
+  sweep showed that a 50-degree arc cannot retain the 40-degree operational
+  altitude floor in the north-balcony opening, while a narrow 45-degree path
+  can.
+
+## Version 2.2.6.64
+
+- Replace the sample-count-dependent raw leave-one-out center RMS gate with the
+  correctly scaled two-dimensional jackknife standard error of the fitted
+  iPolar axis center. Keep maximum single-point leave-one-out center shift as a
+  separate leverage guard.
+- Require each leg's jackknife center standard error to remain at or below 15
+  arcseconds, conservatively below the 21.2-arcsecond equal-share uncertainty
+  budget for comparing two centers within 30 arcseconds.
+
+## Version 2.2.6.63
+
+- Add leave-one-out fitted-axis center stability to each iPolar slew leg. A
+  small radial residual can no longer qualify a short or ill-conditioned arc
+  whose inferred rotation center changes by more than 15 arcseconds RMS or 30
+  arcseconds maximum when one tracked point is removed.
+- Persist the center-stability values in pixels and arcseconds so the 30-arcsec
+  differential campaign threshold is backed by a measured per-leg
+  conditioning diagnostic rather than residuals alone.
+
+## Version 2.2.6.62
+
+- Identify the five-minute deadline by its own cancellation token instead of
+  inferring deadline expiry from a 250 ms elapsed-time window. User/window
+  cancellation remains cancellation; only the armed runtime deadline becomes
+  an explicit sequence failure.
+- Seal every four-leg iPolar pier-side campaign result to the SHA256 recorded
+  in its immutable phase manifest, and fail closed when a hash is absent or a
+  result changes before final evaluation.
+- Record that the five-minute contract prevents success after 300 seconds from
+  sequence-item entry; it cannot force a non-cooperative driver call to return
+  by that wall-clock instant and does not itself prove alignment accuracy.
+
+## Version 2.2.6.61
+
+- Replace absolute-evidence schema v2 with v3. Bind every independent-witness
+  solve to its mount command, stationary tracking state, disabled PHD2 guide
+  output, exposure midpoint, FITS time, raw guider-image digest, external
+  solver output/binary digests, solved coordinates, horizontal telemetry, and
+  pier side; reject detached or incomplete acquisition provenance.
+- Persist the raw FITS DATE-OBS value and its explicit exposure-start or
+  exposure-midpoint convention. Normalize to the exposure midpoint under
+  separate clock and FITS timestamp uncertainty bounds instead of ambiguously
+  treating DATE-OBS as a midpoint.
+- Require the witness evidence to bind a qualified full A/B/C/A trajectory,
+  monotonic fixed-declination commands, at least 45 degrees total RA arc,
+  minimum 40-degree altitude, one-degree trajectory sampling, bounded
+  conditioning, and verified PHD2 guide-output restoration.
+- Move the report-only RA-rotation witness producer into the shared headless
+  qualification core and expose a strict produce-witness CLI command. The CLI
+  consumes immutable metadata and point-receipt JSON, writes with create-new
+  semantics, and grants no motion or completion authority.
+- Add a fail-closed full-trajectory preflight for the report-only RA-rotation
+  witness. It samples every slew leg at no more than one degree, enforces the
+  wrapped mount envelope, a separate operational altitude floor, known constant
+  pier side, minimum total arc, and a bounded design-conditioning proxy.
+- Log capture, plate-solve, and total elapsed time for every non-cancelled TPPA
+  solve attempt so field runtime can be optimized from measured phase latency.
+- Keep the timing telemetry report-only; estimator results, settling, movement
+  authority, and safety gates are unchanged.
+- Emit an immutable receipt for every completed VerificationOnly solve and a
+  final complete or partial dataset receipt even when cancellation or timeout
+  interrupts the run; these receipts never grant motion or completion authority.
+- Add an opt-in guarded launcher pre-warm that performs one separately timed,
+  no-slew capture and solve before sequence start. Pre-warm duration is recorded
+  explicitly and excluded from the VerificationOnly runtime claim.
+- Correlate every VerificationOnly solve timing, final/partial dataset receipt,
+  and terminal run summary with one run ID so a field certificate cannot mix
+  evidence from separate executions.
+- Add an offline five-run operational qualifier that requires five consecutive
+  warm, first-attempt, nine-solve runs below 300 seconds with true-pole
+  refraction enabled and every internal verdict passing. It reports speed and
+  internal consistency separately and never upgrades them to absolute accuracy.
+- Add an interactive iPolar slew recorder, generated-image star-observability
+  gate, and same-pier trajectory-guarded runner. These tools reject starless
+  dawn frames and pier-side/envelope violations and never grant UPAS authority.
+- Automatically fit a stellar rotation circle from hash-verified in-slew
+  frames, reject sparse or short arcs and residuals above the configured
+  15-arcsecond RMS / 30-arcsecond maximum bounds, and preserve a per-leg axis
+  receipt. Add a manifest-based four-leg evaluator that requires unique named
+  reciprocal legs and run IDs on the correct pier sides and rejects fitted-axis
+  disagreement above 30 arcseconds; neither evaluator grants UPAS or
+  absolute-accuracy authority.
+- Add one shared, headless absolute-evidence binder compiled into both the
+  plugin and a small CLI. It binds separate immutable TPPA and independent
+  witness files, rejects stale, aliased, wrong-frame, tampered, or circular
+  calibration provenance, and emits no receipt for structurally invalid input.
+- Distinguish valid-but-not-qualified evidence from invalid evidence with
+  process exit codes and immutable receipts. The binder and CLI never grant
+  telescope or UPAS motion authority.
+- Replace absolute-evidence schema v1 with v2. Persist every raw three-point
+  solve vector plus UTC, source digest, solved coordinates, pier side, site,
+  atmosphere, clock uncertainty, and vector-frame metadata; schema v1 is no
+  longer eligible for an absolute claim.
+- Make the headless binder independently recompute the plane fit, hemisphere
+  orientation, arc geometry/span, returned-A closure, site-derived pole,
+  atmosphere freshness/ranges, clock bound, and coordinate-frame gates. Treat
+  producer booleans and fitted vectors as assertions that must agree.
+- Require an explicit `absolute-true-pole` witness basis and a disjoint raw
+  four-solve RA-rotation A/B/C/A arc. Recompute its axis, span, and closure;
+  reject differential stability evidence as an absolute witness.
+- Add a fail-closed, report-only A/B/C/A RA-rotation witness producer for a
+  disjoint plate-solving instrument. Require returned-A closure in both sky
+  coordinates and persisted topocentric vectors so one representation cannot
+  conceal a failed return.
+- Require the entire independent witness arc, not only its final timestamp, to
+  occur after TPPA completion, and bind witness uncertainty metadata to the
+  same declared independent calibration digests before evidence is written.
+
+## Version 2.2.6.60
+
+- Capture VerificationOnly A/restoration coordinates from validated
+  TelescopeInfo telemetry instead of GetCurrentPosition, which returned a
+  zero right ascension during the 2026-08-01 field diagnostic.
+- Fail closed on missing or non-finite mount telemetry before constructing the
+  verification arc or attempting cleanup.
+
+## Version 2.2.6.59
+
+- Add an opt-in, report-only five-position small-circle model check to
+  VerificationOnly by sampling two reciprocal half-leg positions while keeping
+  the legacy polar-error result tied to the original outer three points.
+- Report fit residuals, five distinct-position coverage, legacy-versus-fit axis
+  separation, and leave-one-out axis stability without granting actuator or
+  completion authority.
+- Preserve the default nine-solve VerificationOnly contract when the shadow
+  option is disabled, and fail validation when the option is selected outside
+  VerificationOnly mode.
 ## Version 2.2.6.58
 
 - Seal the complete independent-witness uncertainty payload with a canonical
@@ -176,6 +426,69 @@
 - Poll the compact Advanced API sequence JSON route during guarded runs, avoiding the image-heavy state payload that can block for minutes.
 
 # Changelog
+
+## 2.2.6.68
+
+- Add a strict request-specification record and an authority-free CLI command
+  that creates each witness request through a create-new temporary file followed
+  by an atomic `.witness-request.ready.json` publication.
+- Add a persistent external observer service with a global single-instance
+  lease, create-new per-request claim ledger, core validation before any
+  request-derived path is used, and exactly one invocation of the one-shot
+  observer. Service restart cannot replay a claimed request.
+- Require a physical outcome artifact before the service may record `captured`;
+  malformed, failed, late, or missing-outcome requests are preserved without
+  motion or completion authority.
+
+## 2.2.6.67
+
+- Version the independently captured witness point receipt as schema 3 after
+  adding its bound site coordinates and ASTAP field of view. The PowerShell
+  producer and C# consumer now agree on the exact receipt contract.
+- Add fail-closed tests for acquisition-site and solver-field-of-view mismatch
+  so a derived topocentric vector cannot be bound to undeclared transform
+  inputs.
+- Add a one-shot out-of-process witness observer. It validates the immutable
+  request, verifies observer and capture-script hashes, creates an attempt
+  marker before capture, invokes the PHD2 path exactly once, and delegates
+  canonical outcome creation and validation to the authority-free CLI.
+- Preserve failed attempts without an outcome and prohibit reuse of their
+  evidence paths; neither the observer nor the CLI grants motion or completion.
+
+## 2.2.6.66
+
+- Add a report-only request/outcome handshake contract that binds every witness
+  point to one run, waypoint, mount command, nonce, observer hash, UTC deadline,
+  and exactly one blind acquisition attempt. Late, replayed, retried, tampered,
+  or mismatched outcomes fail closed and never grant motion or completion.
+- Expose deterministic request/outcome validators through the headless
+  qualification CLI so an out-of-process observer can enforce the same contract
+  without loading NINA or receiving any movement authority.
+- Bind site coordinates, exposure, ASTAP field of view, FITS timestamp bound,
+  and the exact point-capture script digest into every request so the observer
+  cannot silently change scientifically relevant acquisition settings.
+- Persist the site coordinates and ASTAP field of view in every point receipt;
+  the producer and binder now reject derived topocentric vectors whose declared
+  transformation inputs differ from the bound witness metadata.
+
+## 2.2.6.65
+
+- Make the independent PHD2/ASTAP RA-rotation witness solve blind: commanded
+  mount coordinates remain provenance only and are no longer passed to ASTAP
+  as search hints.
+- Version the witness point/acquisition schema and reject any receipt that does
+  not declare the `blind-no-mount-hint` solver policy.
+
+- Added a persisted, default-on five-minute runtime contract for automated
+  UPAS alignment. It counts the complete sequence-item execution, reserves time
+  before fresh determinations and moves, cancels at 300 seconds, and fails
+  closed instead of merely warning and resetting the correction timer.
+
+- Added a report-only PHD2/ASI220 plus external-ASTAP witness-point acquisition
+  boundary for absolute TPPA qualification. It persists raw FITS timing and
+  hashes, enforces stationary unguided capture state, uses unrefracted
+  timestamped ASCOM/NOVAS topocentric vectors, restores guide output, and has no
+  mount-motion endpoint.
 
 ## Version 2.2.6.31
 - Added structured verification-point telemetry with exposure-midpoint UTC, mount azimuth/altitude, solved RA/Dec, traversal direction, and per-arc observation span.

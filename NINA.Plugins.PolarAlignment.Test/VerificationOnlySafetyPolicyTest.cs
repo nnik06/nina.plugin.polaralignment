@@ -15,8 +15,43 @@ namespace NINA.Plugins.PolarAlignment.Test {
         [Test]
         public void VerificationSettleOverrideReplacesProfileAndIsBounded() {
             TppaVerificationSettlePolicy.Resolve(3.5, 10.0).Should().Be(10.0);
-            TppaVerificationSettlePolicy.Resolve(3.5, 100.0)
+            TppaVerificationSettlePolicy.Resolve(3.5, 180.0)
                 .Should().Be(TppaVerificationSettlePolicy.MaximumOverrideSeconds);
+        }
+
+        [Test]
+        public void SequenceSettleOverrideCanBeSharedByOrdinaryAndDiagnosticMeasurements() {
+            TppaVerificationSettlePolicy.ResolveSequenceOverride(0.0).Should().BeNull();
+            TppaVerificationSettlePolicy.ResolveSequenceOverride(double.NaN).Should().BeNull();
+            TppaVerificationSettlePolicy.ResolveSequenceOverride(10.0).Should().Be(10.0);
+            TppaVerificationSettlePolicy.ResolveSequenceOverride(180.0)
+                .Should().Be(TppaVerificationSettlePolicy.MaximumOverrideSeconds);
+        }
+
+        [Test]
+        public void ActuatorQualificationRejectsUnqualifiedSequenceOverride() {
+            var issues = TppaVerificationSettlePolicy.GetActuatorQualificationIssues(5.0, 10.0);
+            TppaVerificationSettlePolicy.GetActuatorQualificationIssues(5.0, 0.0)
+                .Should().NotBeEmpty();
+            TppaVerificationSettlePolicy.GetActuatorQualificationIssues(double.NaN, double.NaN)
+                .Should().NotBeEmpty();
+            TppaVerificationSettlePolicy.GetActuatorQualificationIssues(-1.0, 0.0)
+                .Should().NotBeEmpty();
+            TppaVerificationSettlePolicy.GetActuatorQualificationIssues(0.0, 29.999)
+                .Should().NotBeEmpty();
+
+            issues.Should().Contain(issue => issue.Contains("Automated adjustments"));
+            issues.Should().Contain(issue => issue.Contains("at least 30 seconds"));
+        }
+
+        [Test]
+        public void ActuatorQualificationAcceptsQualifiedEffectiveSettle() {
+            TppaVerificationSettlePolicy.GetActuatorQualificationIssues(5.0, 30.0)
+                .Should().BeEmpty();
+            TppaVerificationSettlePolicy.GetActuatorQualificationIssues(0.0, 60.0)
+                .Should().BeEmpty();
+            TppaVerificationSettlePolicy.GetActuatorQualificationIssues(30.0, 0.0)
+                .Should().BeEmpty();
         }
 
         [Test]

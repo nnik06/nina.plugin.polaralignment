@@ -2,19 +2,24 @@
 
 ## Scope
 
-This repository contains the N.I.N.A. "Three Point Polar Alignment" plugin and its NUnit test project.
+This repository contains the N.I.N.A. "Three Point Polar Alignment" plugin, its NUnit test project, a headless qualification core, and a qualification CLI.
 
 - `PolarAlignment/`: main plugin project (`net8.0-windows7.0`, WPF, `NINA.Plugin` package).
-- `NINA.Plugins.PolarAlignment.Test/`: test project for the geometry and refraction math.
+- `NINA.Plugins.PolarAlignment.Test/`: test project for geometry, refraction, control, safety, and qualification behavior.
+- `QualificationCore/`: BCL/Newtonsoft-only `net8.0` qualification library shared by the plugin and headless CLI. Its files and project must be committed atomically with any source moves out of `PolarAlignment/`.
+- `tools/TppaQualificationCli/`: headless qualification/evidence CLI; it references `QualificationCore` as a project and must not source-glob private working-tree files.
 - `plate-solved-field-calculator.py`: offline Astropy helper used to derive reference coordinates for tests and math validation.
 
 ## Architecture
 
 - `PolarAlignment/Instructions/PolarAlignment.cs`: core workflow. This is the sequence item implementation and the real runtime entry point for the plugin logic.
+- `QualificationCore/NINA.Plugins.PolarAlignment.QualificationCore.csproj`: headless qualification boundary. Plugin, tests, and CLI consume it by `ProjectReference`; do not restore source globs.
+- `PolarAlignment/TppaFastAlignmentExecutionBudget.cs`: the 300-second automated runtime gate. Five-minute mode admits only the qualified 30-second settle, at most 3-second solve exposures, and no auto-pause; every move reserves motion plus two clean fresh determinations.
 - `PolarAlignment/Dockables/DockablePolarAlignmentVM.cs`: imaging-tab tool wrapper. It instantiates the same `Instructions.PolarAlignment` class, blocks the camera while running, and exposes message-broker start/stop control.
 - `PolarAlignment/TPAPAVM.cs`: long-lived UI/view-model for step state, reference-star tracking, overlays, continuous error updates, and `PolarErrorDetermination`.
 - `PolarAlignment/Vector3.cs` and `PolarAlignment/RefractionParameters.cs`: core math helpers for vector transforms, Rodrigues rotation, and atmospheric defaults.
 - `PolarAlignment/PolarAlignmentPlugin.cs`: plugin manifest plus settings bridge. It owns the selected automated adjustment system VM and the settings-backed option surface shown in `Options.xaml`.
+- `tools/new_tppa_runtime_manifest.ps1` and `tools/validate_tppa_plugin_install.ps1`: the build/install provenance boundary. One pinned manifest binds source commit, plugin version, plugin DLL, and qualification-core DLL; guarded launchers accept only the manifest hash, never independently supplied DLL hashes.
 - `PolarAlignment/UniversalPolarAlignmentBase.cs` and `UniversalPolarAlignmentBaseVM.cs`: shared serial-control and UI logic for remote adjustment hardware.
 - `PolarAlignment/Avalon/*` and `PolarAlignment/OAPA/*`: concrete automated adjustment systems. Both rely on regex-parsed serial status strings and shared movement polling.
 - `PolarAlignment/Options.xaml` and `PolarAlignment/Resources/PolarAlignmentInstructionTemplate.xaml`: most of the plugin UI is defined here.
@@ -25,7 +30,8 @@ This repository contains the N.I.N.A. "Three Point Polar Alignment" plugin and i
 - `PolarAlignment.Execute(...)` stops guiding, optionally slews to the initial point, captures and solves three positions, computes declination spread from mount-reported Dec, and constructs `PolarErrorDetermination`.
 - After the three-point solve, the code enters a continuous capture/solve/update loop that recomputes the current error against the chosen reference star.
 - If an alignment system is selected, the plugin connects to it after the third measurement point.
-- If automated adjustments are enabled, `TPAPAVM.MoveCloser(...)` nudges the selected system toward the target until `AlignmentTolerance` is met.
+- If automated adjustments are enabled, movement authority requires qualified fresh three-point geometry and settling. Every UPAS move is followed by an independent fresh three-point response; completion requires a further stationary fresh confirmation.
+- The five-minute wall clock starts at sequence-item entry. No success is allowed after 300 seconds. A move may start only when its motion plus fresh-feedback reserve fits; the later confirmation is admitted separately from actual elapsed time.
 - Validation lives in `PolarAlignment.Validate()`. If start behavior looks wrong in the dockable or the sequence item, inspect validation first.
 
 ## Message Broker Contracts
@@ -42,12 +48,17 @@ Treat these topic names as external contracts. Other plugins can subscribe to th
 ## Build And Test
 
 - Prefer Release for local build/test unless you explicitly want the debug deployment copy.
+- Run `dotnet build` and `dotnet test` serially within a worktree. Concurrent
+  invocations share WPF markup-compiler files under `PolarAlignment/obj` and
+  can fail with `MC1000`/`UnauthorizedAccessException` while deleting
+  `NINA.Plugins.PolarAlignment_MarkupCompile.cache`; this is build contention,
+  not a product regression.
 - Debug builds run a post-build copy into `%LOCALAPPDATA%\NINA\Plugins\3.0.0\Three Point Polar Alignment`.
 - Typical commands:
   - `dotnet build PolarAlignment.sln -c Release`
   - `dotnet test NINA.Plugins.PolarAlignment.Test\NINA.Plugins.PolarAlignment.Test.csproj -c Release`
 - The test project depends on the git submodule at `NINA.Plugins.PolarAlignment.Test/External` for native dependencies.
-- Bitbucket packaging is driven by `bitbucket-pipelines.yml` and builds the plugin project in Release.
+- Bitbucket verification builds the complete solution and runs the WPF NUnit suite on a self-hosted Windows runner before publishing. The Linux packaging step also builds the complete solution so missing projects or untracked source moves cannot hide behind a plugin-only build.
 
 ## Council Bridges
 
@@ -60,12 +71,37 @@ Treat these topic names as external contracts. Other plugins can subscribe to th
 - Pin every repository-aware review to
   `C:\Dev\upas-nina-tppa-plugin` and the full current commit. Reject output from
   any other root or checkpoint.
+- Treat root and checkpoint as different kinds of gate. The **root is always a
+  hard gate**: reject any seat whose tree is not the canonical root, because the
+  stale-OneDrive failure mode is the reason this section exists. The
+  **checkpoint must be captured at dispatch time**, never copied from an earlier
+  brief, report, or chat message. HEAD moves quickly during active development,
+  so a prompt that hard-codes an older commit makes both seats abort on a
+  provenance mismatch and review nothing. When a review is deferred, scheduled,
+  or re-run from a saved brief, require the seat to **report** the checkpoint it
+  actually read and reject on mismatch only against the checkpoint captured for
+  that run.
 - Claude reviews use pinned `claude-opus-5` with `--effort high` in read-only
   plan/no-tools mode. Gemini reviews use Gemini 3.1 Pro High in read-only plan
   mode with a new project and explicit repository directory.
 - A requested council is incomplete until both Claude and Gemini return
   substantive, provenance-verified answers. Repair and rerun a failed,
   incomplete, timed-out, or stale seat; never silently substitute or omit it.
+- Do not call a seat "provenance-verified" when it had no way to look. Under the
+  no-tools/inline-evidence doctrine a reviewer can only repeat the root and
+  checkpoint the prompt gave it, which is exactly the failure mode the gate
+  exists to catch. Choose explicitly per seat and record which was used:
+  either grant that seat a narrow read-only rule scoped to the canonical root so
+  it reads `.git\HEAD` and `.git\refs\heads\master` itself and quotes them, or
+  keep it tool-free and label its answer **prompt-asserted provenance**, which
+  does not satisfy the independent-verification requirement above.
+- A headless Antigravity seat that lacks a matching `permissions.allow` rule
+  auto-denies the tool and prints `jetski: no output produced ...` **while still
+  exiting 0**. Never treat a zero exit code as seat success: assert on
+  substantive content and the quoted provenance, not on exit status. In
+  `permissions.allow`, a directory-prefix `read_file(<root>)` rule matches
+  everything beneath it, whereas `command(...)` rules must match the exact
+  command string, so prefer instructing that seat to use file reads only.
 - After changing either Python bridge, restart Codex to reload the persistent
   MCP process, rediscover the tools, and rerun both functional pings.
 

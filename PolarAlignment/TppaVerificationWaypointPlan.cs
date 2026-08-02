@@ -8,13 +8,17 @@ namespace NINA.Plugins.PolarAlignment {
         private TppaVerificationWaypointPlan(
                 Coordinates pointA,
                 Coordinates pointB,
-                Coordinates pointC) {
+                Coordinates pointC,
+                Coordinates pointAB,
+                Coordinates pointBC) {
             Forward = new[] { pointA, pointB, pointC };
             Reciprocal = new[] { pointC, pointB, pointA };
+            ReciprocalModelCheck = new[] { pointC, pointBC, pointB, pointAB, pointA };
         }
 
         public IReadOnlyList<Coordinates> Forward { get; }
         public IReadOnlyList<Coordinates> Reciprocal { get; }
+        public IReadOnlyList<Coordinates> ReciprocalModelCheck { get; }
 
         public static TppaVerificationWaypointPlan Create(
                 Coordinates pointA,
@@ -46,7 +50,9 @@ namespace NINA.Plugins.PolarAlignment {
             return new TppaVerificationWaypointPlan(
                 Offset(0),
                 Offset(signedLeg),
-                Offset(signedLeg * 2));
+                Offset(signedLeg * 2),
+                Offset(signedLeg * 0.5),
+                Offset(signedLeg * 1.5));
         }
 
         private static double NormalizeDegrees(double degrees) =>

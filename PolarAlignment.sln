@@ -1,4 +1,4 @@
-﻿
+
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.7.34018.315
@@ -11,6 +11,14 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "SolutionFiles", "SolutionFi
 	ProjectSection(SolutionItems) = preProject
 		bitbucket-pipelines.yml = bitbucket-pipelines.yml
 	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tools", "tools", "{8F511616-A08A-48E3-A26E-EF8AAF70A09D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TppaQualificationCli", "tools\TppaQualificationCli\TppaQualificationCli.csproj", "{0F61D89D-FF48-4AD2-A17B-723ED2766C77}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Qualification", "Qualification", "{1270B2A0-9A08-4DD5-A79F-487C0A3B81D8}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NINA.Plugins.PolarAlignment.QualificationCore", "QualificationCore\NINA.Plugins.PolarAlignment.QualificationCore.csproj", "{8C76F51D-AC3A-437E-8E3C-1296A0D121BF}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -33,13 +41,34 @@ Global
 		{BA6590F4-4B69-42CF-AFC3-82FFDA0116C4}.Debug|x64.ActiveCfg = Debug|Any CPU
 		{BA6590F4-4B69-42CF-AFC3-82FFDA0116C4}.Debug|x64.Build.0 = Debug|Any CPU
 		{BA6590F4-4B69-42CF-AFC3-82FFDA0116C4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BA6590F4-4B69-42CF-AFC3-82FFDA0116C4}.Release|Any CPU.Build.0 = Release|Any CPU
 		{BA6590F4-4B69-42CF-AFC3-82FFDA0116C4}.Release|x64.ActiveCfg = Release|Any CPU
 		{BA6590F4-4B69-42CF-AFC3-82FFDA0116C4}.Release|x64.Build.0 = Release|Any CPU
+		{0F61D89D-FF48-4AD2-A17B-723ED2766C77}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0F61D89D-FF48-4AD2-A17B-723ED2766C77}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0F61D89D-FF48-4AD2-A17B-723ED2766C77}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{0F61D89D-FF48-4AD2-A17B-723ED2766C77}.Debug|x64.Build.0 = Debug|Any CPU
+		{0F61D89D-FF48-4AD2-A17B-723ED2766C77}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0F61D89D-FF48-4AD2-A17B-723ED2766C77}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0F61D89D-FF48-4AD2-A17B-723ED2766C77}.Release|x64.ActiveCfg = Release|Any CPU
+		{0F61D89D-FF48-4AD2-A17B-723ED2766C77}.Release|x64.Build.0 = Release|Any CPU
+		{8C76F51D-AC3A-437E-8E3C-1296A0D121BF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8C76F51D-AC3A-437E-8E3C-1296A0D121BF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8C76F51D-AC3A-437E-8E3C-1296A0D121BF}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{8C76F51D-AC3A-437E-8E3C-1296A0D121BF}.Debug|x64.Build.0 = Debug|Any CPU
+		{8C76F51D-AC3A-437E-8E3C-1296A0D121BF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8C76F51D-AC3A-437E-8E3C-1296A0D121BF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8C76F51D-AC3A-437E-8E3C-1296A0D121BF}.Release|x64.ActiveCfg = Release|Any CPU
+		{8C76F51D-AC3A-437E-8E3C-1296A0D121BF}.Release|x64.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {5306FFA4-415C-4385-9467-147CFFFEF5C8}
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{0F61D89D-FF48-4AD2-A17B-723ED2766C77} = {8F511616-A08A-48E3-A26E-EF8AAF70A09D}
+		{8C76F51D-AC3A-437E-8E3C-1296A0D121BF} = {1270B2A0-9A08-4DD5-A79F-487C0A3B81D8}
 	EndGlobalSection
 EndGlobal

@@ -253,12 +253,34 @@ namespace NINA.Plugins.PolarAlignment {
         }
 
 
-        public async Task PrepareUpasBeforeInitialMeasurement(IProgress<ApplicationStatus> progress, CancellationToken token) {
+        public async Task PrepareUpasBeforeInitialMeasurement(
+                double configuredLegDegrees,
+                IProgress<ApplicationStatus> progress,
+                CancellationToken token) {
             ConfigureAutomatedAdjustmentControllerForActiveSystem();
 
             if (ActiveAlignmentSystemVM is not NINA.Plugins.PolarAlignment.Avalon.UniversalPolarAlignmentVM upas
                 || !upas.DoAutomatedAdjustments
                 || !Properties.Settings.Default.AvalonPreSeatAzimuthBeforeMeasurement) {
+                return;
+            }
+
+            var configurationIssue =
+                TppaThreePointGeometryQualificationPolicy
+                    .GetConfigurationIssues(configuredLegDegrees)
+                    .FirstOrDefault();
+            if (configurationIssue != null) {
+                throw new InvalidOperationException(
+                    $"{configurationIssue} UPAS pre-seat movement was not authorized.");
+            }
+
+            var geometryAuthority = GetAutomatedAdjustmentGeometryAuthority();
+            if (!TppaThreePointGeometryQualificationPolicy.AllowsActuatorPreparation(
+                    geometryAuthority.Qualified)) {
+                const string reason =
+                    "Skipping UPAS azimuth pre-seat because no fresh solved-geometry qualification is bound. No actuator movement was authorized.";
+                Logger.Warning(reason);
+                progress?.Report(new ApplicationStatus() { Status = reason });
                 return;
             }
 
@@ -368,6 +390,12 @@ namespace NINA.Plugins.PolarAlignment {
         public async Task<bool> MoveCloser(IProgress<ApplicationStatus> progress, CancellationToken token) {
             var activeSystem = ActiveAlignmentSystemVM;
             if (activeSystem == null || !activeSystem.DoAutomatedAdjustments) { return false; }
+            var geometryAuthority = GetAutomatedAdjustmentGeometryAuthority();
+            if (geometryAuthority.Qualified != true) {
+                throw new InvalidOperationException(
+                    $"Automated movement is denied because {geometryAuthority.Reason} " +
+                    "No actuator movement was authorized.");
+            }
 
             ConfigureAutomatedAdjustmentControllerForActiveSystem();
             var useContinuousErrorEstimator = UseContinuousErrorEstimator;
@@ -799,11 +827,34 @@ namespace NINA.Plugins.PolarAlignment {
         }
 
         private PolarErrorDetermination polarErrorDetermination;
+        private readonly object automatedAdjustmentGeometrySync = new object();
+        private bool? automatedAdjustmentGeometryQualified;
+        private string automatedAdjustmentGeometryReason =
+            "No fresh three-point geometry qualification has been bound.";
         public PolarErrorDetermination PolarErrorDetermination {
             get => polarErrorDetermination;
             set {
                 polarErrorDetermination = value;
+                lock (automatedAdjustmentGeometrySync) {
+                    automatedAdjustmentGeometryQualified = null;
+                    automatedAdjustmentGeometryReason =
+                        "The current fresh determination has not been geometry-qualified.";
+                }
                 RaisePropertyChanged();
+            }
+        }
+
+        internal void BindAutomatedAdjustmentGeometryQualification(
+                TppaThreePointGeometryQualification qualification) {
+            lock (automatedAdjustmentGeometrySync) {
+                automatedAdjustmentGeometryQualified = qualification.IsQualified;
+                automatedAdjustmentGeometryReason = qualification.Reason;
+            }
+        }
+
+        private (bool? Qualified, string Reason) GetAutomatedAdjustmentGeometryAuthority() {
+            lock (automatedAdjustmentGeometrySync) {
+                return (automatedAdjustmentGeometryQualified, automatedAdjustmentGeometryReason);
             }
         }
 

@@ -7,7 +7,7 @@ param(
     [string]$PluginDirectory,
     [Parameter(Mandatory = $true)]
     [ValidatePattern('^[0-9A-Fa-f]{64}$')]
-    [string]$ExpectedPluginSha256,
+    [string]$ExpectedRuntimeManifestSha256,
     [ValidateRange(270.0, 359.9)]
     [double]$WesternAzimuthMinimumDegrees = 270.0,
     [ValidateRange(0.0, 20.0)]
@@ -333,7 +333,7 @@ $installValidator = Join-Path $PSScriptRoot 'validate_tppa_plugin_install.ps1'
 if (-not (Test-Path -LiteralPath $installValidator -PathType Leaf)) {
     throw "TPPA install validator is missing: $installValidator"
 }
-$install = & $installValidator -PluginDirectory $PluginDirectory -ExpectedSha256 $ExpectedPluginSha256
+$install = & $installValidator -PluginDirectory $PluginDirectory -ExpectedRuntimeManifestSha256 $ExpectedRuntimeManifestSha256
 Write-RunLog "Plugin preflight passed: $($install.AssemblyPath); SHA256=$($install.Sha256)."
 if ($PreflightOnly) {
     [pscustomobject]@{

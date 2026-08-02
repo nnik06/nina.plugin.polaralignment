@@ -205,9 +205,23 @@
                 <CheckBox
                     Margin="10,0,0,0"
                     VerticalAlignment="Center"
+                    Content="Enforce 5-minute automated runtime"
+                    IsChecked="{Binding EnforceFiveMinuteRuntimeBudget, UpdateSourceTrigger=PropertyChanged}"
+                    IsEnabled="{Binding IsDiagnosticOnlyMode, Converter={StaticResource InverseBooleanConverter}}"
+                    ToolTip="For automated UPAS alignment, counts the complete sequence-item execution, reserves time before every move and independent fresh verification, and fails closed at 300 seconds instead of continuing or claiming a late result." />
+                <CheckBox
+                    Margin="10,0,0,0"
+                    VerticalAlignment="Center"
                     Content="Verification only (automated mount)"
                     IsChecked="{Binding VerificationOnly, UpdateSourceTrigger=PropertyChanged}"
-                    ToolTip="Requires automated mode. Runs two independent three-point determinations over the same A-B-C arc, reports their difference, restores A (the correction pointing captured after any initial slew), then finishes without configuring, connecting to, or moving the polar alignment actuator." />
+                    ToolTip="Requires automated mode. Runs forward, reciprocal, and repeated-forward three-point determinations over the same A-B-C arc, reports repeatability and reciprocity, restores A, then finishes without configuring, connecting to, or moving the polar alignment actuator." />
+                <CheckBox
+                    Margin="10,0,0,0"
+                    VerticalAlignment="Center"
+                    Content="5-position shadow model check"
+                    IsChecked="{Binding OverdeterminedShadowModelCheck, UpdateSourceTrigger=PropertyChanged}"
+                    IsEnabled="{Binding VerificationOnly}"
+                    ToolTip="Adds two reciprocal half-leg solves so five distinct positions can test small-circle residuals and leave-one-out stability. Report-only: it never authorizes actuator movement or completion and adds about one minute at the qualified 30-second settle." />
                 <CheckBox
                     Margin="10,0,0,0"
                     VerticalAlignment="Center"

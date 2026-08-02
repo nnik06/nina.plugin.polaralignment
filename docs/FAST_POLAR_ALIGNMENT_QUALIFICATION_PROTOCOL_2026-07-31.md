@@ -1,8 +1,12 @@
 # Fast Polar Alignment Qualification Protocol
 
+The strict machine-readable binding and CLI contract is
+`docs/ABSOLUTE_TPPA_EVIDENCE_CONTRACT.md`. Operational timing or internal
+repeatability alone must never be reported as absolute qualification.
+
 Date: 2026-07-31
 Status: unit-tested admission policy; field qualification pending
-TPPA repository checkpoint: `1111bd704a718a76c1cdc6fa70f695539dc6996f`
+TPPA working checkpoint: `8e4bf3c8e77a0d86949fce03657f75cb520c11a8` plus the explicitly listed uncommitted 2.2.6.61 qualification changes
 UPAS supervisor checkpoint: `5e335800aa245adc919738a47b149e6ea1f0bb87`
 
 ## Claims
@@ -142,6 +146,15 @@ The run cannot claim absolute accuracy if atmosphere, site, clock, epoch,
 witness calibration, pole convention, or mechanical-state provenance is
 missing.
 
+Operational qualification is computed by
+`tools\analyze_tppa_operational_qualification.ps1` from an explicit five-run
+manifest, launcher logs, and NINA logs. Every run must have exactly one
+run-correlated summary, one complete final dataset receipt, nine first-attempt
+solve timings, one separately accounted pre-warm before sequence start, and a
+sub-300-second launcher interval. A passing result sets
+`SpeedAndInternalConsistencyQualified`; `AbsoluteAccuracyQualified` and
+`OverallGoalQualified` remain false until the independent witness gate passes.
+
 ## Block 4: reconcile iPolar and TPPA
 
 Use the sequence:
@@ -190,11 +203,20 @@ Remain `UNPROVEN` until:
   `PolarAlignment\TppaFastQualification.cs`
 - TPPA policy tests:
   `NINA.Plugins.PolarAlignment.Test\TppaFastQualificationTest.cs`
+- TPPA five-run operational qualifier:
+  `tools\analyze_tppa_operational_qualification.ps1`
+- Guarded iPolar same-pier slew recorder, star gate, and automatic axis
+  stability evaluators:
+  `tools\run_guarded_ipolar_slew_stability.ps1`,
+  `tools\ipolar_slew_capture.ps1`,
+  `tools\ipolar_star_observability_gate.ps1`,
+  `tools\ipolar_slew_axis_evaluator.ps1`, and
+  `tools\ipolar_pier_side_campaign_evaluator.ps1`
 - iPolar fast-path policy:
   `src\upas_control\ipolar_fast_path.py`
 - iPolar policy tests:
   `tests\unit\test_ipolar_fast_path.py`
-- TPPA full suite: 396 passed.
+- TPPA full suite: 451 passed.
 - UPAS supervisor intended-scope suite: 850 passed, 2 skipped, with 5 unrelated
   modified P20 commissioning fixture tests explicitly deselected. Those five
   quarantined tests must be reconciled by their owner before claiming a wholly

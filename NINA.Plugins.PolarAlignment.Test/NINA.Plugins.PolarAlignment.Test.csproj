@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net8.0-windows</TargetFramework>
@@ -95,6 +95,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\PolarAlignment\NINA.Plugins.PolarAlignment.csproj" />
+    <ProjectReference Include="..\QualificationCore\NINA.Plugins.PolarAlignment.QualificationCore.csproj" />
   </ItemGroup>
 
 </Project>

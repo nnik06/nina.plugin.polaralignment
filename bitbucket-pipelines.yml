@@ -1,4 +1,22 @@
+definitions:
+  steps:
+    - step: &windows_solution_test
+        name: solution build and tests
+        runs-on:
+          - self.hosted
+          - windows
+        script:
+          - dotnet restore PolarAlignment.sln
+          - dotnet build PolarAlignment.sln -c Release --no-restore
+          - dotnet test NINA.Plugins.PolarAlignment.Test/NINA.Plugins.PolarAlignment.Test.csproj -c Release --no-build --no-restore
+          - pwsh -NoProfile -Command "Invoke-Pester -Path 'tools/tests' -EnableExit"
 pipelines:
+  branches:
+    '**':
+      - step: *windows_solution_test
+  pull-requests:
+    '**':
+      - step: *windows_solution_test
   # A build pipeline to automatically create a new build artifact and manifest from the nina plugin
   ## The following custom variables have to be set in your repository 
   ## (Repository Setting > Section Pipelines > Repository Variables)
@@ -17,6 +35,7 @@ pipelines:
   ### <EnableWindowsTargeting>true</EnableWindowsTargeting>
   custom:   
     publish:
+        - step: *windows_solution_test
         - step:
             name: dotnet build
             image: mcr.microsoft.com/dotnet/sdk:8.0
@@ -31,11 +50,13 @@ pipelines:
               - curl https://api.bitbucket.org/2.0/repositories/isbeorn/nina.plugin.manifests/src/main/tools/CreateNET7Manifest.ps1 >> ${BITBUCKET_CLONE_DIR}/artifacts/CreateNET7Manifest.ps1
 
               ## Build project
-              - dotnet restore
-              - dotnet build PolarAlignment/NINA.Plugins.PolarAlignment.csproj -c Release
+              - dotnet restore PolarAlignment.sln
+              - dotnet build PolarAlignment.sln -c Release --no-restore
               
               ## Copy relevant files to packaging folder
               - cp PolarAlignment/bin/Release/net8.0-windows7.0/${PLUGIN_DLL_NAME}.dll ${BITBUCKET_CLONE_DIR}/packages/${PLUGIN_DLL_NAME}.dll
+              - cp QualificationCore/bin/Release/net8.0/NINA.Plugins.PolarAlignment.QualificationCore.dll ${BITBUCKET_CLONE_DIR}/packages/NINA.Plugins.PolarAlignment.QualificationCore.dll
+              - pwsh -NoProfile -File tools/new_tppa_runtime_manifest.ps1 -PluginDirectory ${BITBUCKET_CLONE_DIR}/packages -SourceCommit ${BITBUCKET_COMMIT}
 
             artifacts:
               - packages/**

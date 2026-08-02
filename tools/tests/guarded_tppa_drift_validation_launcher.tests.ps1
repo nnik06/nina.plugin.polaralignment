@@ -10,7 +10,7 @@ Describe 'guarded TPPA drift-validation launcher static safety contract' {
 
     It 'requires the install validator and an expected plugin hash' {
         $text.Contains('validate_tppa_plugin_install.ps1') | Should Be $true
-        $text.Contains('ExpectedPluginSha256') | Should Be $true
+        $text.Contains('ExpectedRuntimeManifestSha256') | Should Be $true
     }
 
     It 'requires an altitude margin before starting' {
@@ -72,7 +72,7 @@ Describe 'guarded TPPA drift-validation launcher runtime terminal parsing' {
         . $scriptPath `
             -SequencePath 'functions-only' `
             -PluginDirectory 'functions-only' `
-            -ExpectedPluginSha256 ('A' * 64) `
+            -ExpectedRuntimeManifestSha256 ('A' * 64) `
             -FunctionsOnly
     }
 
@@ -109,13 +109,28 @@ Describe 'guarded TPPA drift-validation launcher preflight' {
         $plugin = Join-Path $TestDrive ([Guid]::NewGuid().ToString('N'))
         New-Item -ItemType Directory -Path $plugin | Out-Null
         Set-Content -LiteralPath (Join-Path $plugin 'NINA.Plugins.PolarAlignment.dll') -Value 'current'
+        Set-Content -LiteralPath (Join-Path $plugin 'NINA.Plugins.PolarAlignment.QualificationCore.dll') -Value 'core'
         $pluginHash = (Get-FileHash (Join-Path $plugin 'NINA.Plugins.PolarAlignment.dll') -Algorithm SHA256).Hash
+        $coreHash = (Get-FileHash (Join-Path $plugin 'NINA.Plugins.PolarAlignment.QualificationCore.dll') -Algorithm SHA256).Hash
+        $manifestPath = Join-Path $plugin 'TPPA.runtime-manifest.json'
+        $manifest = [ordered]@{
+            schemaVersion = 1
+            packageId = 'NINA.Plugins.PolarAlignment'
+            pluginVersion = '1.2.3.4'
+            sourceCommit = '0123456789abcdef0123456789abcdef01234567'
+            artifacts = @(
+                [ordered]@{ name = 'NINA.Plugins.PolarAlignment.dll'; sha256 = $pluginHash },
+                [ordered]@{ name = 'NINA.Plugins.PolarAlignment.QualificationCore.dll'; sha256 = $coreHash }
+            )
+        }
+        [IO.File]::WriteAllText($manifestPath, ($manifest | ConvertTo-Json -Depth 4))
+        $manifestHash = (Get-FileHash $manifestPath -Algorithm SHA256).Hash
     }
 
     It 'parses horizontal degrees minutes and seconds structurally' {
         $sequence = Join-Path $TestDrive 'drift-validation.json'
         '{"Items":{"$values":[{"$type":"NINA.Plugins.PolarAlignment.Instructions.PolarAlignment, NINA.Plugins.PolarAlignment","VerificationOnly":false,"DriftValidationOnly":true,"MountMotionEnvelopeEnabled":true,"MountMotionMinimumAltitudeDegrees":25,"MountMotionMaximumAltitudeDegrees":55,"MountMotionAzimuthStartDegrees":270,"MountMotionAzimuthEndDegrees":10,"Coordinates":{"AzDegrees":315,"AzMinutes":30,"AzSeconds":0,"AltDegrees":30,"AltMinutes":15,"AltSeconds":0}}]}}' | Set-Content -LiteralPath $sequence
-        $result = & $scriptPath -SequencePath $sequence -PluginDirectory $plugin -ExpectedPluginSha256 $pluginHash -PreflightOnly
+        $result = & $scriptPath -SequencePath $sequence -PluginDirectory $plugin -ExpectedRuntimeManifestSha256 $manifestHash -PreflightOnly
         $result.TargetAzimuthDegrees | Should Be 315.5
         $result.TargetAltitudeDegrees | Should Be 30.25
     }
@@ -124,7 +139,7 @@ Describe 'guarded TPPA drift-validation launcher preflight' {
         $sequence = Join-Path $TestDrive 'edge.json'
         '{"$type":"NINA.Plugins.PolarAlignment.Instructions.PolarAlignment, NINA.Plugins.PolarAlignment","VerificationOnly":false,"DriftValidationOnly":true,"MountMotionEnvelopeEnabled":true,"MountMotionMinimumAltitudeDegrees":25,"MountMotionMaximumAltitudeDegrees":55,"MountMotionAzimuthStartDegrees":270,"MountMotionAzimuthEndDegrees":10,"Coordinates":{"AzDegrees":315,"AzMinutes":0,"AzSeconds":0,"AltDegrees":25,"AltMinutes":0,"AltSeconds":0}}' | Set-Content -LiteralPath $sequence
         $threw = $false
-        try { & $scriptPath -SequencePath $sequence -PluginDirectory $plugin -ExpectedPluginSha256 $pluginHash -PreflightOnly } catch { $threw = $true }
+        try { & $scriptPath -SequencePath $sequence -PluginDirectory $plugin -ExpectedRuntimeManifestSha256 $manifestHash -PreflightOnly } catch { $threw = $true }
         $threw | Should Be $true
     }
 
@@ -132,20 +147,20 @@ Describe 'guarded TPPA drift-validation launcher preflight' {
         $sequence = Join-Path $TestDrive 'extra-instruction.json'
         '{"Items":[{"$type":"NINA.Plugins.PolarAlignment.Instructions.PolarAlignment, NINA.Plugins.PolarAlignment","VerificationOnly":false,"DriftValidationOnly":true,"MountMotionEnvelopeEnabled":true,"MountMotionMinimumAltitudeDegrees":25,"MountMotionMaximumAltitudeDegrees":55,"MountMotionAzimuthStartDegrees":270,"MountMotionAzimuthEndDegrees":10,"Coordinates":{"AzDegrees":315,"AzMinutes":0,"AzSeconds":0,"AltDegrees":30,"AltMinutes":0,"AltSeconds":0}},{"$type":"NINA.Sequencer.SequenceItem.Utility.Wait, NINA.Sequencer","Time":1}]}' | Set-Content -LiteralPath $sequence
         $threw = $false
-        try { & $scriptPath -SequencePath $sequence -PluginDirectory $plugin -ExpectedPluginSha256 $pluginHash -PreflightOnly } catch { $threw = $true }
+        try { & $scriptPath -SequencePath $sequence -PluginDirectory $plugin -ExpectedRuntimeManifestSha256 $manifestHash -PreflightOnly } catch { $threw = $true }
         $threw | Should Be $true
     }
     It 'rejects plural NINA condition namespaces behaviorally' {
         $sequence = Join-Path $TestDrive 'loop-condition.json'
         '{"Items":[{"$type":"NINA.Plugins.PolarAlignment.Instructions.PolarAlignment, NINA.Plugins.PolarAlignment","VerificationOnly":false,"DriftValidationOnly":true,"MountMotionEnvelopeEnabled":true,"MountMotionMinimumAltitudeDegrees":25,"MountMotionMaximumAltitudeDegrees":55,"MountMotionAzimuthStartDegrees":270,"MountMotionAzimuthEndDegrees":10,"Coordinates":{"AzDegrees":315,"AzMinutes":0,"AzSeconds":0,"AltDegrees":30,"AltMinutes":0,"AltSeconds":0}}],"Conditions":[{"$type":"NINA.Sequencer.Conditions.LoopCondition, NINA.Sequencer"}]}' | Set-Content -LiteralPath $sequence
         $message = ''
-        try { & $scriptPath -SequencePath $sequence -PluginDirectory $plugin -ExpectedPluginSha256 $pluginHash -PreflightOnly } catch { $message = $_.Exception.Message }
+        try { & $scriptPath -SequencePath $sequence -PluginDirectory $plugin -ExpectedRuntimeManifestSha256 $manifestHash -PreflightOnly } catch { $message = $_.Exception.Message }
         $message | Should Match 'must not contain triggers or conditions'
     }
     It 'accepts empty native NINA collection wrappers' {
         $sequence = Join-Path $TestDrive 'native-wrappers.json'
         '{"Items":{"$type":"System.Collections.ObjectModel.ObservableCollection`1[[NINA.Sequencer.SequenceItem.ISequenceItem, NINA.Sequencer]], System.ObjectModel","$values":[{"$type":"NINA.Plugins.PolarAlignment.Instructions.PolarAlignment, NINA.Plugins.PolarAlignment","VerificationOnly":false,"DriftValidationOnly":true,"MountMotionEnvelopeEnabled":true,"MountMotionMinimumAltitudeDegrees":25,"MountMotionMaximumAltitudeDegrees":55,"MountMotionAzimuthStartDegrees":270,"MountMotionAzimuthEndDegrees":10,"Coordinates":{"AzDegrees":315,"AzMinutes":0,"AzSeconds":0,"AltDegrees":30,"AltMinutes":0,"AltSeconds":0}}]},"Conditions":{"$type":"System.Collections.ObjectModel.ObservableCollection`1[[NINA.Sequencer.Conditions.ISequenceCondition, NINA.Sequencer]], System.ObjectModel","$values":[]},"Triggers":{"$type":"System.Collections.ObjectModel.ObservableCollection`1[[NINA.Sequencer.Trigger.ISequenceTrigger, NINA.Sequencer]], System.ObjectModel","$values":[]}}' | Set-Content -LiteralPath $sequence
-        $result = & $scriptPath -SequencePath $sequence -PluginDirectory $plugin -ExpectedPluginSha256 $pluginHash -PreflightOnly
+        $result = & $scriptPath -SequencePath $sequence -PluginDirectory $plugin -ExpectedRuntimeManifestSha256 $manifestHash -PreflightOnly
         $result.TargetAzimuthDegrees | Should Be 315
         $result.TargetAltitudeDegrees | Should Be 30
     }

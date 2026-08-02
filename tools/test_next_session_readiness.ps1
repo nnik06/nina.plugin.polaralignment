@@ -3,7 +3,8 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$PluginDirectory,
     [Parameter(Mandatory = $true)]
-    [string]$ExpectedSha256,
+    [ValidatePattern('^[0-9A-Fa-f]{64}$')]
+    [string]$ExpectedRuntimeManifestSha256,
     [string]$IPolarPattern = 'iPolar|iOptron.*Polar',
     [string]$MainCameraPattern = 'ASI2600|VID_03C3&PID_260E',
     [string]$GuideCameraPattern = 'ASI220|VID_03C3&PID_2209',
@@ -177,7 +178,7 @@ if (-not (Test-Path -LiteralPath $validator -PathType Leaf)) {
 }
 
 try {
-    $install = & $validator -PluginDirectory $PluginDirectory -ExpectedSha256 $ExpectedSha256
+    $install = & $validator -PluginDirectory $PluginDirectory -ExpectedRuntimeManifestSha256 $ExpectedRuntimeManifestSha256
     $gates.Add($(New-ReadinessGate -Name 'PluginInstall' -Passed $true `
         -Detail "One live TPPA assembly; SHA256 $($install.Sha256)."))
 } catch {

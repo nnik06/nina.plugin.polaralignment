@@ -1,8 +1,30 @@
 using FluentAssertions;
 using NINA.Plugins.PolarAlignment.Instructions;
+using System.Configuration;
+using System.Reflection;
 
 namespace NINA.Plugins.PolarAlignment.Test {
     public class RefractionAlignmentTargetTest {
+        [Test]
+        public void RefractionAdjustment_DefaultsToTruePoleMode() {
+            var property = typeof(NINA.Plugins.PolarAlignment.Properties.Settings)
+                .GetProperty(nameof(NINA.Plugins.PolarAlignment.Properties.Settings.RefractionAdjustment));
+
+            property.Should().NotBeNull();
+            property!.GetCustomAttribute<DefaultSettingValueAttribute>()!
+                     .Value.Should().Be("True");
+        }
+
+        [Test]
+        public void DefaultTargetDistance_MatchesAutomatedGeometryFloor() {
+            var property = typeof(NINA.Plugins.PolarAlignment.Properties.Settings)
+                .GetProperty(nameof(NINA.Plugins.PolarAlignment.Properties.Settings.DefaultTargetDistance));
+
+            property.Should().NotBeNull();
+            property!.GetCustomAttribute<DefaultSettingValueAttribute>()!
+                     .Value.Should().Be("15");
+        }
+
         [Test]
         public void CalculateTruePoleOffsetArcMinutes_DubaiStandardAtmosphere_MatchesNinaAstrometry() {
             var refraction = new RefractionParameters(1013.25, 15.0, 0.0, 0.55);

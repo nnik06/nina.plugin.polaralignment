@@ -24,7 +24,7 @@ function Invoke-Readiness {
         '-NoProfile',
         '-File', $ToolPath,
         '-PluginDirectory', $PluginRoot,
-        '-ExpectedSha256', (Get-FileHash -Algorithm SHA256 $PluginDll).Hash,
+        '-ExpectedRuntimeManifestSha256', (Get-FileHash -Algorithm SHA256 (Join-Path $PluginRoot 'TPPA.runtime-manifest.json')).Hash,
         '-UpasBridgeHost', '127.0.0.1',
         '-UpasBridgePort', $Port,
         '-RequireUpasBridge'
@@ -42,6 +42,19 @@ function Invoke-Readiness {
 try {
     New-Item -ItemType Directory -Force -Path $PluginRoot | Out-Null
     [IO.File]::WriteAllBytes($PluginDll, [byte[]](1, 2, 3, 4))
+    [IO.File]::WriteAllBytes((Join-Path $PluginRoot 'NINA.Plugins.PolarAlignment.QualificationCore.dll'), [byte[]](5, 6, 7, 8))
+    $manifestPath = Join-Path $PluginRoot 'TPPA.runtime-manifest.json'
+    $manifest = [ordered]@{
+        schemaVersion = 1
+        packageId = 'NINA.Plugins.PolarAlignment'
+        pluginVersion = '1.2.3.4'
+        sourceCommit = '0123456789abcdef0123456789abcdef01234567'
+        artifacts = @(
+            [ordered]@{ name = 'NINA.Plugins.PolarAlignment.dll'; sha256 = (Get-FileHash -Algorithm SHA256 $PluginDll).Hash },
+            [ordered]@{ name = 'NINA.Plugins.PolarAlignment.QualificationCore.dll'; sha256 = (Get-FileHash -Algorithm SHA256 (Join-Path $PluginRoot 'NINA.Plugins.PolarAlignment.QualificationCore.dll')).Hash }
+        )
+    }
+    [IO.File]::WriteAllText($manifestPath, ($manifest | ConvertTo-Json -Depth 4))
 
     $listener = [Net.Sockets.TcpListener]::new(
         [Net.IPAddress]::Loopback,

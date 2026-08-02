@@ -7,7 +7,7 @@ param(
     [string]$PluginDirectory,
     [Parameter(Mandatory = $true)]
     [ValidatePattern('^[0-9A-Fa-f]{64}$')]
-    [string]$ExpectedPluginSha256,
+    [string]$ExpectedRuntimeManifestSha256,
     [ValidateRange(270.0, 359.9)]
     [double]$WesternAzimuthMinimumDegrees = 270.0,
     [ValidateRange(0.0, 20.0)]
@@ -19,8 +19,21 @@ param(
     [ValidateRange(0.0, 10.0)]
     [double]$TargetAltitudeMarginDegrees = 2.0,
     [ValidateRange(60, 1800)]
-    [int]$MaximumRuntimeSeconds = 600,
+    [int]$MaximumRuntimeSeconds = 1500,
+    [ValidateRange(30.0, 300.0)]
+    [double]$MinimumRuntimePerPointSeconds = 120.0,
+    [ValidateRange(30, 600)]
+    [int]$CleanupReserveSeconds = 180,
+    [ValidateRange(5, 120)]
+    [int]$CancellationTerminalityTimeoutSeconds = 30,
+    [ValidateRange(2, 30)]
+    [int]$CancellationTerminalityHoldSeconds = 10,
     [string]$LogPath = '',
+    [switch]$PrewarmSolve,
+    [ValidateRange(0.5, 30.0)]
+    [double]$PrewarmExposureSeconds = 3.0,
+    [ValidateRange(10, 300)]
+    [int]$PrewarmTimeoutSeconds = 180,
     [switch]$PreflightOnly,
     [switch]$FunctionsOnly
 )
@@ -51,6 +64,39 @@ function Test-CurrentVerificationTerminalFailure(
     return $SeenRunning `
         -and $SeenCurrentRuntimeProgress `
         -and (Get-VerificationTerminalOutcome $RuntimeStatuses) -eq 'failed'
+}
+
+function Get-CircularAzimuthDelta([double]$FirstAzimuth, [double]$SecondAzimuth) {
+    $first = (($FirstAzimuth % 360.0) + 360.0) % 360.0
+    $second = (($SecondAzimuth % 360.0) + 360.0) % 360.0
+    $delta = [Math]::Abs($first - $second)
+    return [Math]::Min($delta, 360.0 - $delta)
+}
+
+function Test-VerificationGuardArmPoint(
+    [double]$Azimuth,
+    [double]$Altitude,
+    [double]$TargetAzimuth,
+    [double]$TargetAltitude) {
+    if (-not [double]::IsFinite($Azimuth) -or -not [double]::IsFinite($Altitude)) {
+        return $false
+    }
+
+    return (Get-CircularAzimuthDelta $Azimuth $TargetAzimuth) -le 1.0 `
+        -and [Math]::Abs($Altitude - $TargetAltitude) -le 1.0
+}
+
+function Test-NinaSequenceTerminalObservation(
+    [string[]]$LeafStatuses,
+    [string[]]$RuntimeStatuses) {
+    $normalizedLeafStatuses = @($LeafStatuses | ForEach-Object {
+        ([string]$_).ToUpperInvariant()
+    })
+    $leafTerminal = $normalizedLeafStatuses.Count -eq 1 -and
+        $normalizedLeafStatuses[0] -in @('CREATED', 'FINISHED', 'FAILED', 'SKIPPED')
+    $runtimeTerminal = (Get-VerificationTerminalOutcome $RuntimeStatuses) -ne $null
+    $pluginTerminal = @($RuntimeStatuses).Count -eq 0 -or $runtimeTerminal
+    return $leafTerminal -and $pluginTerminal
 }
 
 if ($FunctionsOnly) {
@@ -102,13 +148,207 @@ function Invoke-Nina([string]$Path, [int]$TimeoutSeconds = 20) {
     }
 }
 
+function Invoke-GuardedSolvePrewarm(
+    [Parameter(Mandatory = $true)]$InitialMount,
+    [double]$TargetAzimuth,
+    [double]$TargetAltitude) {
+    $cameraResponse = Invoke-Nina -Path '/equipment/camera/info' -TimeoutSeconds 10
+    if (-not $cameraResponse.Success -or
+        -not $cameraResponse.Response.Connected -or
+        [bool]$cameraResponse.Response.IsExposing) {
+        throw (
+            'TPPA pre-warm requires a connected idle camera: ' +
+            "connected=$($cameraResponse.Response.Connected), exposing=$($cameraResponse.Response.IsExposing).")
+    }
+
+    $initialAzimuth = ConvertTo-NormalizedAzimuth ([double]$InitialMount.Azimuth)
+    $initialAltitude = [double]$InitialMount.Altitude
+    if ([bool]$InitialMount.Slewing -or
+        -not (Test-BalconyPoint $initialAzimuth $initialAltitude) -or
+        -not (Test-VerificationGuardArmPoint `
+            $initialAzimuth $initialAltitude $TargetAzimuth $TargetAltitude)) {
+        throw (
+            'TPPA pre-warm is no-slew and requires the mount already settled at the validated target; ' +
+            "Az=$initialAzimuth Alt=$initialAltitude slewing=$($InitialMount.Slewing).")
+    }
+
+    $startedUtc = [DateTime]::UtcNow
+    $stopwatch = [Diagnostics.Stopwatch]::StartNew()
+    $duration = $PrewarmExposureSeconds.ToString([Globalization.CultureInfo]::InvariantCulture)
+    $capture = Invoke-Nina -Path (
+        "/equipment/camera/capture?solve=true&duration=$duration&waitForResult=true&omitImage=true&imageType=SNAPSHOT") `
+        -TimeoutSeconds $PrewarmTimeoutSeconds
+    $stopwatch.Stop()
+
+    if (-not $capture.Success -or
+        -not $capture.Response.PlateSolveResult.Success) {
+        throw 'TPPA pre-warm capture or plate solve failed.'
+    }
+
+    $afterResponse = Invoke-Nina -Path '/equipment/mount/info' -TimeoutSeconds 10
+    if (-not $afterResponse.Success -or -not $afterResponse.Response.Connected) {
+        throw 'TPPA pre-warm cannot verify the post-solve mount state.'
+    }
+    $after = $afterResponse.Response
+    $afterAzimuth = ConvertTo-NormalizedAzimuth ([double]$after.Azimuth)
+    $afterAltitude = [double]$after.Altitude
+    $azimuthDelta = Get-CircularAzimuthDelta $initialAzimuth $afterAzimuth
+    $altitudeDelta = [Math]::Abs($initialAltitude - $afterAltitude)
+    if ([bool]$after.Slewing -or
+        [string]$after.SideOfPier -ne [string]$InitialMount.SideOfPier -or
+        $azimuthDelta -gt 0.10 -or $altitudeDelta -gt 0.10) {
+        throw (
+            'TPPA pre-warm violated the no-slew pointing hold: ' +
+            "dAz=$azimuthDelta deg, dAlt=$altitudeDelta deg, " +
+            "pier=$($InitialMount.SideOfPier)->$($after.SideOfPier), slewing=$($after.Slewing).")
+    }
+
+    $result = [pscustomobject]@{
+        SchemaVersion = 1
+        StartedUtc = $startedUtc.ToString('O')
+        ElapsedMilliseconds = [Math]::Round($stopwatch.Elapsed.TotalMilliseconds, 1)
+        ExposureSeconds = $PrewarmExposureSeconds
+        SolveSucceeded = $true
+        InitialAzimuthDegrees = $initialAzimuth
+        InitialAltitudeDegrees = $initialAltitude
+        FinalAzimuthDegrees = $afterAzimuth
+        FinalAltitudeDegrees = $afterAltitude
+        SideOfPier = [string]$after.SideOfPier
+        ExcludedFromVerificationRuntime = $true
+    }
+    Write-RunLog ('TPPA_PREWARM ' + ($result | ConvertTo-Json -Compress))
+    return $result
+}
+
 function Stop-NinaSequence {
     try {
         $result = Invoke-Nina -Path '/sequence/stop' -TimeoutSeconds 20
         Write-RunLog ('Stop response: ' + ($result | ConvertTo-Json -Compress -Depth 5))
+        return [bool]$result.Success
     } catch {
         Write-RunLog ('Stop warning: ' + $_.Exception.Message)
+        return $false
     }
+}
+
+function Wait-NinaSequenceTerminality {
+    $deadline = (Get-Date).AddSeconds($CancellationTerminalityTimeoutSeconds)
+    $holdStarted = $null
+    $observations = [Collections.Generic.List[string]]::new()
+
+    do {
+        try {
+            $state = Invoke-Nina -Path '/sequence/json' -TimeoutSeconds 8
+            $leafNodes = if ($state.Success) {
+                @(Find-CompactSequenceLeafNodes $state.Response)
+            } else {
+                @()
+            }
+            $leafStatuses = @($leafNodes | ForEach-Object {
+                ([string]$_.Status).ToUpperInvariant()
+            })
+            $runtimeStatuses = if ($state.Success) {
+                @(Find-VerificationRuntimeStatuses $state.Response | Select-Object -Unique)
+            } else {
+                @()
+            }
+            $terminal = [bool]$state.Success -and
+                (Test-NinaSequenceTerminalObservation $leafStatuses $runtimeStatuses)
+            $observations.Add((
+                'leaf={0}; runtime={1}; terminal={2}' -f
+                ($leafStatuses -join ','),
+                ($runtimeStatuses -join ' | '),
+                $terminal))
+
+            if ($terminal) {
+                if ($null -eq $holdStarted) { $holdStarted = Get-Date }
+                if (((Get-Date) - $holdStarted).TotalSeconds -ge
+                        $CancellationTerminalityHoldSeconds) {
+                    Write-RunLog (
+                        'Sequence/plugin cancellation terminality sustained for {0}s: {1}' -f
+                        $CancellationTerminalityHoldSeconds,
+                        $observations[$observations.Count - 1])
+                    return $true
+                }
+            } else {
+                $holdStarted = $null
+            }
+        } catch {
+            $holdStarted = $null
+            $observations.Add('exception=' + $_.Exception.Message)
+        }
+        Start-Sleep -Seconds 1
+    } while ((Get-Date) -lt $deadline)
+
+    Write-RunLog (
+        'Sequence/plugin cancellation terminality not observed: ' +
+        (($observations | Select-Object -Last 8) -join '; '))
+    return $false
+}
+
+function Stop-NinaMount {
+    try {
+        $result = Invoke-Nina -Path '/equipment/mount/slew/stop' -TimeoutSeconds 10
+        Write-RunLog ('Mount stop response: ' + ($result | ConvertTo-Json -Compress -Depth 5))
+    } catch {
+        Write-RunLog ('Mount stop warning: ' + $_.Exception.Message)
+    }
+}
+
+function Stop-NinaTracking {
+    $failures = [Collections.Generic.List[string]]::new()
+
+    foreach ($attempt in 1..10) {
+        Start-Sleep -Seconds 1
+        try {
+            $result = Invoke-Nina -Path '/equipment/mount/tracking?mode=4' -TimeoutSeconds 10
+            if (-not $result.Success) {
+                $failures.Add(
+                    "attempt $attempt rejected: status=$($result.StatusCode), error=$($result.Error)")
+                continue
+            }
+            # Sequence cancellation and TPPA cleanup can asynchronously restore
+            # sidereal tracking after an initially successful stop. Require a
+            # sustained off/idle hold before reporting cleanup success.
+            $holdSeconds = 10
+            $holdStarted = Get-Date
+            $holdDeadline = $holdStarted.AddSeconds($holdSeconds)
+            $holdPassed = $true
+            do {
+                Start-Sleep -Seconds 2
+                $mount = Invoke-Nina -Path '/equipment/mount/info' -TimeoutSeconds 10
+                if (-not $mount.Success -or
+                    -not $mount.Response.Connected -or
+                    [bool]$mount.Response.Slewing -or
+                    [bool]$mount.Response.TrackingEnabled) {
+                    $elapsed = ((Get-Date) - $holdStarted).TotalSeconds
+                    $failures.Add((
+                        'attempt {0} sustained hold failed after {1:F1}s: connected={2}, slewing={3}, tracking={4}' -f
+                        $attempt,
+                        $elapsed,
+                        $mount.Response.Connected,
+                        $mount.Response.Slewing,
+                        $mount.Response.TrackingEnabled))
+                    $holdPassed = $false
+                    break
+                }
+            } while ((Get-Date) -lt $holdDeadline)
+
+            if ($holdPassed) {
+                Write-RunLog (
+                    'Tracking stop sustained for {0}s on attempt {1}: {2}' -f
+                    $holdSeconds,
+                    $attempt,
+                    ($result | ConvertTo-Json -Compress -Depth 5))
+                return $true
+            }
+        } catch {
+            $failures.Add("attempt $attempt exception: $($_.Exception.Message)")
+        }
+    }
+
+    Write-RunLog ('Tracking stop failed after bounded retries: ' + ($failures -join '; '))
+    return $false
 }
 
 function ConvertTo-NormalizedAzimuth([double]$Azimuth) {
@@ -284,6 +524,35 @@ if ($instructionType -notmatch '^NINA\.Plugins\.PolarAlignment\.Instructions\.Po
 if ($null -eq $verificationInstruction) {
     throw 'The selected sequence is not VerificationOnly.'
 }
+$directionSampleCountProperty =
+    $verificationInstruction.PSObject.Properties['VerificationDirectionSampleCount']
+$directionSampleCount = if ($directionSampleCountProperty) {
+    [int]$directionSampleCountProperty.Value
+} else {
+    3
+}
+$expectedPointCount = 3 * $directionSampleCount
+$minimumAdmittedRuntimeSeconds = [Math]::Ceiling(
+    $expectedPointCount * $MinimumRuntimePerPointSeconds + $CleanupReserveSeconds)
+$runtimeAdmission = [ordered]@{
+    SchemaVersion = 1
+    ExpectedPointCount = $expectedPointCount
+    MinimumRuntimePerPointSeconds = $MinimumRuntimePerPointSeconds
+    CleanupReserveSeconds = $CleanupReserveSeconds
+    RequiredRuntimeSeconds = $minimumAdmittedRuntimeSeconds
+    MaximumRuntimeSeconds = $MaximumRuntimeSeconds
+    Admitted = $MaximumRuntimeSeconds -ge $minimumAdmittedRuntimeSeconds
+    GrantsMotionAuthority = $false
+    GrantsCompletionAuthority = $false
+}
+Write-RunLog ('TPPA_RUNTIME_ADMISSION ' + ($runtimeAdmission | ConvertTo-Json -Compress))
+if (-not $runtimeAdmission.Admitted) {
+    throw (
+        'Verification runtime admission denied before sequence start: ' +
+        "cap=$MaximumRuntimeSeconds s, required=$minimumAdmittedRuntimeSeconds s, " +
+        "points=$expectedPointCount, perPoint=$MinimumRuntimePerPointSeconds s, " +
+        "cleanupReserve=$CleanupReserveSeconds s.")
+}
 if ($verificationInstruction.PSObject.Properties['PreSeatAzimuthBeforeMeasurement'] -and
     [bool]$verificationInstruction.PreSeatAzimuthBeforeMeasurement) {
     throw 'Azimuth pre-seat must be disabled for verification-only diagnostics.'
@@ -331,7 +600,7 @@ $installValidator = Join-Path $PSScriptRoot 'validate_tppa_plugin_install.ps1'
 if (-not (Test-Path -LiteralPath $installValidator -PathType Leaf)) {
     throw "TPPA install validator is missing: $installValidator"
 }
-$install = & $installValidator -PluginDirectory $PluginDirectory -ExpectedSha256 $ExpectedPluginSha256
+$install = & $installValidator -PluginDirectory $PluginDirectory -ExpectedRuntimeManifestSha256 $ExpectedRuntimeManifestSha256
 Write-RunLog "Plugin preflight passed: $($install.AssemblyPath); SHA256=$($install.Sha256)."
 if ($PreflightOnly) {
     [pscustomobject]@{
@@ -362,6 +631,28 @@ if ([bool]$preStartMount.Response.Slewing) {
     throw 'Guarded verification will not start while the mount is already slewing.'
 }
 
+$preStartAzimuth = ConvertTo-NormalizedAzimuth ([double]$preStartMount.Response.Azimuth)
+$preStartAltitude = [double]$preStartMount.Response.Altitude
+$guardArmed = (Test-BalconyPoint $preStartAzimuth $preStartAltitude) -and
+    (Test-VerificationGuardArmPoint `
+        $preStartAzimuth `
+        $preStartAltitude `
+        $targetAzimuth `
+        $targetAltitude)
+if ($guardArmed) {
+    Write-RunLog "Balcony guard armed from pre-start telemetry at Az=$preStartAzimuth Alt=$preStartAltitude."
+}
+
+if ($PrewarmSolve) {
+    $prewarm = Invoke-GuardedSolvePrewarm `
+        -InitialMount $preStartMount.Response `
+        -TargetAzimuth $targetAzimuth `
+        -TargetAltitude $targetAltitude
+    Write-RunLog (
+        "Guarded TPPA pre-warm completed in $($prewarm.ElapsedMilliseconds) ms; " +
+        'this separately timed phase is excluded from verification runtime.')
+}
+
 $start = Invoke-Nina -Path '/sequence/start?skipValidation=true'
 if (-not $start.Success) { throw "Sequence start failed: $($start.Error)" }
 Write-RunLog 'Verification-only sequence started.'
@@ -370,7 +661,6 @@ $deadline = (Get-Date).AddSeconds($MaximumRuntimeSeconds)
 $armDeadline = (Get-Date).AddSeconds([Math]::Min(120, $MaximumRuntimeSeconds))
 $seenRunning = $false
 $seenCurrentRuntimeProgress = $false
-$guardArmed = $false
 try {
     while ((Get-Date) -lt $deadline) {
         # The state route embeds large sequence payloads and can block for minutes.
@@ -387,6 +677,9 @@ try {
         $isRunning = $instructionStatus -eq 'RUNNING'
         $isFailed = $instructionStatus -eq 'FAILED'
         if ($isRunning) { $seenRunning = $true }
+        if (-not $seenRunning -and $isFailed) {
+            throw 'Verification-only sequence reported a failed status before entering RUNNING.'
+        }
         $runtimeStatuses = @(Find-VerificationRuntimeStatuses $state.Response |
             Select-Object -Unique)
         $terminalOutcome = Get-VerificationTerminalOutcome $runtimeStatuses
@@ -411,15 +704,20 @@ try {
         $azimuth = ConvertTo-NormalizedAzimuth ([double]$mount.Azimuth)
         $altitude = [double]$mount.Altitude
 
-        if (-not [bool]$mount.Slewing) {
+        $insideBalconyEnvelope = Test-BalconyPoint $azimuth $altitude
+        if ([bool]$mount.Slewing) {
+            if (-not $insideBalconyEnvelope) {
+                throw (
+                    "Balcony guard observed an in-slew envelope violation: " +
+                    "Az=$azimuth Alt=$altitude.")
+            }
+        } else {
             if (-not $guardArmed) {
-                $azimuthDelta = [Math]::Abs($azimuth - (ConvertTo-NormalizedAzimuth $targetAzimuth))
-                $azimuthDelta = [Math]::Min($azimuthDelta, 360.0 - $azimuthDelta)
-                if ($azimuthDelta -le 1.0 -and [Math]::Abs($altitude - $targetAltitude) -le 1.0) {
+                if (Test-VerificationGuardArmPoint $azimuth $altitude $targetAzimuth $targetAltitude) {
                     $guardArmed = $true
                     Write-RunLog "Balcony guard armed at Az=$azimuth Alt=$altitude."
                 }
-            } elseif (-not (Test-BalconyPoint $azimuth $altitude) -and
+            } elseif (-not $insideBalconyEnvelope -and
                     (Confirm-SettledBalconyViolation $azimuth $altitude)) {
                 throw (
                     "Balcony guard confirmed a persistent violation at a settled pointing: " +
@@ -441,13 +739,26 @@ try {
                 throw "Verification-only sequence ended without FINISHED status; observed $instructionStatus."
             }
             Write-RunLog 'Verification-only sequence completed with FINISHED status.'
+            if (-not (Stop-NinaTracking)) {
+                throw 'Verification-only sequence finished but tracking could not be stopped and verified.'
+            }
             exit 0
         }
         Start-Sleep -Seconds 2
     }
     throw "Verification-only sequence exceeded $MaximumRuntimeSeconds seconds."
 } catch {
-    Write-RunLog ('FAIL: ' + $_.Exception.Message)
-    Stop-NinaSequence
-    throw
+    $failure = $_
+    Write-RunLog ('FAIL: ' + $failure.Exception.Message)
+    Stop-NinaMount
+    $stopAccepted = Stop-NinaSequence
+    $terminalityObserved = Wait-NinaSequenceTerminality
+    if (-not $stopAccepted -or -not $terminalityObserved) {
+        Write-RunLog (
+            'CRITICAL: sequence/plugin cancellation terminality was not verified before the final tracking stop.')
+    }
+    if (-not (Stop-NinaTracking)) {
+        Write-RunLog 'CRITICAL: guarded verification cleanup could not stop and verify tracking.'
+    }
+    throw $failure
 }

@@ -6,6 +6,11 @@ using System;
 namespace NINA.Plugins.PolarAlignment.Test {
     public class UniversalPolarAlignmentBaseTest {
         [Test]
+        public void GrblJogCancelRealtimeCommand_MatchesProtocol() {
+            UniversalPolarAlignmentBase.GrblJogCancelRealtimeCommand.Should().Be(0x85);
+        }
+
+        [Test]
         public void CalculateMovementTimeout_ScalesWithDistanceAndFeedRate() {
             var timeout = UniversalPolarAlignmentBase.CalculateMovementTimeout(0f, 220f, 700);
 

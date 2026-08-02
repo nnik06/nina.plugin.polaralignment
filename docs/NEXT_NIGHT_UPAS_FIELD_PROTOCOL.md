@@ -15,7 +15,7 @@ supersede the actuator trial below; UPAS remains disabled for that campaign.
   ```powershell
   pwsh -NoProfile -File tools/test_next_session_readiness.ps1 `
     -PluginDirectory "$env:LOCALAPPDATA\NINA\Plugins\3.0.0\Three Point Polar Alignment" `
-    -ExpectedSha256 '<tested-dll-sha256>' `
+    -ExpectedRuntimeManifestSha256 '<tested-runtime-manifest-sha256>' `
     -RequireNinaClosed `
     -RequireIPolar `
     -RequireMainCamera `
@@ -76,6 +76,122 @@ supersede the actuator trial below; UPAS remains disabled for that campaign.
 6. Require A1 versus A2 consistency: each signed component delta at most 30 arcseconds, total-error delta at most 20 arcseconds, and polar-error-vector phase delta at most 2.5 degrees.
 7. Treat an arc-B disagreement as a geometry/refraction diagnostic. It must not authorize a correction unless a later calibrated model explains the bias.
 8. Treat a failed A1-B-A2 return gate as an environmental or geometry-dependent systematic. Keep automatic UPAS correction disabled.
+
+## Verification Runtime and Geometry Admission
+
+1. Retire the Az 305 / Alt 30 Arc C sequence from qualification use. Its
+   apparent endpoints fell to approximately 29.2 and 27.2 degrees and failed the
+   30-degree refraction floor; it also could not complete inside either 600 or
+   900 seconds under measured field solve latency.
+2. Before NINA sequence load, compute and preserve `TPPA_RUNTIME_ADMISSION`.
+   For the current nine-point run, require at least 120 seconds per point plus a
+   180-second cancellation/cleanup reserve. A smaller cap is a pre-start denial,
+   not permission to collect a partial run.
+3. Treat any solve slower than `max(2 * rolling median, 90 seconds)` as a
+   degraded-field event. Do not immediately restart a complete nine-point run.
+   Requalify focus, clouds, field obstruction, and solver readiness first.
+4. Plan every qualification arc from its complete predicted trajectory. Require
+   minimum apparent altitude at least 35 degrees, prefer 40-50 degrees, keep the
+   balcony maximum-altitude margin, and reject the plan before motion if any
+   endpoint crosses the floor.
+5. Compute planned geometry conditioning before motion and reject a plan whose
+   expected design is ill-conditioned. Prefer fewer widely separated points to
+   more points on a narrow or degenerate arc; preserve the predicted and realized
+   conditioning metrics in the receipt.
+6. Use an A-B-A revisit as the next field discriminator. If the return A differs
+   from initial A, classify the effect as time-correlated until thermal,
+   atmosphere, timestamp, and mechanical witnesses resolve it. If A closes while
+   B differs, classify it as sky-position/geometry dependent.
+7. On cancellation, observe sequence/plugin terminality before issuing the final
+   tracking stop. Then require a sustained idle/tracking-off hold and an
+   independent delayed mount-state check. A timer-only hold cannot replace
+   terminality.
+## Five-Position Shadow Model Check
+
+1. After the ordinary VerificationOnly run passes repeatability and reciprocity,
+   enable `5-position shadow model check` for one diagnostic run on the same
+   safe arc. It adds reciprocal half-leg samples but leaves every legacy
+   three-point result unchanged.
+2. Preserve the `TPPA_OVERDETERMINED_5POSITION_SHADOW` JSON log record.
+3. Require five distinct positions, qualified complete-fit geometry, residual
+   RMS at most 30 arcseconds, maximum residual at most 60 arcseconds,
+   legacy-to-five-point axis separation at most 0.5 arcminute, and maximum
+   leave-one-out axis movement at most 0.5 arcminute.
+4. A pass is model-fidelity evidence only. It never authorizes UPAS movement,
+   completion, or an absolute sub-arcminute claim. A failure quarantines the
+   arc and is the primary discriminator for field-dependent geometry bias.
+5. This diagnostic adds two solves and two qualified point settles, nominally
+   about one minute. Keep it outside the eventual five-minute production path
+   until field evidence supports a shorter independently verified design.
+
+## Telescope Trajectory Safety
+
+- Preflight the complete route, not only its endpoint. A safe endpoint does not
+  imply a safe balcony slew.
+- Never perform a direct pier flip on the balcony. Return through mount Home,
+  verify Home and idle, then begin a separately guarded slew to the new side.
+- Treat NINA's `/v2/api/equipment/mount/slew/stop` as a best-effort brake, not a
+  safety interlock. The 2026-08-01 campaign observed about 1.8 degrees of
+  altitude travel after the first unsafe sample/stop decision.
+- Keep at least 2 degrees of dynamic margin from every hard envelope boundary,
+  use short prequalified waypoints for large same-pier moves, and require two
+  continuous idle seconds before accepting final telemetry.
+- Preserve the trajectory watchdog log even when the final endpoint is safe;
+  any unsafe intermediate sample fails the route.
+
+## iPolar Pier-Side Stability Block
+
+1. Run only after astronomical darkness and after iPolar has loaded the
+   preserved valid dark frame. The interactive recorder must see the console
+   iPolar window; an SSH service session is not sufficient.
+2. Start each leg with `tools/run_guarded_ipolar_slew_stability.ps1`. It must
+   record at least five fresh frames with at least five stable neutral stellar
+   centroids before it launches any slew.
+3. The runner owns telescope motion only. It cannot contact or authorize UPAS.
+   It rejects a pier-side change and polls the complete route against the
+   balcony envelope before accepting two seconds of idle closure.
+4. West-pier reciprocal cycle: approximately Az 0.6/Alt 35 to Az 1.2/Alt 45
+   and back, with live RA/Dec recomputed by the guarded launcher.
+5. Return through mount Home. Verify `AtHome=true`, tracking off, and idle.
+   Re-establish tracking and separately preflight the east-pier start; never
+   command a direct pier flip on the balcony.
+6. East-pier reciprocal cycle: approximately Az 329.7/Alt 49.6 to
+   Az 349.0/Alt 36.7 and back.
+7. Reject the block without movement if the star gate fails. Preserve
+   `samples.jsonl`, frame hashes, `baseline-gate.json`, `trajectory.jsonl`, and
+   the generated `axis-evaluation.json` for every accepted or rejected leg.
+8. After all four reciprocal legs, create a JSON manifest with one `CampaignId`
+   and exactly four unique `Legs`: `west-outbound`, `west-return`,
+   `east-outbound`, and `east-return`, each carrying its `ResultPath`. Run
+   `tools/ipolar_pier_side_campaign_evaluator.ps1`. It rejects duplicate paths
+   or run IDs, wrong pier sides, any leg outside the 15-arcsecond RMS /
+   30-arcsecond maximum residual gates, or fitted-axis centers separated by
+   more than 30 arcseconds. Passing qualifies only differential iPolar-axis
+   stability; it never certifies absolute PA accuracy.
+9. Use `tools/run_guarded_ipolar_pier_side_campaign.ps1 -Stage west` and
+   `-Stage east` to execute each reciprocal pair. The launcher deliberately
+   cannot transition between pier sides: after the west receipt, return through
+   Home, verify Home/idle/tracking-off, then separately place and preflight the
+   east start. Run `-Stage finalize` only after both immutable phase receipts
+   exist. This keeps the dangerous pier transition outside the automated
+   reciprocal runner while preserving one four-leg campaign identity.
+
+## Separately Timed Solve Pre-Warm
+
+1. Place the mount at the validated VerificationOnly target, confirm it is
+   settled, inside the balcony envelope, and within one degree of the sequence
+   target. The pre-warm path is deliberately no-slew.
+2. Run `tools/run_guarded_tppa_verification.ps1` with `-PrewarmSolve` and the
+   tested plugin hash. The launcher requires a connected idle camera, performs
+   one supported snapshot plate solve, and rejects pier-side or pointing change.
+3. Preserve the `TPPA_PREWARM` JSON log record. Its elapsed time is a separate
+   preflight metric and must not be added to or hidden inside the under-five-
+   minute VerificationOnly runtime claim.
+4. A failed or slow pre-warm blocks the operational timing run. It is evidence
+   of capture/solver readiness, not polar-alignment accuracy.
+5. Report both numbers: pre-warm duration and sequence duration. Qualification
+   requires five consecutive warm sequence runs below 300 seconds; it does not
+   excuse failed reciprocity, repeatability, geometry, or absolute-truth gates.
 
 ## Actuator Trial
 1. Only after measurement qualification passes, run `tools/run_guarded_tppa_verification.ps1` with the tested DLL hash and a VerificationOnly sequence whose target has at least 2 degrees of altitude margin inside the measured balcony opening.
