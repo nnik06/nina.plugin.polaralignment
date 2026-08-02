@@ -1,3 +1,13 @@
+## Version 2.2.6.77
+
+- Add a fail-closed runtime-package installer that refuses to operate while
+  NINA is running, validates the manifest-bound package before changing the
+  live plugin tree, archives stale TPPA assemblies and deployment suffix files
+  outside that tree, stages and hash-checks every artifact, validates the final
+  installation, and restores the prior runtime on any transaction failure.
+- Add transaction tests for successful installation, live-NINA refusal,
+  invalid-package refusal, and rollback after final-validation failure.
+
 ## Version 2.2.6.76
 
 - Make the five-minute automated path explicitly admissible only with the

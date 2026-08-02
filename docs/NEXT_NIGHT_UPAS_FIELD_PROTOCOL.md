@@ -55,6 +55,17 @@ supersede the actuator trial below; UPAS remains disabled for that campaign.
   hardware-preflight failure, not as a reason to weaken a later field gate.
 - Do not begin unattended. The first actuator trial requires an observer at the rig.
 
+## Runtime Installation
+- With NINA closed, install the manifest-bound package using
+  `tools/install_tppa_runtime_package.ps1`. Keep the package and archive roots
+  outside the live plugin tree. The installer must validate the package first,
+  archive the previous TPPA assemblies and stale deployment suffix files,
+  validate the completed live installation, and report the archive path.
+- Start NINA only after the live validator returns the expected source commit,
+  plugin version, manifest hash, plugin hash, qualification-core hash, and
+  assembly count two. Independently confirm the exact loaded module path and
+  version after startup.
+
 ## Starting State
 - Put both UPAS markers near their engraved zero positions and photograph them.
 - Confirm GRBL reports Idle and record MPos X/Y. Treat MPos as commanded position, not encoder feedback.
