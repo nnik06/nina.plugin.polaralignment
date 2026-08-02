@@ -1,3 +1,12 @@
+## Version 2.2.6.89
+
+- Add a fail-closed, seeing-inclusive actual 900-second star-shape witness using
+  independent pre/post controls, direct FITS adaptive moments and ASTAP sky IDs.
+- Bind exact policy, FITS, ASTAP catalog/binary, PHD2 continuity, OAG geometry
+  and state-continuity artifacts into a deterministic, verifiable receipt.
+- Add separate EdgeHD 9.25 + 0.7x and undersampled GT81 IV + 0.8x policies;
+  neither grants absolute PA or UPAS motion authority.
+
 ## Version 2.2.6.88
 
 - Replace permissive guided-event percentage coverage with a fail-closed

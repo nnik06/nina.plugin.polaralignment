@@ -22,6 +22,8 @@ internal static class Program {
                 "validate-witness-request" => ValidateWitnessRequest(options),
                 "create-witness-outcome" => CreateWitnessOutcome(options),
                 "validate-witness-outcome" => ValidateWitnessOutcome(options),
+                "analyze-actual-exposure" => AnalyzeActualExposure(options),
+                "verify-actual-exposure" => VerifyActualExposure(options),
                 _ => Usage($"Unknown command '{args[0]}'.")
             };
         } catch (Exception ex) {
@@ -343,6 +345,104 @@ internal static class Program {
         return 0;
     }
 
+    private static int AnalyzeActualExposure(
+            IReadOnlyDictionary<string, string> options) {
+        var manifestPath = RequireOption(options, "manifest");
+        var receiptPath = RequireOption(options, "receipt-out");
+        TppaActualExposureEvidenceManifest manifest;
+        try {
+            manifest = DeserializeStrict<TppaActualExposureEvidenceManifest>(
+                File.ReadAllText(manifestPath));
+        } catch (Exception exception) when (exception is JsonException
+                or IOException or UnauthorizedAccessException) {
+            WriteStatus(new {
+                status = "evidence-invalid",
+                qualified = false,
+                issues = new[] { $"actual-exposure manifest cannot be parsed strictly: {exception.Message}" },
+                polarAlignmentInferenceQualified = false,
+                grantsAbsoluteAccuracyClaim = false,
+                grantsMotionAuthority = false,
+                grantsUpasAuthority = false
+            });
+            return 2;
+        }
+        var result = TppaActualExposureEvidenceProducer.Produce(manifest);
+        if (!result.Produced || result.ReceiptJson == null) {
+            WriteStatus(new {
+                status = "evidence-invalid",
+                qualified = false,
+                issues = result.Issues,
+                polarAlignmentInferenceQualified = false,
+                grantsAbsoluteAccuracyClaim = false,
+                grantsMotionAuthority = false,
+                grantsUpasAuthority = false
+            });
+            return 2;
+        }
+        using (var stream = new FileStream(receiptPath, FileMode.CreateNew,
+                   FileAccess.Write, FileShare.Read))
+        using (var writer = new StreamWriter(stream, new System.Text.UTF8Encoding(false))) {
+            writer.Write(result.ReceiptJson);
+        }
+        var qualified = result.Receipt.SeeingInclusiveDelivered900SecondStarShapeQualified;
+        WriteStatus(new {
+            status = qualified ? "delivered-900s-qualified" : "delivered-900s-not-qualified",
+            qualified,
+            receiptPath = Path.GetFullPath(receiptPath),
+            receiptSha256 = Sha256(File.ReadAllBytes(receiptPath)),
+            issues = result.Issues,
+            polarAlignmentInferenceQualified = false,
+            grantsAbsoluteAccuracyClaim = false,
+            grantsMotionAuthority = false,
+            grantsUpasAuthority = false
+        });
+        return qualified ? 0 : 1;
+    }
+
+    private static int VerifyActualExposure(
+            IReadOnlyDictionary<string, string> options) {
+        var manifestPath = RequireOption(options, "manifest");
+        var receiptPath = RequireOption(options, "receipt");
+        TppaActualExposureEvidenceManifest manifest;
+        string receiptJson;
+        try {
+            manifest = DeserializeStrict<TppaActualExposureEvidenceManifest>(
+                File.ReadAllText(manifestPath));
+            receiptJson = File.ReadAllText(receiptPath);
+        } catch (Exception exception) when (exception is JsonException
+                or IOException or UnauthorizedAccessException) {
+            WriteStatus(new {
+                status = "evidence-invalid",
+                verified = false,
+                qualified = false,
+                issues = new[] { $"actual-exposure manifest or receipt cannot be read strictly: {exception.Message}" },
+                polarAlignmentInferenceQualified = false,
+                grantsAbsoluteAccuracyClaim = false,
+                grantsMotionAuthority = false,
+                grantsUpasAuthority = false
+            });
+            return 2;
+        }
+        var verification = TppaActualExposureEvidenceReceiptVerifier.Verify(
+            manifest, receiptJson);
+        WriteStatus(new {
+            status = verification.Verified ? "actual-exposure-receipt-verified" : "evidence-invalid",
+            verified = verification.Verified,
+            qualified = verification.SeeingInclusiveDelivered900SecondStarShapeQualified,
+            receiptPath = Path.GetFullPath(receiptPath),
+            receiptSha256 = Sha256(File.ReadAllBytes(receiptPath)),
+            issues = verification.Issues,
+            polarAlignmentInferenceQualified = false,
+            grantsAbsoluteAccuracyClaim = false,
+            grantsMotionAuthority = false,
+            grantsUpasAuthority = false
+        });
+        if (!verification.Verified) {
+            return 2;
+        }
+        return verification.SeeingInclusiveDelivered900SecondStarShapeQualified ? 0 : 1;
+    }
+
     private static DateTime ParseUtc(string value) {
         var parsed = DateTime.Parse(
             value,
@@ -404,7 +504,7 @@ internal static class Program {
             status = "usage-error",
             qualified = false,
             issues = new[] { issue },
-            usage = "tppa-qualify bind --tppa run.json --witness witness.json --receipt-out receipt.json | verify --tppa run.json --witness witness.json --receipt receipt.json | produce-witness --metadata metadata.json --points points.json --output-dir directory | create-witness-request --spec spec.json --request-out point.witness-request.ready.json | validate-witness-request --request request.json --now-utc timestamp | create-witness-outcome --request request.json --point point.json --outcome-out outcome.json --started-utc timestamp --completed-utc timestamp --observer-pipeline-digest sha256 | validate-witness-outcome --request request.json --outcome outcome.json",
+            usage = "tppa-qualify bind --tppa run.json --witness witness.json --receipt-out receipt.json | verify --tppa run.json --witness witness.json --receipt receipt.json | produce-witness --metadata metadata.json --points points.json --output-dir directory | create-witness-request --spec spec.json --request-out point.witness-request.ready.json | validate-witness-request --request request.json --now-utc timestamp | create-witness-outcome --request request.json --point point.json --outcome-out outcome.json --started-utc timestamp --completed-utc timestamp --observer-pipeline-digest sha256 | validate-witness-outcome --request request.json --outcome outcome.json | analyze-actual-exposure --manifest manifest.json --receipt-out receipt.json | verify-actual-exposure --manifest manifest.json --receipt receipt.json",
             grantsMotionAuthority = false
         });
         return 3;
