@@ -20,6 +20,12 @@ New-Item -ItemType Directory -Path $runDirectory -Force | Out-Null
 $jsonlPath = Join-Path $runDirectory 'samples.jsonl'
 $summaryPath = Join-Path $runDirectory 'summary.json'
 
+function Get-SignedCircularDegreesDelta([double]$Value, [double]$Reference) {
+    $delta = (($Value - $Reference + 540.0) % 360.0) - 180.0
+    if ($delta -le -180.0) { return 180.0 }
+    $delta
+}
+
 function Get-Mount {
     (Invoke-RestMethod -Uri "$api/equipment/mount/info" -TimeoutSec 10).Response
 }
@@ -38,7 +44,9 @@ function Assert-SafeMount {
         throw "Mount safety gate failed: connected=$($Mount.Connected), slewing=$($Mount.Slewing), tracking=$($Mount.TrackingEnabled), Az=$az, Alt=$alt."
     }
 
-    $raDeltaDegrees = [Math]::Abs(([double]$Mount.RightAscension - [double]$InitialMount.RightAscension) * 15.0)
+    $raDeltaDegrees = [Math]::Abs((Get-SignedCircularDegreesDelta `
+        (([double]$Mount.RightAscension) * 15.0) `
+        (([double]$InitialMount.RightAscension) * 15.0)))
     $decDeltaDegrees = [Math]::Abs([double]$Mount.Declination - [double]$InitialMount.Declination)
     if ($raDeltaDegrees -gt $MaxEquatorialDriftDegrees -or $decDeltaDegrees -gt $MaxEquatorialDriftDegrees) {
         throw "No-slew gate failed: dRA=$raDeltaDegrees deg, dDec=$decDeltaDegrees deg."
@@ -105,7 +113,9 @@ $offsets = foreach ($sample in $samplesOut) {
     [pscustomobject]@{
         Index = $sample.Index
         ElapsedMinutes = ([DateTime]$sample.StartedUtc - [DateTime]$first.StartedUtc).TotalMinutes
-        DeltaRaArcsec = ([double]$sample.SolveRaDegreesJ2000 - [double]$first.SolveRaDegreesJ2000) * $cosDec * 3600.0
+        DeltaRaArcsec = (Get-SignedCircularDegreesDelta `
+            ([double]$sample.SolveRaDegreesJ2000) `
+            ([double]$first.SolveRaDegreesJ2000)) * $cosDec * 3600.0
         DeltaDecArcsec = ([double]$sample.SolveDecDegreesJ2000 - [double]$first.SolveDecDegreesJ2000) * 3600.0
     }
 }

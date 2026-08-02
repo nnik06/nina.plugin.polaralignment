@@ -1,9 +1,9 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$RunId,
-    [ValidateRange(10, 600)]
+    [ValidateRange(10, 3600)]
     [int]$DurationSeconds = 120,
-    [ValidateRange(100, 2000)]
+    [ValidateRange(100, 60000)]
     [int]$CadenceMilliseconds = 500,
     [ValidateSet('Ordinary', 'Zoom')]
     [string]$DeclaredDisplayMode = 'Ordinary',

@@ -1,3 +1,17 @@
+## Version 2.2.6.82
+
+- Add an authority-free synchronized PA discriminator that records main-camera
+  solves, raw PHD2 guide-star displacement, iPolar window evidence, 1 Hz mount
+  telemetry, atmosphere provenance, UTC/monotonic timing, clock probes, and
+  immutable artifact hashes in one fixed mechanical epoch.
+- Extend the existing iPolar recorder's validated duration and cadence ranges
+  for low-cadence 30-40 minute stationary campaigns while preserving its
+  existing high-rate slew-capture mode.
+- Add a conservative guided-exposure field-rotation budget so the operational
+  PA target can be stated in ASI2600 pixels at the measured OAG guide-star
+  separation instead of treating an arbitrary arcminute threshold as image
+  performance.
+
 ## Version 2.2.6.81
 
 - Make the five-minute UPAS correction contract explicitly one-shot instead of

@@ -54,7 +54,8 @@ Describe 'guarded iPolar slew stability runner' {
         $runner.Contains('[int]$CaptureCadenceMilliseconds = 200') | Should Be $true
         $runner.Contains("'-CadenceMilliseconds', `$CaptureCadenceMilliseconds") | Should Be $true
         $runner.Contains('CaptureCadenceMilliseconds = $CaptureCadenceMilliseconds') | Should Be $true
-        $capture.Contains('[ValidateRange(100, 2000)]') | Should Be $true
+        $capture.Contains('[ValidateRange(100, 60000)]') | Should Be $true
+        $capture.Contains('[ValidateRange(10, 3600)]') | Should Be $true
     }
     It 'pins source-window identity, DPI, display declaration, and native size' {
         $capture.Contains('GetWindowRect') | Should Be $true

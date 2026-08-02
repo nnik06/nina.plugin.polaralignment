@@ -34,5 +34,21 @@ Describe 'guarded static solve series safety contract' {
         $text.Contains('ResidualRmsArcsec') | Should Be $true
         $text.Contains('VectorSlopeArcsecPerMinute') | Should Be $true
         $text.Contains('LinearFit') | Should Be $true
+        $text.Contains('Get-SignedCircularDegreesDelta') | Should Be $true
+        $text.Contains('SolveRaDegreesJ2000)') | Should Be $true
+    }
+
+    It 'treats the zero-degree RA boundary as a small circular delta' {
+        $match = [regex]::Match(
+            $text,
+            '(?ms)^function Get-SignedCircularDegreesDelta.*?^}')
+        $match.Success | Should Be $true
+        . ([scriptblock]::Create($match.Value))
+
+        $forward = Get-SignedCircularDegreesDelta 0.15 359.85
+        $reverse = Get-SignedCircularDegreesDelta 359.85 0.15
+        [Math]::Abs($forward - 0.30) | Should BeLessThan 0.000001
+        [Math]::Abs($reverse + 0.30) | Should BeLessThan 0.000001
+        (Get-SignedCircularDegreesDelta 180.0 0.0) | Should Be 180.0
     }
 }
