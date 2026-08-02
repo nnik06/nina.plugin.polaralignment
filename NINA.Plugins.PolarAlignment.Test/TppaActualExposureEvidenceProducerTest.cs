@@ -32,7 +32,7 @@ public class TppaActualExposureEvidenceProducerTest {
     [Test]
     public void CompleteGuidedBracketProducesNonAuthoritativeReceipt() {
         var manifest = Manifest(
-            Utc("2026-08-02T19:59:50Z"), Utc("2026-08-02T20:17:30Z"));
+            Utc("2026-08-02T19:59:50Z"), Utc("2026-08-02T20:18:40Z"));
 
         var result = TppaActualExposureEvidenceProducer.Produce(manifest);
 
@@ -51,7 +51,7 @@ public class TppaActualExposureEvidenceProducerTest {
     [Test]
     public void DeterministicReceiptVerifierRejectsTampering() {
         var manifest = Manifest(
-            Utc("2026-08-02T19:59:50Z"), Utc("2026-08-02T20:17:30Z"));
+            Utc("2026-08-02T19:59:50Z"), Utc("2026-08-02T20:18:40Z"));
         var result = TppaActualExposureEvidenceProducer.Produce(manifest);
 
         var verified = TppaActualExposureEvidenceReceiptVerifier.Verify(
@@ -68,7 +68,7 @@ public class TppaActualExposureEvidenceProducerTest {
     [Test]
     public void Phd2IntervalMissingPostBracketFailsClosed() {
         var manifest = Manifest(
-            Utc("2026-08-02T19:59:50Z"), Utc("2026-08-02T20:16:50Z"));
+            Utc("2026-08-02T19:59:50Z"), Utc("2026-08-02T20:18:20Z"));
 
         var result = TppaActualExposureEvidenceProducer.Produce(manifest);
 
@@ -79,7 +79,7 @@ public class TppaActualExposureEvidenceProducerTest {
     [Test]
     public void TamperedFitsBytesFailHashBinding() {
         var manifest = Manifest(
-            Utc("2026-08-02T19:59:50Z"), Utc("2026-08-02T20:17:30Z"));
+            Utc("2026-08-02T19:59:50Z"), Utc("2026-08-02T20:18:40Z"));
         using (var stream = new FileStream(sources[0].FitsPath, FileMode.Append,
                    FileAccess.Write, FileShare.None)) {
             stream.WriteByte(1);
@@ -91,6 +91,38 @@ public class TppaActualExposureEvidenceProducerTest {
         result.Issues.Should().Contain(issue => issue.Contains("SHA-256 does not match"));
     }
 
+    [Test]
+    public void Phd2SummaryWithInvalidatingEventFailsClosed() {
+        var manifest = Manifest(
+            Utc("2026-08-02T19:59:50Z"), Utc("2026-08-02T20:18:40Z"));
+        var json = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(
+            manifest.Phd2SummaryPath));
+        json["InvalidatingEvents"] = new Newtonsoft.Json.Linq.JArray("StarLost");
+        File.WriteAllText(manifest.Phd2SummaryPath, json.ToString(),
+            new UTF8Encoding(false));
+        manifest = manifest with {
+            Phd2SummarySha256 = Sha256(manifest.Phd2SummaryPath)
+        };
+
+        var result = TppaActualExposureEvidenceProducer.Produce(manifest);
+
+        result.Produced.Should().BeFalse();
+        result.Issues.Should().Contain(issue => issue.Contains("event provenance"));
+    }
+
+    [Test]
+    public void TamperedRawPhd2EventArtifactFailsClosed() {
+        var manifest = Manifest(
+            Utc("2026-08-02T19:59:50Z"), Utc("2026-08-02T20:18:40Z"));
+        File.AppendAllText(Path.Combine(root, "events.jsonl"),
+            "{\"Event\":\"StarLost\"}\n", new UTF8Encoding(false));
+
+        var result = TppaActualExposureEvidenceProducer.Produce(manifest);
+
+        result.Produced.Should().BeFalse();
+        result.Issues.Should().Contain(issue => issue.Contains("hash-mismatched"));
+    }
+
     private TppaActualExposureEvidenceManifest Manifest(
             DateTime phd2Start, DateTime phd2End) {
         var policy = Policy();
@@ -98,6 +130,12 @@ public class TppaActualExposureEvidenceProducerTest {
         WriteJson(policyPath, policy);
         var astap = Path.Combine(root, "astap.exe");
         File.WriteAllBytes(astap, Encoding.ASCII.GetBytes("pinned-test-astap"));
+        var events = Path.Combine(root, "events.jsonl");
+        var guideSteps = Path.Combine(root, "guidesteps.csv");
+        File.WriteAllText(events, "{\"Event\":\"GuideStep\"}\n",
+            new UTF8Encoding(false));
+        File.WriteAllText(guideSteps, "Frame,ReceivedUtc\n1,2026-08-02T20:00:00Z\n",
+            new UTF8Encoding(false));
         var phd2 = Path.Combine(root, "phd2-summary.json");
         WriteJson(phd2, new {
             SchemaVersion = 1,
@@ -107,6 +145,10 @@ public class TppaActualExposureEvidenceProducerTest {
             GuidingContinuityQualified = true,
             GuideOutputContinuouslyEnabled = true,
             GuideStepCoverageQualified = true,
+            InvalidatingEvents = Array.Empty<string>(),
+            StateChangingRpcMethods = Array.Empty<string>(),
+            EventsSha256 = Sha256(events),
+            GuideStepsSha256 = Sha256(guideSteps),
             GrantsMountMotionAuthority = false,
             GrantsUpasAuthority = false,
             GrantsAbsoluteAccuracyClaim = false
@@ -135,7 +177,7 @@ public class TppaActualExposureEvidenceProducerTest {
         };
         WriteJson(statePath, new TppaActualExposureStateReceipt(
             1, policy.OpticalTrainId,
-            Utc("2026-08-02T19:59:45Z"), Utc("2026-08-02T20:17:30Z"),
+            Utc("2026-08-02T19:59:45Z"), Utc("2026-08-02T20:18:40Z"),
             state, false, false, false));
         var frames = sources.Select(source => new TppaActualExposureEvidenceFrame(
             source.Role, source.FitsPath, Sha256(source.FitsPath),

@@ -57,5 +57,9 @@ Describe 'actual 900-second exposure bracket contract' {
         [int]$edge.MinimumPostControlFrames | Should Be 5
         [int]$gt.MinimumPreControlFrames | Should Be 5
         [int]$gt.MinimumPostControlFrames | Should Be 5
+        [double]$edge.MaximumLongFrameAttritionFraction | Should Be 0.15
+        [double]$gt.MaximumLongFrameAttritionFraction | Should Be 0.15
+        [double]$edge.MinimumQualifiedFwhmPixels | Should Be 2.0
+        [double]$gt.MinimumQualifiedFwhmPixels | Should Be 2.0
     }
 }

@@ -23,8 +23,8 @@ internal sealed class TppaActualExposureStarShapePolicy {
     public double LinearityCeilingAdu { get; set; } = 50000.0;
     public double MinimumApertureSnr { get; set; } = 20.0;
     public double MaximumBackgroundFluxNoiseFraction { get; set; } = 0.10;
-    public int MinimumPreControlFrames { get; set; } = 3;
-    public int MinimumPostControlFrames { get; set; } = 3;
+    public int MinimumPreControlFrames { get; set; } = 5;
+    public int MinimumPostControlFrames { get; set; } = 5;
     public int MinimumMatchedStars { get; set; } = 25;
     public int MinimumStarsPerZone { get; set; } = 3;
     public double MaximumCatalogMatchArcseconds { get; set; } = 1.5;
@@ -39,6 +39,11 @@ internal sealed class TppaActualExposureStarShapePolicy {
     public double MaximumOuterMedianMajorSigmaGrowthFraction { get; set; } = 0.25;
     public double MaximumPrePostMajorSigmaDriftFraction { get; set; } = 0.10;
     public double MaximumLinearityRejectionFraction { get; set; } = 0.50;
+    public double MaximumLongFrameAttritionFraction { get; set; } = 0.15;
+    public double MaximumPixelScaleRelativeError { get; set; } = 0.02;
+    public double MaximumPixelScaleAnisotropyFraction { get; set; } = 0.02;
+    public double MinimumQualifiedFwhmPixels { get; set; } = 2.0;
+    public double MaximumControlFrameMajorSigmaScatterFraction { get; set; } = 0.10;
     public bool AbsoluteEccentricityQualified { get; set; }
     public double MaximumLongMedianEccentricity { get; set; } = 0.55;
     public string[] RequiredEqualHeaderKeywords { get; set; } = new[] {
@@ -75,6 +80,7 @@ internal sealed record TppaAdaptiveStarMoment(
     double ApertureSnr,
     double BackgroundNoiseFraction,
     double PeakAdu,
+    double ApertureFluxAdu,
     int Iterations,
     bool Converged);
 
@@ -95,10 +101,15 @@ internal sealed record TppaActualExposureStarShapeResult(
     bool AbsoluteEccentricityQualified,
     int PreControlFrameCount,
     int PostControlFrameCount,
-    int CandidateLongStars,
+    int ControlQualifiedCandidateStars,
+    int LongFrameRejectedStars,
+    double LongFrameAttritionFraction,
     int MatchedUsableStars,
     int LinearityRejectedStars,
     double LinearityRejectionFraction,
+    double MeasuredPixelScaleArcsecondsPerPixel,
+    double MedianControlFwhmPixels,
+    double ControlFrameMajorSigmaScatterFraction,
     double MedianLongMajorSigmaArcseconds,
     double MedianMajorSigmaGrowthFraction,
     double MedianDifferentialEllipticity,
@@ -106,6 +117,7 @@ internal sealed record TppaActualExposureStarShapeResult(
     double MedianLongEccentricity,
     IReadOnlyList<TppaActualExposureZoneSummary> Zones,
     IReadOnlyList<string> Issues) {
+    public int CandidateLongStars => ControlQualifiedCandidateStars;
     public bool PolarAlignmentInferenceQualified => false;
     public bool GrantsAbsoluteAccuracyClaim => false;
     public bool GrantsMountMotionAuthority => false;
@@ -157,6 +169,7 @@ internal sealed class TppaFitsImage : IDisposable {
     private readonly int bytesPerPixel;
     private readonly double bscale;
     private readonly double bzero;
+    private readonly long? blank;
 
     private TppaFitsImage(string path) {
         stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
@@ -177,6 +190,7 @@ internal sealed class TppaFitsImage : IDisposable {
         }
         bscale = GetOptionalDouble("BSCALE", 1.0);
         bzero = GetOptionalDouble("BZERO", 0.0);
+        blank = Bitpix > 0 ? GetOptionalLong("BLANK") : null;
         var requiredLength = checked(dataOffset + (long)Width * Height * bytesPerPixel);
         if (stream.Length < requiredLength) {
             throw new InvalidDataException("FITS primary array is truncated.");
@@ -214,6 +228,38 @@ internal sealed class TppaFitsImage : IDisposable {
     public bool TryGetString(string key, out string value) =>
         header.TryGetValue(key, out value) && !string.IsNullOrWhiteSpace(value);
 
+    public bool TryGetDouble(string key, out double value) {
+        value = double.NaN;
+        return header.TryGetValue(key, out var text)
+            && double.TryParse(text, NumberStyles.Float,
+                CultureInfo.InvariantCulture, out value)
+            && double.IsFinite(value);
+    }
+
+    public bool TryGetPixelScaleArcsecondsPerPixel(
+            out double scale, out double anisotropyFraction) {
+        scale = anisotropyFraction = double.NaN;
+        double xScale;
+        double yScale;
+        if (TryGetDouble("CD1_1", out var cd11)
+                && TryGetDouble("CD1_2", out var cd12)
+                && TryGetDouble("CD2_1", out var cd21)
+                && TryGetDouble("CD2_2", out var cd22)) {
+            xScale = 3600.0 * Math.Sqrt(cd11 * cd11 + cd21 * cd21);
+            yScale = 3600.0 * Math.Sqrt(cd12 * cd12 + cd22 * cd22);
+        } else if (TryGetDouble("CDELT1", out var cdelt1)
+                && TryGetDouble("CDELT2", out var cdelt2)) {
+            xScale = 3600.0 * Math.Abs(cdelt1);
+            yScale = 3600.0 * Math.Abs(cdelt2);
+        } else {
+            return false;
+        }
+        scale = 0.5 * (xScale + yScale);
+        anisotropyFraction = Math.Abs(xScale - yScale) / scale;
+        return double.IsFinite(scale) && scale > 0
+            && double.IsFinite(anisotropyFraction);
+    }
+
     public double ReadPixel(int x, int y) {
         if (x < 0 || x >= Width || y < 0 || y >= Height) {
             throw new ArgumentOutOfRangeException();
@@ -232,6 +278,7 @@ internal sealed class TppaFitsImage : IDisposable {
                 BinaryPrimitives.ReadInt64BigEndian(bytes)),
             _ => throw new InvalidOperationException()
         };
+        if (blank.HasValue && raw == blank.Value) { return double.NaN; }
         return bzero + bscale * raw;
     }
 
@@ -251,6 +298,12 @@ internal sealed class TppaFitsImage : IDisposable {
             && double.TryParse(value, NumberStyles.Float,
                 CultureInfo.InvariantCulture, out var parsed)
             ? parsed : fallback;
+
+    private long? GetOptionalLong(string key) =>
+        header.TryGetValue(key, out var value)
+            && long.TryParse(value, NumberStyles.Integer,
+                CultureInfo.InvariantCulture, out var parsed)
+            ? parsed : null;
 
     private static Dictionary<string, string> ReadHeader(
             FileStream stream, out long dataOffset) {
@@ -378,6 +431,25 @@ internal static class TppaActualExposureStarShapeAnalyzer {
                 issues.Add($"FITS state keyword {key} changed within the bracket");
             }
         }
+        var measuredScales = new List<double>();
+        foreach (var frame in all) {
+            if (!frame.Fits.TryGetPixelScaleArcsecondsPerPixel(
+                    out var measuredScale, out var anisotropy)) {
+                issues.Add("FITS WCS pixel scale is missing or invalid");
+                continue;
+            }
+            measuredScales.Add(measuredScale);
+            if (anisotropy > policy.MaximumPixelScaleAnisotropyFraction) {
+                issues.Add("FITS WCS pixel-scale anisotropy exceeds the preregistered limit");
+            }
+            var relativeScaleError = Math.Abs(measuredScale
+                - policy.PixelScaleArcsecondsPerPixel)
+                / policy.PixelScaleArcsecondsPerPixel;
+            if (relativeScaleError > policy.MaximumPixelScaleRelativeError) {
+                issues.Add("FITS WCS pixel scale disagrees with the optical-train policy");
+            }
+        }
+        var bracketPixelScale = Median(measuredScales);
         if (pre.Any(frame => frame.Fits.ExposureSeconds < policy.MinimumControlExposureSeconds
                     || frame.Fits.ExposureSeconds > policy.MaximumControlExposureSeconds)
                 || post.Any(frame => frame.Fits.ExposureSeconds < policy.MinimumControlExposureSeconds
@@ -407,42 +479,53 @@ internal static class TppaActualExposureStarShapeAnalyzer {
                 longFrame.Stars.Count);
         }
 
+        var controlFrames = pre.Concat(post).ToArray();
         var matched = new List<MatchedStar>();
+        var controlQualifiedCandidates = 0;
+        var longFrameRejected = 0;
         var linearityRejected = 0;
-        foreach (var longStar in longFrame.Stars) {
-            if (IsBlended(longStar, longFrame.Stars, policy.BlendExclusionRadiusArcseconds)) {
+        foreach (var anchorStar in pre[0].Stars) {
+            if (IsBlended(anchorStar, pre[0].Stars,
+                    policy.BlendExclusionRadiusArcseconds)) {
                 continue;
             }
             var controlStars = new List<(OpenFrame Frame, TppaAstapStar Star)>();
-            var duplicate = false;
-            foreach (var frame in pre.Concat(post)) {
-                var candidate = FindUniqueMatch(longStar, frame.Stars,
+            var rejected = false;
+            foreach (var frame in controlFrames) {
+                var candidate = FindUniqueMatch(anchorStar, frame.Stars,
                     policy.MaximumCatalogMatchArcseconds);
                 if (candidate == null || IsBlended(candidate, frame.Stars,
                         policy.BlendExclusionRadiusArcseconds)) {
-                    duplicate = true;
+                    rejected = true;
                     break;
                 }
                 controlStars.Add((frame, candidate));
             }
-            if (duplicate) { continue; }
-            var longMoment = Measure(longFrame.Fits, longStar, policy, out var longReason);
-            if (longMoment == null) {
-                if (longReason == "linearity") { linearityRejected++; }
-                continue;
-            }
+            if (rejected) { continue; }
             var moments = new List<TppaAdaptiveStarMoment>();
-            var rejected = false;
             foreach (var pair in controlStars) {
-                var moment = Measure(pair.Frame.Fits, pair.Star, policy, out var reason);
+                var moment = Measure(pair.Frame.Fits, pair.Star, policy, out _);
                 if (moment == null) {
-                    if (reason == "linearity") { linearityRejected++; }
                     rejected = true;
                     break;
                 }
                 moments.Add(moment);
             }
             if (rejected) { continue; }
+            controlQualifiedCandidates++;
+            var longStar = FindUniqueMatch(anchorStar, longFrame.Stars,
+                policy.MaximumCatalogMatchArcseconds);
+            if (longStar == null || IsBlended(longStar, longFrame.Stars,
+                    policy.BlendExclusionRadiusArcseconds)) {
+                longFrameRejected++;
+                continue;
+            }
+            var longMoment = Measure(longFrame.Fits, longStar, policy, out var longReason);
+            if (longMoment == null) {
+                longFrameRejected++;
+                if (longReason == "linearity") { linearityRejected++; }
+                continue;
+            }
             var preMoments = moments.Take(pre.Length).ToArray();
             var postMoments = moments.Skip(pre.Length).ToArray();
             var controls = preMoments.Concat(postMoments).ToArray();
@@ -457,7 +540,9 @@ internal static class TppaActualExposureStarShapeAnalyzer {
                 longMoment.Eccentricity));
         }
 
-        var candidateCount = longFrame.Stars.Count;
+        var candidateCount = controlQualifiedCandidates;
+        var attritionFraction = candidateCount == 0 ? 1.0
+            : (double)longFrameRejected / candidateCount;
         var linearityFraction = candidateCount == 0 ? 1.0
             : (double)linearityRejected / candidateCount;
         if (matched.Count < policy.MinimumMatchedStars) {
@@ -465,6 +550,9 @@ internal static class TppaActualExposureStarShapeAnalyzer {
         }
         if (linearityFraction > policy.MaximumLinearityRejectionFraction) {
             issues.Add("linearity/saturation rejection fraction exceeds the preregistered limit");
+        }
+        if (attritionFraction > policy.MaximumLongFrameAttritionFraction) {
+            issues.Add("long-frame star attrition exceeds the preregistered limit");
         }
         var zoneNames = new[] { "Center", "OuterNW", "OuterNE", "OuterSW", "OuterSE" };
         var zones = new List<TppaActualExposureZoneSummary>();
@@ -477,8 +565,21 @@ internal static class TppaActualExposureStarShapeAnalyzer {
         }
         if (matched.Count == 0) {
             return Invalid(policy.OpticalTrainId, issues, pre.Length, post.Length,
-                candidateCount, 0, linearityRejected, linearityFraction, zones);
+                candidateCount, longFrameRejected, attritionFraction, 0,
+                linearityRejected, linearityFraction, bracketPixelScale, zones);
         }
+        var medianControlFwhm = 2.354820045 * Median(matched.SelectMany(value =>
+            value.PreMoments.Concat(value.PostMoments))
+            .Select(moment => moment.MajorSigmaPixels));
+        var controlFrameMedians = Enumerable.Range(0, controlFrames.Length)
+            .Select(index => Median(matched.Select(value => index < pre.Length
+                ? value.PreMoments[index].MajorSigmaPixels
+                : value.PostMoments[index - pre.Length].MajorSigmaPixels)))
+            .ToArray();
+        var controlFrameCenter = Median(controlFrameMedians);
+        var controlFrameScatter = controlFrameMedians.Max(value =>
+            Math.Abs(value - controlFrameCenter))
+            / Math.Max(controlFrameCenter, 1e-12);
         var medianGrowth = Median(matched.Select(value => value.MajorGrowth));
         var medianDeltaE1 = Median(matched.Select(value => value.DeltaE1));
         var medianDeltaE2 = Median(matched.Select(value => value.DeltaE2));
@@ -498,6 +599,12 @@ internal static class TppaActualExposureStarShapeAnalyzer {
         if (outerGrowth > policy.MaximumOuterMedianMajorSigmaGrowthFraction) {
             issues.Add("an outer-zone major-axis growth exceeds the preregistered limit");
         }
+        if (medianControlFwhm < policy.MinimumQualifiedFwhmPixels) {
+            issues.Add("measured control PSF is undersampled for qualified adaptive-moment evidence");
+        }
+        if (controlFrameScatter > policy.MaximumControlFrameMajorSigmaScatterFraction) {
+            issues.Add("control-frame star-shape scatter exceeds the preregistered limit");
+        }
         if (differentialE > policy.MaximumMedianDifferentialEllipticity) {
             issues.Add("signed median differential ellipticity exceeds the preregistered limit");
         }
@@ -511,7 +618,9 @@ internal static class TppaActualExposureStarShapeAnalyzer {
         var qualified = issues.Count == 0;
         return new(true, true, qualified, policy.OpticalTrainId,
             policy.AbsoluteEccentricityQualified, pre.Length, post.Length,
-            candidateCount, matched.Count, linearityRejected, linearityFraction,
+            candidateCount, longFrameRejected, attritionFraction,
+            matched.Count, linearityRejected, linearityFraction,
+            bracketPixelScale, medianControlFwhm, controlFrameScatter,
             Median(matched.Select(value => value.LongMoment.MajorSigmaPixels))
                 * policy.PixelScaleArcsecondsPerPixel,
             medianGrowth, differentialE, prePostDrift, longMedianEccentricity,
@@ -532,6 +641,16 @@ internal static class TppaActualExposureStarShapeAnalyzer {
                 || cy >= image.Height - margin) {
             reason = "edge";
             return null;
+        }
+        for (var y = (int)Math.Floor(cy - outer); y <= Math.Ceiling(cy + outer); y++) {
+            for (var x = (int)Math.Floor(cx - outer); x <= Math.Ceiling(cx + outer); x++) {
+                var dx = x - cx; var dy = y - cy;
+                if (dx * dx + dy * dy <= outer * outer
+                        && !double.IsFinite(image.ReadPixel(x, y))) {
+                    reason = "nonfinite";
+                    return null;
+                }
+            }
         }
         var plane = FitBackgroundPlane(image, cx, cy, inner, outer);
         if (plane == null) { reason = "background"; return null; }
@@ -643,7 +762,7 @@ internal static class TppaActualExposureStarShapeAnalyzer {
             Math.Sqrt(lambdaMinor), e1, e2,
             Math.Sqrt(Math.Max(0, 1 - lambdaMinor / lambdaMajor)),
             0.5 * Math.Atan2(2 * mxy, mxx - myy) * 180 / Math.PI,
-            snr, backgroundFraction, peak, iterations + 1, true);
+            snr, backgroundFraction, peak, flux, iterations + 1, true);
     }
 
     private sealed record BackgroundPlane(double A, double B, double C, double Noise) {
@@ -790,7 +909,7 @@ internal static class TppaActualExposureStarShapeAnalyzer {
                 || policy.BackgroundInnerRadiusArcseconds <= policy.ApertureRadiusArcseconds
                 || policy.BackgroundOuterRadiusArcseconds <= policy.BackgroundInnerRadiusArcseconds
                 || policy.MaximumControlExposureSeconds < policy.MinimumControlExposureSeconds
-                || policy.MinimumPreControlFrames < 2 || policy.MinimumPostControlFrames < 2
+                || policy.MinimumPreControlFrames < 5 || policy.MinimumPostControlFrames < 5
                 || policy.MinimumMatchedStars < 5 || policy.MinimumStarsPerZone < 1) {
             issues.Add("star-shape policy numeric bounds are invalid");
         }
@@ -800,6 +919,10 @@ internal static class TppaActualExposureStarShapeAnalyzer {
             policy.MaximumOuterMedianMajorSigmaGrowthFraction,
             policy.MaximumPrePostMajorSigmaDriftFraction,
             policy.MaximumLinearityRejectionFraction,
+            policy.MaximumLongFrameAttritionFraction,
+            policy.MaximumPixelScaleRelativeError,
+            policy.MaximumPixelScaleAnisotropyFraction,
+            policy.MaximumControlFrameMajorSigmaScatterFraction,
             policy.MaximumLongMedianEccentricity };
         if (fractions.Any(value => !double.IsFinite(value) || value <= 0 || value >= 1)) {
             issues.Add("star-shape policy fractional bounds are invalid");
@@ -809,16 +932,23 @@ internal static class TppaActualExposureStarShapeAnalyzer {
                 || policy.RequiredEqualHeaderKeywords.Any(string.IsNullOrWhiteSpace)) {
             issues.Add("star-shape policy required FITS state keys are missing");
         }
+        if (!double.IsFinite(policy.MinimumQualifiedFwhmPixels)
+                || policy.MinimumQualifiedFwhmPixels < 2.0) {
+            issues.Add("star-shape policy sampling floor is invalid");
+        }
         return issues;
     }
 
     private static TppaActualExposureStarShapeResult Invalid(
             string train, IReadOnlyList<string> issues, int pre = 0, int post = 0,
-            int candidates = 0, int matched = 0, int linearity = 0,
-            double linearityFraction = 0,
+            int candidates = 0, int longRejected = 0,
+            double attritionFraction = 0, int matched = 0, int linearity = 0,
+            double linearityFraction = 0, double measuredScale = double.NaN,
             IReadOnlyList<TppaActualExposureZoneSummary> zones = null) =>
         new(false, candidates > 0, false, train ?? string.Empty, false,
-            pre, post, candidates, matched, linearity, linearityFraction,
+            pre, post, candidates, longRejected, attritionFraction,
+            matched, linearity, linearityFraction, measuredScale,
+            double.NaN, double.NaN,
             double.NaN, double.NaN, double.NaN, double.NaN, double.NaN,
             zones ?? Array.Empty<TppaActualExposureZoneSummary>(), issues);
 

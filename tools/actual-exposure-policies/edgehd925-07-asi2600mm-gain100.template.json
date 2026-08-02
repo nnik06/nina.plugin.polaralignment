@@ -26,6 +26,11 @@
   "MaximumOuterMedianMajorSigmaGrowthFraction": 0.25,
   "MaximumPrePostMajorSigmaDriftFraction": 0.10,
   "MaximumLinearityRejectionFraction": 0.50,
+  "MaximumLongFrameAttritionFraction": 0.15,
+  "MaximumPixelScaleRelativeError": 0.02,
+  "MaximumPixelScaleAnisotropyFraction": 0.02,
+  "MinimumQualifiedFwhmPixels": 2.0,
+  "MaximumControlFrameMajorSigmaScatterFraction": 0.10,
   "AbsoluteEccentricityQualified": true,
   "MaximumLongMedianEccentricity": 0.55,
   "RequiredEqualHeaderKeywords": ["INSTRUME", "FILTER", "XBINNING", "YBINNING", "GAIN", "OFFSET"]

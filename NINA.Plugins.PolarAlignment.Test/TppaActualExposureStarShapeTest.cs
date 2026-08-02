@@ -95,6 +95,86 @@ public class TppaActualExposureStarShapeTest {
         result.PolarAlignmentInferenceQualified.Should().BeFalse();
     }
 
+    [Test]
+    public void LongFrameAttritionFailsEvenWhenSurvivorFloorPasses() {
+        var policy = Policy();
+        policy.MinimumMatchedStars = 15;
+        var sources = BuildBracketAdvanced(1.9, 1.8, false, 1.0, 1.0,
+            longStarCount: 22, degradedOuterNe: false,
+            nonfiniteLongStars: 0, controlOutlierIndex: -1);
+
+        var result = TppaActualExposureStarShapeAnalyzer.Analyze(policy, sources);
+
+        result.EvidenceValid.Should().BeTrue();
+        result.MatchedUsableStars.Should().BeGreaterThanOrEqualTo(15);
+        result.LongFrameAttritionFraction.Should().BeGreaterThan(0.15);
+        result.SeeingInclusiveDelivered900SecondStarShapeQualified.Should().BeFalse();
+        result.Issues.Should().Contain(issue => issue.Contains("star attrition"));
+    }
+
+    [Test]
+    public void SingleOuterQuadrantDegradationCannotHideBehindPooledMedian() {
+        var sources = BuildBracketAdvanced(1.9, 1.8, false, 1.0, 1.0,
+            StarPositions.Length, degradedOuterNe: true,
+            nonfiniteLongStars: 0, controlOutlierIndex: -1);
+
+        var result = TppaActualExposureStarShapeAnalyzer.Analyze(Policy(), sources);
+
+        result.EvidenceValid.Should().BeTrue();
+        result.SeeingInclusiveDelivered900SecondStarShapeQualified.Should().BeFalse();
+        result.Issues.Should().Contain(issue => issue.Contains("outer-zone"));
+    }
+
+    [Test]
+    public void IncorrectWcsScaleFailsBeforeShapeQualification() {
+        var sources = BuildBracketAdvanced(1.9, 1.8, false, 1.0, 1.10,
+            StarPositions.Length, false, 0, -1);
+
+        var result = TppaActualExposureStarShapeAnalyzer.Analyze(Policy(), sources);
+
+        result.EvidenceValid.Should().BeFalse();
+        result.Issues.Should().Contain(issue => issue.Contains("pixel scale disagrees"));
+    }
+
+    [Test]
+    public void NonfiniteLongFramePixelsBecomeMeasuredAttrition() {
+        var policy = Policy();
+        policy.MinimumMatchedStars = 15;
+        var sources = BuildBracketAdvanced(1.9, 1.8, false, 1.0, 1.0,
+            StarPositions.Length, false, nonfiniteLongStars: 6,
+            controlOutlierIndex: -1);
+
+        var result = TppaActualExposureStarShapeAnalyzer.Analyze(policy, sources);
+
+        result.LongFrameRejectedStars.Should().BeGreaterThanOrEqualTo(5);
+        result.LongFrameAttritionFraction.Should().BeGreaterThan(0.15);
+        result.SeeingInclusiveDelivered900SecondStarShapeQualified.Should().BeFalse();
+    }
+
+    [Test]
+    public void UndersampledAdaptiveMomentsNeverQualifyDeliveredShape() {
+        var sources = BuildBracketAdvanced(0.75, 0.75, false, 1.0, 1.0,
+            StarPositions.Length, false, 0, -1, controlSigma: 0.75);
+
+        var result = TppaActualExposureStarShapeAnalyzer.Analyze(Policy(), sources);
+
+        result.SeeingInclusiveDelivered900SecondStarShapeQualified.Should().BeFalse();
+        result.Issues.Should().Contain(issue => issue.Contains("undersampled")
+            || issue.Contains("star floor") || issue.Contains("attrition"));
+    }
+
+    [Test]
+    public void OneUnstableControlFrameFailsScatterGate() {
+        var sources = BuildBracketAdvanced(1.9, 1.8, false, 1.0, 1.0,
+            StarPositions.Length, false, 0, controlOutlierIndex: 2);
+
+        var result = TppaActualExposureStarShapeAnalyzer.Analyze(Policy(), sources);
+
+        result.EvidenceValid.Should().BeTrue();
+        result.SeeingInclusiveDelivered900SecondStarShapeQualified.Should().BeFalse();
+        result.Issues.Should().Contain(issue => issue.Contains("control-frame star-shape scatter"));
+    }
+
     private TppaActualExposureStarShapePolicy Policy() => new() {
         OpticalTrainId = "EdgeHD-9.25-0.7-ASI2600MM",
         PixelScaleArcsecondsPerPixel = 1.0,
@@ -117,21 +197,37 @@ public class TppaActualExposureStarShapeTest {
 
     private IReadOnlyList<TppaActualExposureFrameSource> BuildBracket(
             double longSigmaX, double longSigmaY,
-            bool changedLongFilter = false, double pixelScale = 1.0) {
+            bool changedLongFilter = false, double pixelScale = 1.0) =>
+        BuildBracketAdvanced(longSigmaX, longSigmaY, changedLongFilter,
+            pixelScale, pixelScale, StarPositions.Length, false, 0, -1);
+
+    private IReadOnlyList<TppaActualExposureFrameSource> BuildBracketAdvanced(
+            double longSigmaX, double longSigmaY, bool changedLongFilter,
+            double catalogPixelScale, double wcsPixelScale, int longStarCount,
+            bool degradedOuterNe, int nonfiniteLongStars,
+            int controlOutlierIndex, double controlSigma = 1.8) {
         var starts = new[] {
             DateTimeOffset.Parse("2026-08-02T20:00:00Z"),
             DateTimeOffset.Parse("2026-08-02T20:00:20Z"),
             DateTimeOffset.Parse("2026-08-02T20:00:40Z"),
             DateTimeOffset.Parse("2026-08-02T20:01:00Z"),
-            DateTimeOffset.Parse("2026-08-02T20:16:15Z"),
-            DateTimeOffset.Parse("2026-08-02T20:16:35Z"),
-            DateTimeOffset.Parse("2026-08-02T20:16:55Z")
+            DateTimeOffset.Parse("2026-08-02T20:01:20Z"),
+            DateTimeOffset.Parse("2026-08-02T20:01:40Z"),
+            DateTimeOffset.Parse("2026-08-02T20:16:55Z"),
+            DateTimeOffset.Parse("2026-08-02T20:17:15Z"),
+            DateTimeOffset.Parse("2026-08-02T20:17:35Z"),
+            DateTimeOffset.Parse("2026-08-02T20:17:55Z"),
+            DateTimeOffset.Parse("2026-08-02T20:18:15Z")
         };
         var roles = new[] {
             TppaActualExposureRoles.PreControl,
             TppaActualExposureRoles.PreControl,
             TppaActualExposureRoles.PreControl,
+            TppaActualExposureRoles.PreControl,
+            TppaActualExposureRoles.PreControl,
             TppaActualExposureRoles.LongExposure,
+            TppaActualExposureRoles.PostControl,
+            TppaActualExposureRoles.PostControl,
             TppaActualExposureRoles.PostControl,
             TppaActualExposureRoles.PostControl,
             TppaActualExposureRoles.PostControl
@@ -139,14 +235,20 @@ public class TppaActualExposureStarShapeTest {
         var result = new List<TppaActualExposureFrameSource>();
         for (var index = 0; index < roles.Length; index++) {
             var isLong = roles[index] == TppaActualExposureRoles.LongExposure;
-            var sigmaX = isLong ? longSigmaX : 1.8;
-            var sigmaY = isLong ? longSigmaY : 1.8;
+            var outlier = !isLong && index == controlOutlierIndex;
+            var sigmaX = isLong ? longSigmaX : outlier ? 2.8 : controlSigma;
+            var sigmaY = isLong ? longSigmaY : outlier ? 2.8 : controlSigma;
             var exposure = isLong ? 900.0 : 15.0;
             var filter = isLong && changedLongFilter ? "Ha" : "OIII";
             var fits = Path.Combine(root, $"frame-{index}.fits");
             var csv = Path.Combine(root, $"frame-{index}.csv");
-            WriteFits(fits, starts[index], exposure, filter, sigmaX, sigmaY);
-            WriteCatalog(csv, pixelScale);
+            var positions = isLong
+                ? StarPositions.Take(longStarCount).ToArray()
+                : StarPositions;
+            WriteFits(fits, starts[index], exposure, filter, sigmaX, sigmaY,
+                wcsPixelScale, positions, isLong && degradedOuterNe,
+                isLong ? nonfiniteLongStars : 0);
+            WriteCatalog(csv, catalogPixelScale, positions);
             result.Add(new(roles[index], fits, csv));
         }
         return result;
@@ -162,10 +264,11 @@ public class TppaActualExposureStarShapeTest {
         (90,180),(170,180)
     };
 
-    private static void WriteCatalog(string path, double pixelScale) {
+    private static void WriteCatalog(string path, double pixelScale,
+            IReadOnlyList<(double X, double Y)> positions) {
         var lines = new List<string> { "x,y,hfd,snr,flux,ra[0..360],dec[0..360]" };
         var dec0 = 20.0;
-        foreach (var (x, y) in StarPositions) {
+        foreach (var (x, y) in positions) {
             var ra = 100.0 + (x - 128.0) * pixelScale
                 / (3600.0 * Math.Cos(dec0 * Math.PI / 180.0));
             var dec = dec0 + (y - 128.0) * pixelScale / 3600.0;
@@ -176,19 +279,28 @@ public class TppaActualExposureStarShapeTest {
     }
 
     private static void WriteFits(string path, DateTimeOffset start,
-            double exposure, string filter, double sigmaX, double sigmaY) {
+            double exposure, string filter, double sigmaX, double sigmaY,
+            double pixelScale, IReadOnlyList<(double X, double Y)> positions,
+            bool degradedOuterNe, int nonfiniteStars) {
         const int width = 256, height = 256;
         var pixels = new float[width * height];
         for (var y = 0; y < height; y++) {
             for (var x = 0; x < width; x++) {
                 var value = 1000.0 + 0.03 * x + 0.02 * y;
-                foreach (var (sx, sy) in StarPositions) {
+                foreach (var (sx, sy) in positions) {
+                    var localSigmaX = degradedOuterNe && sx > 128 && sy > 128
+                        ? 3.5 : sigmaX;
                     var dx = x + 1 - sx; var dy = y + 1 - sy;
-                    value += 8000.0 * Math.Exp(-0.5 * (dx * dx / (sigmaX * sigmaX)
+                    value += 8000.0 * Math.Exp(-0.5 * (dx * dx / (localSigmaX * localSigmaX)
                         + dy * dy / (sigmaY * sigmaY)));
                 }
                 pixels[y * width + x] = (float)value;
             }
+        }
+        foreach (var (sx, sy) in positions.Take(nonfiniteStars)) {
+            var x = (int)Math.Round(sx) - 1;
+            var y = (int)Math.Round(sy) - 1;
+            pixels[y * width + x] = float.NaN;
         }
         var cards = new List<string> {
             Card("SIMPLE", "T"), Card("BITPIX", "-32"), Card("NAXIS", "2"),
@@ -199,6 +311,8 @@ public class TppaActualExposureStarShapeTest {
             Card("INSTRUME", Quote("ASI2600MM Pro")), Card("FILTER", Quote(filter)),
             Card("XBINNING", "1"), Card("YBINNING", "1"),
             Card("GAIN", "100"), Card("OFFSET", "50"),
+            Card("CDELT1", (-pixelScale / 3600.0).ToString("0.############", CultureInfo.InvariantCulture)),
+            Card("CDELT2", (pixelScale / 3600.0).ToString("0.############", CultureInfo.InvariantCulture)),
             "END".PadRight(80)
         };
         var header = Encoding.ASCII.GetBytes(string.Concat(cards));

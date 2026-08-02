@@ -1,3 +1,12 @@
+## Version 2.2.6.90
+
+- Anchor actual-exposure stars in all ten short controls and gate explicit
+  long-frame attrition so a degraded 900-second frame cannot pass on survivors.
+- Require measured FITS WCS scale, two-pixel control-PSF sampling, bounded
+  control-frame scatter, finite pixels, and complete PHD2 event provenance.
+- Add adversarial regressions for attrition, quadrant-localized degradation,
+  wrong WCS scale, nonfinite pixels, undersampling, and unstable controls.
+
 ## Version 2.2.6.89
 
 - Add a fail-closed, seeing-inclusive actual 900-second star-shape witness using

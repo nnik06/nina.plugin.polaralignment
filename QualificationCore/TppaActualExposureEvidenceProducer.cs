@@ -232,6 +232,28 @@ internal static class TppaActualExposureEvidenceProducer {
                 issues.Add("PHD2 summary does not satisfy the guided continuity contract");
                 return;
             }
+            if (json["InvalidatingEvents"] is not JArray invalidatingEvents
+                    || invalidatingEvents.Count != 0
+                    || json["StateChangingRpcMethods"] is not JArray stateChangingMethods
+                    || stateChangingMethods.Count != 0
+                    || !IsSha256(json.Value<string>("EventsSha256"))
+                    || !IsSha256(json.Value<string>("GuideStepsSha256"))) {
+                issues.Add("PHD2 summary event provenance is incomplete or contains state changes");
+                return;
+            }
+            var directory = Path.GetDirectoryName(Path.GetFullPath(path));
+            var eventsPath = Path.Combine(directory!, "events.jsonl");
+            var guideStepsPath = Path.Combine(directory!, "guidesteps.csv");
+            if (!File.Exists(eventsPath) || !File.Exists(guideStepsPath)
+                    || !Sha256(File.ReadAllBytes(eventsPath)).Equals(
+                        json.Value<string>("EventsSha256"),
+                        StringComparison.OrdinalIgnoreCase)
+                    || !Sha256(File.ReadAllBytes(guideStepsPath)).Equals(
+                        json.Value<string>("GuideStepsSha256"),
+                        StringComparison.OrdinalIgnoreCase)) {
+                issues.Add("PHD2 raw event or guide-step artifact is missing or hash-mismatched");
+                return;
+            }
             var start = ParseUtc(json.Value<string>("CaptureStartUtc"));
             var end = ParseUtc(json.Value<string>("CaptureCompletedUtc"));
             if (start > bracketStart.AddSeconds(-marginSeconds)

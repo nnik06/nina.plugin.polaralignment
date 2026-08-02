@@ -24,17 +24,24 @@ mirror motion, cable forces, differential flexure, or focus drift.
 4. Produce the orientation-independent OAG geometry receipt for the same train.
 5. Record the required state fields in a schema-1
    `TppaActualExposureStateReceipt` spanning the complete bracket.
-6. Run `tools/analyze_actual_exposure_bracket.ps1` offline. It copies source
+6. Every FITS file must retain a current WCS whose measured pixel scale agrees
+   with the hash-bound optical-train policy within its preregistered tolerance.
+7. Run `tools/analyze_actual_exposure_bracket.ps1` offline. It copies source
    FITS files, runs hash-pinned ASTAP `-extract2` only on the copies, validates
    the exact seven-column catalog schema, and binds every artifact SHA-256.
-7. Recompute the deterministic receipt with
+8. Recompute the deterministic receipt with
    `tppa-qualify verify-actual-exposure --manifest manifest.json --receipt receipt.json`.
 
-The analyzer matches the same stars by sky coordinates, rejects blends, edges,
-nonlinear pixels, low SNR, unstable background and failed adaptive moments
-union-wise across all frames, fits a local sigma-clipped background plane, and
-compares signed adaptive-moment ellipticity and major-axis growth in the center
-and four outer zones. The short controls remain independent measurements.
+The analyzer first defines the eligible population from stars that survive every
+short control, then measures attrition explicitly when those stars disappear or
+become unusable in the long frame. This prevents a degraded 900-second image
+from passing on only its best surviving stars. It rejects blends, edges,
+nonlinear or nonfinite pixels, low SNR, unstable background and failed adaptive
+moments, fits a local sigma-clipped background plane, and compares signed
+adaptive-moment ellipticity and major-axis growth in the center and each of four
+outer quadrants. The worst outer quadrant is gated independently. Measured WCS
+scale, long-frame attrition, control-frame scatter, and a two-pixel minimum
+control FWHM are mandatory fail-closed gates.
 
 ## Optical-train policies
 
@@ -45,12 +52,19 @@ starting points, not immutable camera calibrations.
   Its sampling permits an absolute eccentricity quality gate, while the receipt
   still makes no polar-alignment inference.
 - WO GT81 IV + 0.8x + ASI2600MM: nominal 382.4 mm and 2.028 arcsec/pixel.
-  It is undersampled in normal Dubai seeing, so only differential long-vs-control
-  moments are qualified; absolute eccentricity is explicitly disabled.
+  Absolute eccentricity is explicitly disabled. Differential long-vs-control
+  moments qualify only when the measured control FWHM is at least two pixels;
+  better seeing or focus that produces a narrower sampled PSF returns an
+  inconclusive result rather than silently accepting subpixel phase bias.
 
 Before a field campaign, replace nominal pixel scale with the same-session solved
 scale and verify gain conversion/linearity for the exact ASI2600MM mode. Changing
 those values creates a new policy file and hash.
+
+A passing bracket establishes only that one delivered 900-second exposure met
+the preregistered star-shape limits under the recorded state and guiding. The
+thresholds are operating limits, not confidence intervals, and require field
+calibration on both optical trains before they support a production decision.
 
 Nominal geometry sources: William Optics lists GT81 IV at 478 mm with an optional
 0.8x FLAT 6AIII; Celestron lists EdgeHD 9.25 at 2350 mm and its 0.7x reduced focal
