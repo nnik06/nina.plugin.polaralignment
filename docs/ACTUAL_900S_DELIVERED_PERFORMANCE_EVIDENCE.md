@@ -14,8 +14,17 @@ mirror motion, cable forces, differential flexure, or focus drift.
 
 ## Acquisition contract
 
-1. Use at least five 10-30 second controls before and five after one 900-second
-   frame. Do not register or stack the controls.
+1. Generate a motion-free NINA Advanced Sequencer file with
+   `tools/new_actual_exposure_sequence.ps1`. It emits exactly five identical
+   short controls, one 900-second light, and five identical short controls. It
+   contains no equipment connection, pointing, tracking, guiding, filter,
+   focus, autofocus, or shutdown instruction and refuses to overwrite an
+   existing file. For example:
+
+   `pwsh -NoProfile -File tools/new_actual_exposure_sequence.ps1 -OutputPath C:\tmp\edge-witness.json -OpticalTrainId EdgeHD-9.25-0.7-OAG-L-ASI2600MM-gain100-bin1`
+
+   Load the generated file only after the complete field preflight. Do not
+   register or stack the controls.
 2. Keep target, pier side, rotator, filter, gain, offset, binning, readout mode,
    focus, cooling, tracking, PHD2 profile/exposure, and guiding algorithms fixed.
 3. Start `tools/capture_phd2_guided_evidence.ps1` before the first control and

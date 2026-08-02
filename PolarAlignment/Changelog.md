@@ -1,3 +1,10 @@
+## Version 2.2.6.92
+
+- Add a deterministic NINA Advanced Sequencer generator for the actual
+  900-second witness: exactly five short controls, one long light, and five
+  short controls with no equipment, pointing, guiding, filter, focus, tracking
+  or shutdown actions.
+
 ## Version 2.2.6.91
 
 - Replace the asserted schema-1 fixed-state interval with a schema-2 sampled
