@@ -1190,6 +1190,10 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                         throw new SequenceEntityFailedException($"Automated polar alignment cannot complete the one-shot UPAS move and both required fresh determinations inside the five-minute runtime contract: {moveDecision.Reason}. No UPAS movement was authorized.");
                                     }
                                 }
+                                var preMoveFreshVector = TppaPolarErrorVector.FromMinutes(
+                                    TPAPAVM.PolarErrorDetermination.InitialMountAxisAzimuthError.ArcMinutes,
+                                    TPAPAVM.PolarErrorDetermination.InitialMountAxisAltitudeError.ArcMinutes,
+                                    TPAPAVM.PolarErrorDetermination.InitialMountAxisTotalError.ArcMinutes);
                                 var moved = executionPolicy.AllowActuatorMovement
                                     && await TPAPAVM.MoveCloser(progress, localCTS.Token);
                                 if (moved && TPAPAVM.AutomatedAdjustmentRequiresFreshMeasurementFeedback) {
@@ -1208,9 +1212,32 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                         feedbackDetermination,
                                         executionPolicy.AllowActuatorMovement && automatedAdjustmentsEnabled,
                                         "post-move fresh feedback");
-                                    TPAPAVM.UpdateAutomatedAdjustmentFromFreshDetermination();
                                     Logger.Info($"TPPA fresh post-move response: Az: {feedbackDetermination.InitialMountAxisAzimuthError}, " +
                                                 $"Alt: {feedbackDetermination.InitialMountAxisAltitudeError}, Tot: {feedbackDetermination.InitialMountAxisTotalError}");
+                                    var postMoveFreshVector = TppaPolarErrorVector.FromMinutes(
+                                        feedbackDetermination.InitialMountAxisAzimuthError.ArcMinutes,
+                                        feedbackDetermination.InitialMountAxisAltitudeError.ArcMinutes,
+                                        feedbackDetermination.InitialMountAxisTotalError.ArcMinutes);
+                                    var responseDecision = TppaPostMoveResponsePolicy.Evaluate(
+                                        preMoveFreshVector,
+                                        postMoveFreshVector,
+                                        AlignmentTolerance);
+                                    Logger.Info("TPPA_POST_MOVE_RESPONSE " + responseDecision.ToLogString());
+                                    var responseDisposition = TppaPostMoveResponsePolicy.DispositionForMode(
+                                        responseDecision,
+                                        enforceFastRuntimeBudget);
+
+                                    if (responseDisposition.UpdateController) {
+                                        TPAPAVM.UpdateAutomatedAdjustmentFromFreshDetermination();
+                                    }
+
+                                    if (responseDisposition.ContinueToStationaryConfirmation) {
+                                        Logger.Info("Fresh post-move result is a convergence candidate. Returning directly to the loop's independent stationary three-point confirmation without another solve or move.");
+                                        continue;
+                                    }
+                                    if (responseDisposition.FailureMessage != null) {
+                                        throw new SequenceEntityFailedException(responseDisposition.FailureMessage);
+                                    }
                                 }
                             } else {
                                 Logger.Warning("Skipping error publication and automated correction because the continuous estimate was unstable.");
