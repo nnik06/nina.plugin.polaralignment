@@ -32,6 +32,12 @@ mirror motion, cable forces, differential flexure, or focus drift.
    exposure and guide-algorithm parameter digest. Every sample, clock, cadence,
    summary statistic and bracket boundary is independently revalidated; a
    transient changed sample that later returns to baseline still fails.
+   This proves only that no change was observed at the recorded sample points;
+   a change that begins and ends entirely inside one sampling gap is not
+   observable. Preserve sample count, observed maximum gap and cadence in the
+   receipt when interpreting a run. Keep the default five-second cadence during
+   guiding; the one-second option is for compatibility diagnosis, not routine
+   evidence collection.
 6. Produce the orientation-independent OAG geometry receipt for the same train.
 7. Every FITS file must retain a current WCS whose measured pixel scale agrees
    with the hash-bound optical-train policy within its preregistered tolerance.

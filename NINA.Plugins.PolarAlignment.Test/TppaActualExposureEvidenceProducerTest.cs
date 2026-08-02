@@ -278,6 +278,49 @@ public class TppaActualExposureEvidenceProducerTest {
             "identity, authority, or bracket coverage"));
     }
 
+    [Test]
+    public void HashConsistentActionPathInReadOnlyNinaSetFailsClosed() {
+        var manifest = Manifest(
+            Utc("2026-08-02T19:59:50Z"), Utc("2026-08-02T20:18:40Z"));
+        var state = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(
+            manifest.StateReceiptPath));
+        var endpoints = (Newtonsoft.Json.Linq.JArray)state["ReadOnlyNinaEndpoints"]!;
+        endpoints[0] = "equipment/mount/slew";
+        File.WriteAllText(manifest.StateReceiptPath, state.ToString(),
+            new UTF8Encoding(false));
+        manifest = manifest with {
+            StateReceiptSha256 = Sha256(manifest.StateReceiptPath)
+        };
+
+        var result = TppaActualExposureEvidenceProducer.Produce(manifest);
+
+        result.Produced.Should().BeFalse();
+        result.Issues.Should().Contain(issue => issue.Contains(
+            "identity, authority, or bracket coverage"));
+    }
+
+    [Test]
+    [NonParallelizable]
+    public void StateNumericsRemainInvariantUnderCommaDecimalCulture() {
+        var manifest = Manifest(
+            Utc("2026-08-02T19:59:50Z"), Utc("2026-08-02T20:18:40Z"));
+        var originalCulture = System.Globalization.CultureInfo.CurrentCulture;
+        var originalUiCulture = System.Globalization.CultureInfo.CurrentUICulture;
+        try {
+            var culture = System.Globalization.CultureInfo.GetCultureInfo("de-DE");
+            System.Globalization.CultureInfo.CurrentCulture = culture;
+            System.Globalization.CultureInfo.CurrentUICulture = culture;
+
+            var result = TppaActualExposureEvidenceProducer.Produce(manifest);
+
+            result.Produced.Should().BeTrue();
+            result.Issues.Should().BeEmpty();
+        } finally {
+            System.Globalization.CultureInfo.CurrentCulture = originalCulture;
+            System.Globalization.CultureInfo.CurrentUICulture = originalUiCulture;
+        }
+    }
+
     private TppaActualExposureEvidenceManifest Manifest(
             DateTime phd2Start, DateTime phd2End) {
         var policy = Policy();
