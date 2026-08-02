@@ -29,6 +29,8 @@ Describe 'guarded static solve series safety contract' {
         $text.Contains('samples.jsonl') | Should Be $true
         $text.Contains('SolveRaDegreesJ2000') | Should Be $true
         $text.Contains('SolveDecDegreesJ2000') | Should Be $true
+        $text.Contains('PositionAngleDegrees') | Should Be $true
+        $text.Contains('Flipped = [bool]$solve.Flipped') | Should Be $true
         $text.Contains('OffsetsFromFirstSolveArcsec') | Should Be $true
         $text.Contains('SlopeArcsecPerMinute') | Should Be $true
         $text.Contains('ResidualRmsArcsec') | Should Be $true

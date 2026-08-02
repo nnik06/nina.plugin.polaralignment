@@ -394,7 +394,8 @@ $artifacts = @(Get-ChildItem -LiteralPath $runDirectory -Recurse -File |
         }
     })
 $manifest = [ordered]@{
-    SchemaVersion = 1
+    SchemaVersion = 2
+    EvidenceMode = 'PassiveUnguidedTracking'
     RunId = $runId
     StartedUtc = $clockProbes[0].CapturedUtc
     CompletedUtc = [DateTime]::UtcNow.ToString('o')

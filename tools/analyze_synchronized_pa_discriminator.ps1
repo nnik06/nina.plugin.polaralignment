@@ -17,6 +17,8 @@ param(
     [double]$MinimumPairSeparationMinutes = 2.0,
     [ValidateRange(0.001, 2.0)]
     [double]$MaximumAdjacentPositionAngleDeltaDegrees = 0.1,
+    [ValidateRange(0.1, 60.0)]
+    [double]$PositionAngleNoiseFloorArcseconds = 1.0,
     [ValidateRange(0.01, 5.0)]
     [double]$MaximumWindowDisagreementSmearPixels = 0.25,
     [ValidateSet('Object', 'Json')]
@@ -52,6 +54,92 @@ function Get-SignedCircularDeltaDegrees([double]$Value, [double]$Reference) {
     $delta
 }
 
+function Get-DotProduct([double[]]$Left, [double[]]$Right) {
+    $Left[0] * $Right[0] + $Left[1] * $Right[1] + $Left[2] * $Right[2]
+}
+
+function Get-CrossProduct([double[]]$Left, [double[]]$Right) {
+    [double[]]@(
+        ($Left[1] * $Right[2] - $Left[2] * $Right[1]),
+        ($Left[2] * $Right[0] - $Left[0] * $Right[2]),
+        ($Left[0] * $Right[1] - $Left[1] * $Right[0]))
+}
+
+function Get-NormalizedVector([double[]]$Vector, [string]$Label) {
+    $norm = [Math]::Sqrt((Get-DotProduct $Vector $Vector))
+    if ([double]::IsNaN($norm) -or [double]::IsInfinity($norm) -or
+            $norm -le 1.0e-15) {
+        throw "$Label is zero, non-finite, or ill-conditioned."
+    }
+    [double[]]@(($Vector[0] / $norm), ($Vector[1] / $norm), ($Vector[2] / $norm))
+}
+
+function Get-CelestialBasis([double]$RaDegrees, [double]$DecDegrees) {
+    $ra = $RaDegrees * [Math]::PI / 180.0
+    $dec = $DecDegrees * [Math]::PI / 180.0
+    $cosRa = [Math]::Cos($ra)
+    $sinRa = [Math]::Sin($ra)
+    $cosDec = [Math]::Cos($dec)
+    $sinDec = [Math]::Sin($dec)
+    [pscustomobject]@{
+        Center = [double[]]@(($cosDec * $cosRa), ($cosDec * $sinRa), $sinDec)
+        North = [double[]]@((-$sinDec * $cosRa), (-$sinDec * $sinRa), $cosDec)
+        East = [double[]]@(-$sinRa, $cosRa, 0.0)
+    }
+}
+
+function Get-ImageUpVector(
+        [double]$RaDegrees,
+        [double]$DecDegrees,
+        [double]$PositionAngleDegrees) {
+    $basis = Get-CelestialBasis $RaDegrees $DecDegrees
+    $angle = $PositionAngleDegrees * [Math]::PI / 180.0
+    [double[]]@(
+        ([Math]::Cos($angle) * $basis.North[0] + [Math]::Sin($angle) * $basis.East[0]),
+        ([Math]::Cos($angle) * $basis.North[1] + [Math]::Sin($angle) * $basis.East[1]),
+        ([Math]::Cos($angle) * $basis.North[2] + [Math]::Sin($angle) * $basis.East[2]))
+}
+
+function Move-TangentVectorToReference(
+        [double[]]$Vector,
+        [double[]]$FromCenter,
+        [double[]]$ReferenceCenter) {
+    $axisRaw = Get-CrossProduct $FromCenter $ReferenceCenter
+    $axisNorm = [Math]::Sqrt((Get-DotProduct $axisRaw $axisRaw))
+    $centerDot = [Math]::Max(-1.0, [Math]::Min(1.0,
+        (Get-DotProduct $FromCenter $ReferenceCenter)))
+    if ($axisNorm -le 1.0e-12) {
+        if ($centerDot -lt 0.0) {
+            throw 'Solve centres are antipodal; tangent-basis transport is ambiguous.'
+        }
+        return [double[]]@($Vector[0], $Vector[1], $Vector[2])
+    }
+    $axis = [double[]]@(
+        ($axisRaw[0] / $axisNorm),
+        ($axisRaw[1] / $axisNorm),
+        ($axisRaw[2] / $axisNorm))
+    $theta = [Math]::Atan2($axisNorm, $centerDot)
+    if ([Math]::Abs([Math]::PI - $theta) -lt 1.0e-8) {
+        throw 'Solve centres are too close to antipodal for unique tangent-basis transport.'
+    }
+    $axisCrossVector = Get-CrossProduct $axis $Vector
+    $axisDotVector = Get-DotProduct $axis $Vector
+    $cosTheta = [Math]::Cos($theta)
+    $sinTheta = [Math]::Sin($theta)
+    $rotated = [double[]]@(
+        ($Vector[0] * $cosTheta + $axisCrossVector[0] * $sinTheta +
+            $axis[0] * $axisDotVector * (1.0 - $cosTheta)),
+        ($Vector[1] * $cosTheta + $axisCrossVector[1] * $sinTheta +
+            $axis[1] * $axisDotVector * (1.0 - $cosTheta)),
+        ($Vector[2] * $cosTheta + $axisCrossVector[2] * $sinTheta +
+            $axis[2] * $axisDotVector * (1.0 - $cosTheta)))
+    $radial = Get-DotProduct $rotated $ReferenceCenter
+    Get-NormalizedVector ([double[]]@(
+        ($rotated[0] - $radial * $ReferenceCenter[0]),
+        ($rotated[1] - $radial * $ReferenceCenter[1]),
+        ($rotated[2] - $radial * $ReferenceCenter[2]))) 'transported image axis'
+}
+
 function Get-TheilSenFit($Points, [double]$MinimumPairHours) {
     if ($Points.Count -lt 3) {
         throw 'A robust rotation fit requires at least three points.'
@@ -63,8 +151,8 @@ function Get-TheilSenFit($Points, [double]$MinimumPairHours) {
                 [double]$Points[$left].ElapsedHours
             if ($deltaHours -ge $MinimumPairHours) {
                 $slopes.Add(
-                    ([double]$Points[$right].UnwrappedPositionAngleDegrees -
-                        [double]$Points[$left].UnwrappedPositionAngleDegrees) /
+                    ([double]$Points[$right].UnwrappedRotationDegrees -
+                        [double]$Points[$left].UnwrappedRotationDegrees) /
                     $deltaHours)
             }
         }
@@ -74,12 +162,12 @@ function Get-TheilSenFit($Points, [double]$MinimumPairHours) {
     }
     $slope = Get-Median @($slopes)
     $intercepts = @($Points | ForEach-Object {
-        [double]$_.UnwrappedPositionAngleDegrees -
+        [double]$_.UnwrappedRotationDegrees -
             $slope * [double]$_.ElapsedHours
     })
     $intercept = Get-Median $intercepts
     $residuals = @($Points | ForEach-Object {
-        [double]$_.UnwrappedPositionAngleDegrees -
+        [double]$_.UnwrappedRotationDegrees -
             ($intercept + $slope * [double]$_.ElapsedHours)
     })
     $residualMedian = Get-Median $residuals
@@ -121,8 +209,15 @@ if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
     throw "Synchronized manifest is missing: $manifestPath"
 }
 $manifest = [IO.File]::ReadAllText($manifestPath) | ConvertFrom-Json
-if ([int]$manifest.SchemaVersion -ne 1) {
+if ([int]$manifest.SchemaVersion -notin @(1, 2)) {
     throw "Unsupported synchronized manifest schema: $($manifest.SchemaVersion)"
+}
+$evidenceMode = if ($manifest.PSObject.Properties.Name -contains 'EvidenceMode') {
+    [string]$manifest.EvidenceMode
+} else { 'LegacyPassiveUnspecified' }
+if ([int]$manifest.SchemaVersion -eq 2 -and
+        $evidenceMode -ne 'PassiveUnguidedTracking') {
+    throw "Unsupported synchronized evidence mode for passive analysis: $evidenceMode"
 }
 if (-not [bool]$manifest.CoverageQualified -or
         -not [bool]$manifest.ClockQualified100Milliseconds) {
@@ -256,6 +351,7 @@ if ($rawRows.Count -lt 3) {
     throw 'Main-camera position-angle evidence has fewer than three rows.'
 }
 
+$solveParity = $null
 $orderedRows = @($rawRows | ForEach-Object {
     $started = [DateTimeOffset]::Parse(
         [string]$_.StartedUtc,
@@ -265,16 +361,37 @@ $orderedRows = @($rawRows | ForEach-Object {
         [string]$_.CompletedUtc,
         [Globalization.CultureInfo]::InvariantCulture,
         [Globalization.DateTimeStyles]::RoundtripKind)
+    foreach ($required in @(
+            'SolveRaDegreesJ2000', 'SolveDecDegreesJ2000',
+            'PositionAngleDegrees', 'Flipped')) {
+        if ($_.PSObject.Properties.Name -notcontains $required) {
+            throw "Main-camera sample is missing required WCS property '$required'."
+        }
+    }
+    $ra = [double]$_.SolveRaDegreesJ2000
+    $dec = [double]$_.SolveDecDegreesJ2000
     $angle = [double]$_.PositionAngleDegrees
+    $flipped = [bool]$_.Flipped
     if ($completed -lt $started -or
-            [double]::IsNaN($angle) -or
-            [double]::IsInfinity($angle)) {
-        throw 'Main-camera sample contains an invalid timestamp or position angle.'
+            [double]::IsNaN($ra) -or [double]::IsInfinity($ra) -or
+            [double]::IsNaN($dec) -or [double]::IsInfinity($dec) -or
+            [double]::IsNaN($angle) -or [double]::IsInfinity($angle) -or
+            $ra -lt 0.0 -or $ra -ge 360.0 -or
+            $dec -lt -90.0 -or $dec -gt 90.0) {
+        throw 'Main-camera sample contains invalid WCS coordinates, timestamp, or position angle.'
+    }
+    if ($null -eq $solveParity) {
+        $solveParity = $flipped
+    } elseif ($flipped -ne $solveParity) {
+        throw 'Main-camera solve parity changed during the synchronized run.'
     }
     [pscustomobject]@{
         MidpointUtc = $started.AddTicks(
             [long](($completed - $started).Ticks / 2))
+        SolveRaDegreesJ2000 = $ra
+        SolveDecDegreesJ2000 = $dec
         PositionAngleDegrees = (($angle % 360.0) + 360.0) % 360.0
+        Flipped = $flipped
     }
 } | Sort-Object MidpointUtc)
 for ($index = 1; $index -lt $orderedRows.Count; $index++) {
@@ -284,26 +401,71 @@ for ($index = 1; $index -lt $orderedRows.Count; $index++) {
     }
 }
 
+$referenceRow = $orderedRows[0]
+$referenceBasis = Get-CelestialBasis `
+    ([double]$referenceRow.SolveRaDegreesJ2000) `
+    ([double]$referenceRow.SolveDecDegreesJ2000)
+$referenceUp = Get-NormalizedVector (Get-ImageUpVector `
+    ([double]$referenceRow.SolveRaDegreesJ2000) `
+    ([double]$referenceRow.SolveDecDegreesJ2000) `
+    ([double]$referenceRow.PositionAngleDegrees)) 'reference image axis'
+foreach ($row in $orderedRows) {
+    $basis = Get-CelestialBasis `
+        ([double]$row.SolveRaDegreesJ2000) `
+        ([double]$row.SolveDecDegreesJ2000)
+    $up = Get-NormalizedVector (Get-ImageUpVector `
+        ([double]$row.SolveRaDegreesJ2000) `
+        ([double]$row.SolveDecDegreesJ2000) `
+        ([double]$row.PositionAngleDegrees)) 'image axis'
+    $transported = Move-TangentVectorToReference `
+        $up $basis.Center $referenceBasis.Center
+    $signedSine = Get-DotProduct $referenceBasis.Center (
+        Get-CrossProduct $transported $referenceUp)
+    $signedCosine = [Math]::Max(-1.0, [Math]::Min(1.0,
+        (Get-DotProduct $referenceUp $transported)))
+    $row | Add-Member -NotePropertyName TransportedRollDegrees -NotePropertyValue (
+        [Math]::Atan2($signedSine, $signedCosine) * 180.0 / [Math]::PI)
+}
+
 $firstTime = $orderedRows[0].MidpointUtc
 $points = [System.Collections.Generic.List[object]]::new()
-$unwrapped = [double]$orderedRows[0].PositionAngleDegrees
+$rawPoints = [System.Collections.Generic.List[object]]::new()
+$unwrapped = [double]$orderedRows[0].TransportedRollDegrees
+$rawUnwrapped = [double]$orderedRows[0].PositionAngleDegrees
 $maximumAdjacentDelta = 0.0
+$maximumAdjacentRawDelta = 0.0
 $points.Add([pscustomobject]@{
     ElapsedHours = 0.0
-    UnwrappedPositionAngleDegrees = $unwrapped
+    UnwrappedRotationDegrees = $unwrapped
+})
+$rawPoints.Add([pscustomobject]@{
+    ElapsedHours = 0.0
+    UnwrappedRotationDegrees = $rawUnwrapped
 })
 for ($index = 1; $index -lt $orderedRows.Count; $index++) {
     $delta = Get-SignedCircularDeltaDegrees `
+        ([double]$orderedRows[$index].TransportedRollDegrees) `
+        ([double]$orderedRows[$index - 1].TransportedRollDegrees)
+    $rawDelta = Get-SignedCircularDeltaDegrees `
         ([double]$orderedRows[$index].PositionAngleDegrees) `
         ([double]$orderedRows[$index - 1].PositionAngleDegrees)
     $maximumAdjacentDelta = [Math]::Max(
         $maximumAdjacentDelta,
         [Math]::Abs($delta))
+    $maximumAdjacentRawDelta = [Math]::Max(
+        $maximumAdjacentRawDelta,
+        [Math]::Abs($rawDelta))
     $unwrapped += $delta
+    $rawUnwrapped += $rawDelta
+    $elapsedHours =
+        ($orderedRows[$index].MidpointUtc - $firstTime).TotalHours
     $points.Add([pscustomobject]@{
-        ElapsedHours =
-            ($orderedRows[$index].MidpointUtc - $firstTime).TotalHours
-        UnwrappedPositionAngleDegrees = $unwrapped
+        ElapsedHours = $elapsedHours
+        UnwrappedRotationDegrees = $unwrapped
+    })
+    $rawPoints.Add([pscustomobject]@{
+        ElapsedHours = $elapsedHours
+        UnwrappedRotationDegrees = $rawUnwrapped
     })
 }
 $spanMinutes = ([double]$points[-1].ElapsedHours) * 60.0
@@ -315,6 +477,7 @@ $lastWindow = @($points | Where-Object {
     [double]$_.ElapsedHours * 60.0 -ge $lastWindowStart
 })
 $minimumPairHours = $MinimumPairSeparationMinutes / 60.0
+$rawFullFit = Get-TheilSenFit @($rawPoints) $minimumPairHours
 $fullFit = Get-TheilSenFit @($points) $minimumPairHours
 $firstFit = Get-TheilSenFit $firstWindow $minimumPairHours
 $lastFit = Get-TheilSenFit $lastWindow $minimumPairHours
@@ -325,9 +488,12 @@ foreach ($fit in $fits) {
     $fitSpanHours = [double]$fit.SpanMinutes / 60.0
     $madRateMargin = 3.0 * 1.4826 *
         [double]$fit.ResidualMadDegrees / $fitSpanHours
+    $noiseFloorRateMargin = 2.0 *
+        ($PositionAngleNoiseFloorArcseconds / 3600.0) / $fitSpanHours
     $conservativeRate = [Math]::Max(
         $conservativeRate,
-        [Math]::Abs([double]$fit.SlopeDegreesPerHour) + $madRateMargin)
+        [Math]::Abs([double]$fit.SlopeDegreesPerHour) +
+            $madRateMargin + $noiseFloorRateMargin)
 }
 $windowRateDifference = [Math]::Abs(
     [double]$firstFit.SlopeDegreesPerHour -
@@ -369,8 +535,10 @@ if ($conservativeSmear -gt $AllowedSmearPixels) {
 }
 $qualified = $reasons.Count -eq 0
 $result = [pscustomobject][ordered]@{
-    SchemaVersion = 1
-    Model = 'synchronized-wcs-position-angle-operational-bound'
+    SchemaVersion = 2
+    Model = 'synchronized-common-tangent-roll-passive-bound'
+    NinaPositionAngleConventionSource =
+        'isbeorn/nina@f360a7bab50bae776af928fe0e5dbde4c996506e: PlateSolveResult.cs, WorldCoordinateSystem.cs, ASTAPSolver.cs'
     RunDirectory = $root
     SynchronizedManifestSha256 = Get-Sha256 $manifestPath
     GeometryReceiptPath = [IO.Path]::GetFullPath($GeometryReceiptPath)
@@ -381,7 +549,17 @@ $result = [pscustomobject][ordered]@{
     AllowedSmearPixels = $AllowedSmearPixels
     SampleCount = $points.Count
     SpanMinutes = $spanMinutes
+    EvidenceMode = $evidenceMode
+    NinaPositionAngleConvention =
+        'image-up axis east of celestial north; constant 180-degree ASTAP offset is slope-invariant'
+    SolveParityFlipped = $solveParity
+    ReferenceRightAscensionDegreesJ2000 = [double]$referenceRow.SolveRaDegreesJ2000
+    ReferenceDeclinationDegreesJ2000 = [double]$referenceRow.SolveDecDegreesJ2000
+    PositionAngleNoiseFloorArcseconds = $PositionAngleNoiseFloorArcseconds
+    MaximumAdjacentRawPositionAngleDeltaDegrees = $maximumAdjacentRawDelta
+    MaximumAdjacentTransportedRollDeltaDegrees = $maximumAdjacentDelta
     MaximumAdjacentPositionAngleDeltaDegrees = $maximumAdjacentDelta
+    RawPositionAngleFullFit = $rawFullFit
     FullFit = $fullFit
     FirstWindowFit = $firstFit
     LastWindowFit = $lastFit
@@ -392,7 +570,11 @@ $result = [pscustomobject][ordered]@{
     FirstLastRateDifferenceDegreesPerHour = $windowRateDifference
     FirstLastDisagreementSmearPixels = $windowDisagreementSmear
     FailureReasons = @($reasons)
-    OperationalGuidedExposureRotationQualified = $qualified
+    PassivePhysicalRotationWitnessQualified = $qualified
+    OperationalGuidedExposureRotationQualified = $false
+    OperationalGuidedExposureRotationQualificationReason =
+        'This analyzer consumes a passive unguided tracking run; guided operational qualification requires a synchronized guided run.'
+    RequiresSynchronizedGuidedEvidence = $true
     RequiresActualExposureStarShapeValidation = $true
     GrantsMountMotionAuthority = $false
     GrantsUpasAuthority = $false

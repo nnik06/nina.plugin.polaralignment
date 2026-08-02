@@ -92,15 +92,25 @@ pwsh -NoProfile -File .\tools\analyze_synchronized_pa_discriminator.ps1 `
 ```
 
 The analyzer verifies the manifest and all artifact hashes before reading the
-main-camera position-angle series. It unwraps circular position angles and
-uses Theil-Sen fits over the full run and the first and last ten-minute
-windows. The conservative rate includes a residual-MAD margin; first/last
-disagreement and implausible adjacent jumps fail closed.
+main-camera WCS series. NINA position angle describes the image-up axis east of
+celestial north; ASTAP's constant 180-degree adapter offset cannot affect a
+slope. Each image-axis vector is parallel-transported along the unique shortest
+great-circle path into the first solve's tangent basis before circular
+unwrapping. This removes local-meridian convergence caused solely by movement
+of the solved field centre. Raw position-angle slope remains diagnostic only.
+A solve-parity change or antipodal/ambiguous transport fails closed.
 
-A pass means only that measured field rotation is within the configured
-guide-to-corner budget for the requested exposure. It still requires a real
-900-second subframe star-shape check on each optical train and cannot establish
-absolute true-pole accuracy or authorize mount/UPAS movement.
+The analyzer uses Theil-Sen fits over the full run and the first and last
+ten-minute windows. The conservative rate includes both a residual-MAD margin
+and a nonzero angular measurement floor; first/last disagreement and
+implausible adjacent transported-roll jumps fail closed.
+
+A pass is `PassivePhysicalRotationWitnessQualified`: the passive tracking run
+bounded physical camera roll within the configured guide-to-corner budget. It
+never sets `OperationalGuidedExposureRotationQualified`. Guided operational
+qualification requires a synchronized PHD2-guided run and a real 900-second
+subframe star-shape check on each optical train. Neither verdict establishes
+absolute true-pole accuracy or authorizes mount/UPAS movement.
 
 ## Measurement Meaning
 
@@ -109,9 +119,11 @@ absolute true-pole accuracy or authorize mount/UPAS movement.
 - Unguided guide-star displacement is a disjoint relative observable, not
   ground truth. It contains PA error, refraction, periodic tracking error,
   seeing, and mechanical flexure.
-- Main-camera WCS position-angle rate measures delivered field rotation. It is
-  operationally important but does not alone identify the absolute RA-axis
-  vector.
+- Raw main-camera WCS position-angle rate is not physical rotation when the
+  field centre changes because its local north/east basis also changes. Only
+  common-tangent transported roll is admitted as a passive physical-rotation
+  witness. Even that witness is not a guided-exposure qualification and does
+  not alone identify the absolute RA-axis vector.
 - A full PA vector requires multiple qualified geometries. The restricted
   north/west balcony can provide information, but conditioning and component
   separation must be computed rather than assumed.
@@ -129,6 +141,9 @@ collectors concurrently:
 The parent adds 1 Hz NINA mount telemetry, explicit atmosphere provenance,
 start/mid/end Windows-time offset probes, UTC plus one monotonic clock, process
 outcomes, coverage counts, and SHA-256 for every retained artifact.
+The manifest labels the acquisition `PassiveUnguidedTracking`; downstream
+analysis must preserve that authority boundary.
+
 
 The iPolar evidence is explicitly a processed application-window capture, not
 a raw iPolar sensor frame. It cannot establish iPolar absolute accuracy.

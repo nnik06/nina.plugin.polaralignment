@@ -93,6 +93,7 @@ for ($index = 1; $index -le $Samples; $index++) {
         SolveDecDegreesJ2000 = [double]$solve.Coordinates.Dec
         PixelScaleArcsec = [double]$solve.Pixscale
         PositionAngleDegrees = [double]$solve.PositionAngle
+        Flipped = [bool]$solve.Flipped
     }
     $samplesOut.Add([pscustomobject]$sample)
     $sample | ConvertTo-Json -Compress | Add-Content -LiteralPath $jsonlPath -Encoding utf8

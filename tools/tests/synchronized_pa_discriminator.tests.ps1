@@ -77,4 +77,5 @@ Describe 'synchronized PA discriminator contract' {
         $text.Contains('GrantsAbsoluteAccuracyClaim = $false') | Should Be $true
         $text.Contains("processed-window-capture-not-raw-sensor") | Should Be $true
     }
+        $text.Contains("EvidenceMode = 'PassiveUnguidedTracking'") | Should Be $true
 }

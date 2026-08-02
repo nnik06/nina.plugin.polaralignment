@@ -1,3 +1,16 @@
+## Version 2.2.6.85
+
+- Compare solved camera orientation only after exact shortest-geodesic parallel
+  transport into the first solve's celestial tangent basis. Raw WCS position
+  angle remains diagnostic and can no longer masquerade as physical rotation
+  when the solved centre drifts, especially at high declination.
+- Record and require stable plate-solve parity, reject antipodal transport, and
+  include a configurable one-arcsecond angular measurement floor so a
+  numerically perfect series cannot claim zero uncertainty.
+- Reclassify the synchronized fixed-point verdict as a passive physical-rotation
+  witness. It can never grant guided-exposure qualification; that requires a
+  synchronized guided run plus actual 900-second star-shape validation.
+
 ## Version 2.2.6.84
 
 - Add a fail-closed analyzer for synchronized passive PA evidence. It verifies
