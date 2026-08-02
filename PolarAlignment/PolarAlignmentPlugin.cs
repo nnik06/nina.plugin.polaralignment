@@ -58,9 +58,23 @@ namespace NINA.Plugins.PolarAlignment {
 
         [ImportingConstructor]
         public PolarAlignmentPlugin(IProfileService profileService) {
+            var settingsChanged = false;
             if (Properties.Settings.Default.UpdateSettings) {
                 Properties.Settings.Default.Upgrade();
                 Properties.Settings.Default.UpdateSettings = false;
+                settingsChanged = true;
+            }
+            var configuredTolerance = Properties.Settings.Default.AlignmentTolerance;
+            var resolvedTolerance =
+                TppaAlignmentTolerancePolicy.ResolvePersistedSetting(configuredTolerance);
+            if (resolvedTolerance != configuredTolerance) {
+                Properties.Settings.Default.AlignmentTolerance = resolvedTolerance;
+                Logger.Info(
+                    $"Normalized global alignment tolerance " +
+                    $"from {configuredTolerance} to {resolvedTolerance} arcminutes.");
+                settingsChanged = true;
+            }
+            if (settingsChanged) {
                 CoreUtil.SaveSettings(Properties.Settings.Default);
             }
             ResetSettingsCommand = new GalaSoft.MvvmLight.Command.RelayCommand(ResetSettings);
@@ -244,13 +258,8 @@ namespace NINA.Plugins.PolarAlignment {
                 return Properties.Settings.Default.AlignmentTolerance;
             }
             set {
-                if (value < 0) {
-                    value = 0;
-                } else if (value > 0 && value < 0.5) {
-                    value = 0.5;
-                }
-
-                Properties.Settings.Default.AlignmentTolerance = value;
+                Properties.Settings.Default.AlignmentTolerance =
+                    TppaAlignmentTolerancePolicy.ClampUserInput(value);
                 CoreUtil.SaveSettings(Properties.Settings.Default);
                 RaisePropertyChanged();
             }

@@ -26,6 +26,16 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public void AlignmentTolerance_DefaultsToOperationalThreeArcMinutes() {
+            var property = typeof(NINA.Plugins.PolarAlignment.Properties.Settings)
+                .GetProperty(nameof(NINA.Plugins.PolarAlignment.Properties.Settings.AlignmentTolerance));
+
+            property.Should().NotBeNull();
+            property!.GetCustomAttribute<DefaultSettingValueAttribute>()!
+                     .Value.Should().Be("3");
+        }
+
+        [Test]
         public void CalculateTruePoleOffsetArcMinutes_DubaiStandardAtmosphere_MatchesNinaAstrometry() {
             var refraction = new RefractionParameters(1013.25, 15.0, 0.0, 0.55);
 

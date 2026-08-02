@@ -33,6 +33,31 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public void DisabledAlignmentToleranceIsCopiedAsZero() {
+            var instruction = CreateInstruction();
+            instruction.AlignmentTolerance = 0.0;
+
+            var clone = (Instructions.PolarAlignment)instruction.Clone();
+
+            clone.AlignmentTolerance.Should().Be(0.0);
+        }
+
+        [Test]
+        public void DisabledAlignmentToleranceRoundTripsAsExplicitZero() {
+            var instruction = CreateInstruction();
+            instruction.AlignmentTolerance = 0.0;
+
+            var json = JsonConvert.SerializeObject(instruction);
+            var serialized = JObject.Parse(json);
+            var restored = CreateInstruction();
+            JsonConvert.PopulateObject(json, restored);
+
+            serialized[nameof(Instructions.PolarAlignment.AlignmentTolerance)]!
+                .Value<double>().Should().Be(0.0);
+            restored.AlignmentTolerance.Should().Be(0.0);
+        }
+
+        [Test]
         public void VerificationOnlyRoundTripsThroughInstructionJson() {
             var instruction = CreateInstruction();
             instruction.VerificationOnly = true;
