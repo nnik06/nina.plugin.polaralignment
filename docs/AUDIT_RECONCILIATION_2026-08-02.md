@@ -67,13 +67,18 @@ Version 2.2.6.78 now:
 - rejects `Hold:1`, `Door:2`, and `Door:3` as moving transitional states; and
 - fails closed if stable `Idle` cannot be established.
 
-A controller/simulator fault-injection test must still verify actual mid-jog
-cancellation before treating this path as field-qualified.
+Version 2.2.6.80 closes the remaining offline cancellation-test gap. The
+production path now uses a deterministic orchestration seam whose injected
+controller sequence verifies one realtime `0x85` emission, transitional
+`Run`/`Hold`/`Door` handling, two stable `Idle` observations, bounded polling,
+missing-telemetry rejection, and timeout. Physical controller behavior still
+requires ordinary guarded field commissioning; it is no longer an untested
+software sequence.
 
 ## Verification
 
-- Focused GRBL/status tests: 32/32 passed.
-- Complete NUnit suite: 624/624 passed.
+- Focused GRBL/status tests: 40/40 passed.
+- Complete NUnit suite: 636/636 passed.
 - PowerShell contract suite: 132/132 passed.
 - Release solution build: passed; existing package-compatibility warnings only.
 

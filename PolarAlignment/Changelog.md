@@ -1,3 +1,9 @@
+## Version 2.2.6.80
+
+- Exercise the complete GRBL jog-cancellation orchestration with injected
+  controller-state sequences, including realtime `0x85` emission, transitional
+  motion, two stable `Idle` confirmations, missing telemetry, and timeout.
+
 ## Version 2.2.6.79
 
 - Record the actually loaded TPPA plugin and qualification-core paths, assembly and informational versions, SHA-256 hashes, and MVIDs in every qualification run artifact.

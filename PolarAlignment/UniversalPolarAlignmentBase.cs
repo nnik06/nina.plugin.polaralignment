@@ -329,23 +329,25 @@ namespace NINA.Plugins.PolarAlignment {
             Logger.Warning(
                 $"Cancelling active {SystemName} GRBL jog after movement failure: {movementFailure.Message}");
             try {
-                port.Write(new[] { GrblJogCancelRealtimeCommand }, 0, 1);
-                var confirmationTracker = new JogCancellationConfirmationTracker(
-                    RequiredStoppedStatusConfirmations);
-                for (var attempt = 1; attempt <= MaximumJogCancelStatusAttempts; attempt++) {
-                    Thread.Sleep(JogCancelStatusConfirmationInterval);
-                    UpdateStatus();
-                    var currentPosition = (X: XPosition, Y: YPosition, Z: ZPosition);
-                    if (confirmationTracker.Observe(Status, currentPosition)) {
-                        Logger.Warning(
-                            $"Confirmed {SystemName} GRBL jog stopped after failure; " +
-                            $"status={Status}; confirmations={confirmationTracker.Confirmations}; " +
-                            $"position=({currentPosition.X:F3},{currentPosition.Y:F3},{currentPosition.Z:F3}).");
-                        return;
-                    }
-                }
-                throw new TimeoutException(
-                    $"GRBL jog cancellation was sent but two stable Idle confirmations were not observed; last status={Status}.");
+                var result = JogCancellationOrchestrator.Execute(
+                    command => port.Write(new[] { command }, 0, 1),
+                    () => {
+                        UpdateStatus();
+                        return new JogCancellationStatusSample(
+                            Status,
+                            XPosition,
+                            YPosition,
+                            ZPosition);
+                    },
+                    Thread.Sleep,
+                    RequiredStoppedStatusConfirmations,
+                    MaximumJogCancelStatusAttempts,
+                    JogCancelStatusConfirmationInterval);
+                Logger.Warning(
+                    $"Confirmed {SystemName} GRBL jog stopped after failure; " +
+                    $"status={result.FinalSample.Status}; " +
+                    $"confirmations={result.Confirmations}; attempts={result.Attempts}; " +
+                    $"position=({result.FinalSample.X:F3},{result.FinalSample.Y:F3},{result.FinalSample.Z:F3}).");
             } catch (Exception abortFailure) {
                 Logger.Error(abortFailure);
                 throw new AggregateException(

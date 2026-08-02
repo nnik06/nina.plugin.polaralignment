@@ -2,6 +2,7 @@ using FluentAssertions;
 using NINA.Plugins.PolarAlignment.Avalon;
 using NINA.Plugins.PolarAlignment.OAPA;
 using System;
+using System.Collections.Generic;
 
 namespace NINA.Plugins.PolarAlignment.Test {
     public class UniversalPolarAlignmentBaseTest {
@@ -165,6 +166,91 @@ namespace NINA.Plugins.PolarAlignment.Test {
             var action = () => new JogCancellationConfirmationTracker(0);
 
             action.Should().Throw<System.ArgumentOutOfRangeException>();
+        }
+
+        [Test]
+        public void JogCancellationOrchestratorSendsCancelAndWaitsForStableIdle() {
+            var sentCommands = new List<byte>();
+            var waits = new List<TimeSpan>();
+            var samples = new Queue<JogCancellationStatusSample>(new[] {
+                new JogCancellationStatusSample("Run", 1f, 2f, 3f),
+                new JogCancellationStatusSample("Hold:1", 1.5f, 2f, 3f),
+                new JogCancellationStatusSample("Idle", 1.75f, 2f, 3f),
+                new JogCancellationStatusSample("Idle", 1.755f, 2f, 3f)
+            });
+
+            var result = JogCancellationOrchestrator.Execute(
+                sentCommands.Add,
+                samples.Dequeue,
+                waits.Add,
+                2,
+                10,
+                TimeSpan.FromMilliseconds(300));
+
+            sentCommands.Should().Equal(0x85);
+            waits.Should().HaveCount(4)
+                .And.OnlyContain(value => value == TimeSpan.FromMilliseconds(300));
+            result.Attempts.Should().Be(4);
+            result.Confirmations.Should().Be(2);
+            result.FinalSample.Status.Should().Be("Idle");
+            result.FinalSample.X.Should().BeApproximately(1.755f, 0.0001f);
+        }
+
+        [Test]
+        public void JogCancellationOrchestratorFailsClosedWithoutStableIdle() {
+            var sentCommands = new List<byte>();
+            var observations = 0;
+
+            var action = () => JogCancellationOrchestrator.Execute(
+                sentCommands.Add,
+                () => {
+                    observations++;
+                    return new JogCancellationStatusSample(
+                        observations == 2 ? "Door:2" : "Idle",
+                        observations,
+                        0f,
+                        0f);
+                },
+                _ => { },
+                2,
+                3,
+                TimeSpan.Zero);
+
+            action.Should().Throw<TimeoutException>()
+                .WithMessage("*2 stable Idle confirmations were not observed*");
+            sentCommands.Should().Equal(0x85);
+            observations.Should().Be(3);
+        }
+
+        [Test]
+        public void JogCancellationOrchestratorRejectsMissingObservation() {
+            var sentCommands = new List<byte>();
+
+            var action = () => JogCancellationOrchestrator.Execute(
+                sentCommands.Add,
+                () => null,
+                _ => { },
+                2,
+                3,
+                TimeSpan.Zero);
+
+            action.Should().Throw<InvalidOperationException>()
+                .WithMessage("*status observation was missing*");
+            sentCommands.Should().Equal(0x85);
+        }
+
+        [Test]
+        public void JogCancellationOrchestratorRejectsImpossibleAttemptBudget() {
+            var action = () => JogCancellationOrchestrator.Execute(
+                _ => { },
+                () => new JogCancellationStatusSample("Idle", 0f, 0f, 0f),
+                _ => { },
+                2,
+                1,
+                TimeSpan.Zero);
+
+            action.Should().Throw<ArgumentOutOfRangeException>()
+                .Which.ParamName.Should().Be("maximumAttempts");
         }
     }
 }
