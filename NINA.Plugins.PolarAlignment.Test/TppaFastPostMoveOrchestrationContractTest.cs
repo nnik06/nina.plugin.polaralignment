@@ -26,6 +26,23 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public void FastModeRequiresLifecycleEvidenceBeforeQualificationOrMovement() {
+            var source = File.ReadAllText(Path.Combine(RepositoryRoot(), "PolarAlignment", "Instructions", "PolarAlignment.cs"));
+
+            source.Should().Contain("bool TryLogFastRunEvent(");
+            source.Should().Contain("if (!TryLogFastRunEvent(\"started\"");
+            source.Should().Contain("if (!TryLogFastRunEvent(\"initial-fresh-determination\"");
+            source.Should().Contain("if (!TryLogFastRunEvent(\"post-move-response\"");
+            source.Should().Contain("if (!TryLogFastRunEvent(\"completed\"");
+            source.Should().NotContain("[\"reason\"] = ex.Message");
+            source.Should().Contain("if (!enforceFastRuntimeBudget || (terminal && fastTerminalEventLogged))");
+            source.Should().Contain("fastTerminalEventLogged = true;");
+            source.Should().NotContain("if (!TryLogFastRunEvent(\"cancelled\"");
+            source.Should().NotContain("if (!TryLogFastRunEvent(\"failed\"");
+            source.Should().NotContain("if (!TryLogFastRunEvent(\"abandoned\"");
+        }
+
+        [Test]
         public void InitialTotalErrorIsDefinedAsEuclideanHypotenuseOfComponents() {
             var source = File.ReadAllText(Path.Combine(RepositoryRoot(), "PolarAlignment", "TPAPAVM.cs"));
 

@@ -546,6 +546,34 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             var enforceFastRuntimeBudget = EnforceFiveMinuteRuntimeBudget
                 && automatedAdjustmentsEnabled
                 && executionPolicy.AllowActuatorMovement;
+            var fastRunId = enforceFastRuntimeBudget ? Guid.NewGuid() : Guid.Empty;
+            var fastTerminalEventLogged = false;
+
+            bool TryLogFastRunEvent(
+                    string eventName,
+                    IReadOnlyDictionary<string, object> fields = null,
+                    bool terminal = false) {
+                if (!enforceFastRuntimeBudget || (terminal && fastTerminalEventLogged)) {
+                    return true;
+                }
+                try {
+                    Logger.Info(TppaFastRunTelemetry.Serialize(
+                        fastRunId,
+                        eventName,
+                        DateTime.UtcNow,
+                        alignmentRuntime.Elapsed,
+                        fields));
+                    if (terminal) {
+                        fastTerminalEventLogged = true;
+                    }
+                    return true;
+                } catch (Exception telemetryException) {
+                    try {
+                        Logger.Error($"TPPA fast-run telemetry emission failed ({telemetryException.GetType().Name}).");
+                    } catch (Exception) { }
+                    return false;
+                }
+            }
             if (enforceFastRuntimeBudget) {
                 var resolvedSettleSeconds = TppaVerificationSettlePolicy.Resolve(
                     profileService.ActiveProfile.TelescopeSettings.SettleTime,
@@ -564,6 +592,15 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     throw new SequenceEntityFailedException(
                         $"Automated polar alignment cannot satisfy the five-minute runtime contract: " +
                         $"{fastConfiguration.Reason}. No UPAS connection or movement was authorized.");
+                }
+                if (!TryLogFastRunEvent("started", new Dictionary<string, object> {
+                    ["settleSeconds"] = fastConfiguration.ResolvedSettleSeconds,
+                    ["exposureSeconds"] = fastConfiguration.ExposureSeconds,
+                    ["alignmentToleranceMinutes"] = AlignmentTolerance,
+                    ["refractionAdjustmentEnabled"] = Properties.Settings.Default.RefractionAdjustment
+                })) {
+                    throw new SequenceEntityFailedException(
+                        "Fast-alignment evidence could not be started. No UPAS connection or movement was authorized.");
                 }
             }
             using var fastRuntimeDeadlineCTS = enforceFastRuntimeBudget
@@ -893,6 +930,14 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         determination.InitialMountAxisAltitudeError.ArcMinutes,
                         determination.InitialMountAxisTotalError.ArcMinutes);
                     Logger.Info($"TPPA fresh 3-point vector diagnostic: {freshVector.ToLogString()}.");
+                    if (!TryLogFastRunEvent("initial-fresh-determination", new Dictionary<string, object> {
+                        ["azimuthMinutes"] = freshVector.AzimuthMinutes,
+                        ["altitudeMinutes"] = freshVector.AltitudeMinutes,
+                        ["totalMinutes"] = freshVector.TotalMinutes
+                    })) {
+                        throw new SequenceEntityFailedException(
+                            "Fast-alignment initial evidence could not be preserved. No UPAS movement was authorized.");
+                    }
                     Logger.Info($"TPPA fresh 3-point active target diagnostic: {activeTarget}.");
 
                     try {
@@ -958,6 +1003,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     var sw = Stopwatch.StartNew();
                     var completionGuard = new AutomatedAlignmentCompletionGuard();
                     var freshFeedbackMoveCount = 0;
+                    TppaPolarErrorVector? qualifiedFinalVector = null;
                     const int MaximumExtendedFreshFeedbackMoves = 18;
                     do {
                         await WaitIfPaused(localCTS.Token, progress);
@@ -1008,6 +1054,10 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                     $"Total Error: {Math.Round(confirmedTotalErrorMinutes, 2)}'{Environment.NewLine}" +
                                     "Automatically finishing polar alignment.",
                                     TimeSpan.FromMinutes(1));
+                                qualifiedFinalVector = TppaPolarErrorVector.FromMinutes(
+                                    confirmationDetermination.InitialMountAxisAzimuthError.ArcMinutes,
+                                    confirmationDetermination.InitialMountAxisAltitudeError.ArcMinutes,
+                                    confirmationDetermination.InitialMountAxisTotalError.ArcMinutes);
                                 localCTS.Cancel();
                                 continue;
                             }
@@ -1060,6 +1110,10 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                         $"Total Error: {Math.Round(tieBreakerTotalErrorMinutes, 2)}'{Environment.NewLine}" +
                                         "Automatically finishing polar alignment.",
                                         TimeSpan.FromMinutes(1));
+                                    qualifiedFinalVector = TppaPolarErrorVector.FromMinutes(
+                                        tieBreakerDetermination.InitialMountAxisAzimuthError.ArcMinutes,
+                                        tieBreakerDetermination.InitialMountAxisAltitudeError.ArcMinutes,
+                                        tieBreakerDetermination.InitialMountAxisTotalError.ArcMinutes);
                                     localCTS.Cancel();
                                     continue;
                                 }
@@ -1223,6 +1277,20 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                         postMoveFreshVector,
                                         AlignmentTolerance);
                                     Logger.Info("TPPA_POST_MOVE_RESPONSE " + responseDecision.ToLogString());
+                                    if (!TryLogFastRunEvent("post-move-response", new Dictionary<string, object> {
+                                        ["classification"] = responseDecision.Classification.ToString(),
+                                        ["preAzimuthMinutes"] = preMoveFreshVector.AzimuthMinutes,
+                                        ["preAltitudeMinutes"] = preMoveFreshVector.AltitudeMinutes,
+                                        ["preTotalMinutes"] = preMoveFreshVector.TotalMinutes,
+                                        ["postAzimuthMinutes"] = postMoveFreshVector.AzimuthMinutes,
+                                        ["postAltitudeMinutes"] = postMoveFreshVector.AltitudeMinutes,
+                                        ["postTotalMinutes"] = postMoveFreshVector.TotalMinutes,
+                                        ["totalImprovementMinutes"] = responseDecision.TotalImprovementMinutes,
+                                        ["requiredImprovementMinutes"] = responseDecision.RequiredImprovementMinutes
+                                    })) {
+                                        throw new SequenceEntityFailedException(
+                                            "Fast-alignment post-move evidence could not be preserved. The run stopped without authorizing another UPAS movement.");
+                                    }
                                     var responseDisposition = TppaPostMoveResponsePolicy.DispositionForMode(
                                         responseDecision,
                                         enforceFastRuntimeBudget);
@@ -1251,6 +1319,21 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
 
                     if (enforceFastRuntimeBudget) {
                         EnsureFastRuntimeBudget("successful completion", 0);
+                        var finalVector = qualifiedFinalVector
+                            ?? throw new SequenceEntityFailedException(
+                                "Fast-alignment completion did not preserve the fresh vector that passed qualification. " +
+                                "The alignment state was not declared qualified and no additional UPAS movement was authorized.");
+                        if (!TryLogFastRunEvent("completed", new Dictionary<string, object> {
+                            ["outcome"] = "fresh-confirmed-within-tolerance",
+                            ["moveCount"] = freshFeedbackMoveCount,
+                            ["finalAzimuthMinutes"] = finalVector.AzimuthMinutes,
+                            ["finalAltitudeMinutes"] = finalVector.AltitudeMinutes,
+                            ["finalTotalMinutes"] = finalVector.TotalMinutes
+                        }, terminal: true)) {
+                            throw new SequenceEntityFailedException(
+                                "Fast-alignment completion evidence could not be preserved. " +
+                                "The alignment state was not declared qualified and no additional UPAS movement was authorized.");
+                        }
                         Logger.Info(
                             $"TPPA five-minute automated runtime contract completed in " +
                             $"{alignmentRuntime.Elapsed.TotalSeconds:F1}s.");
@@ -1262,17 +1345,30 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 if (enforceFastRuntimeBudget
                         && !token.IsCancellationRequested
                         && fastRuntimeDeadlineCTS?.IsCancellationRequested == true) {
+                    TryLogFastRunEvent("failed", new Dictionary<string, object> {
+                        ["outcome"] = "runtime-deadline-exceeded"
+                    }, terminal: true);
                     throw new SequenceEntityFailedException(
                         $"Automated polar alignment exceeded the " +
                         $"{TppaFastAlignmentExecutionBudget.MaximumRuntimeSeconds:F0}-second runtime contract. " +
                         "The run stopped without authorizing another UPAS movement.");
                 }
+                TryLogFastRunEvent("cancelled", new Dictionary<string, object> {
+                    ["outcome"] = token.IsCancellationRequested ? "caller-cancelled" : "internal-cancelled"
+                }, terminal: true);
                 throw;
             } catch (Exception ex) {
+                TryLogFastRunEvent("failed", new Dictionary<string, object> {
+                    ["outcome"] = "exception",
+                    ["exceptionType"] = ex.GetType().Name
+                }, terminal: true);
                 Logger.Error(ex);
                 Notification.ShowError("Three Point Polar Alignment failed - " + ex.Message);
                 throw;
             } finally {
+                TryLogFastRunEvent("abandoned", new Dictionary<string, object> {
+                    ["outcome"] = "no-terminal-event"
+                }, terminal: true);
                 try {
                     await windowService?.Close();
                 } catch { }
