@@ -14,11 +14,12 @@ using Newtonsoft.Json.Linq;
 namespace NINA.Plugins.PolarAlignment {
     internal sealed record TppaCoarseDeterminationEvidence(
         Guid DeterminationId,
+        string ObservationLeaseNonce,
+        string ObservationAttestationSha256,
         DateTime StartedUtc,
         DateTime CompletedUtc,
         string TargetSkyArcId,
         bool TruePoleRefractionEnabled,
-        bool Stationary,
         string RepositoryHead,
         string PluginAssemblySha256,
         string HardwareConfigurationId,
@@ -113,10 +114,12 @@ namespace NINA.Plugins.PolarAlignment {
             operationCts.CancelAfter(operationTimeout);
             var nowUtc = RequireUtc(utcNowProvider(), "request time");
             var firstDetermination = new JObject {
-                ["receipt"] = TppaCoarseDeterminationReceiptBuilder.Build(first, nowUtc)
+                ["receipt"] = TppaCoarseDeterminationReceiptBuilder.Build(first, nowUtc),
+                ["observationAttestationSha256"] = first.ObservationAttestationSha256
             };
             var secondDetermination = new JObject {
-                ["receipt"] = TppaCoarseDeterminationReceiptBuilder.Build(second, nowUtc)
+                ["receipt"] = TppaCoarseDeterminationReceiptBuilder.Build(second, nowUtc),
+                ["observationAttestationSha256"] = second.ObservationAttestationSha256
             };
             var idempotencyKey = idempotencyKeyProvider();
             if (string.IsNullOrWhiteSpace(idempotencyKey)) {

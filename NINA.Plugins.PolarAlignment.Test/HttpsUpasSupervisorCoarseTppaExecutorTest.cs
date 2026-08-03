@@ -18,7 +18,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
 
             HttpsUpasSupervisorCoarseTppaExecutor
                 .ComputeRequestBodySha256(payload)
-                .Should().Be("4b069c21bf0f7731197dc08ff432de90bdd2bd635f9c8491866b93f67a4334e2");
+                .Should().Be("45b62d17bb2fbab61bc5797bd650152bc48b6c1dc2bdd64d6ac051e526b66cb0");
         }
 
         [Test]
@@ -49,7 +49,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 .Should().Be(8.8);
             handler.Requests[1].Uri.AbsolutePath.Should().Be("/v1/coarse/tppa-correction");
             handler.Requests[1].Body["requestBodySha256"]!.Value<string>()
-                .Should().Be("4b069c21bf0f7731197dc08ff432de90bdd2bd635f9c8491866b93f67a4334e2");
+                .Should().Be("45b62d17bb2fbab61bc5797bd650152bc48b6c1dc2bdd64d6ac051e526b66cb0");
             handler.Requests[1].Body["covarianceAuthoritySha256"]!.Value<string>()
                 .Should().Be(CovarianceAuthoritySha256);
             var determinations = (JArray)handler.Requests[1].Body["determinations"]!;
@@ -60,9 +60,9 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 .Should().Be(100_000_000);
             firstReceipt["sourceSolves"]!.Count().Should().Be(3);
             firstReceipt["receiptSha256"]!.Value<string>()
-                .Should().Be("96f9c304e4e9c7205ed3fd6755ff3c65125353acda88d0ab6348ebff074577cc");
+                .Should().Be("308bf9e6acbbe08231ae980798ba461e1a3a154d308dd2a380a2e9a82e306c0b");
             determinations[1]!["receipt"]!["receiptSha256"]!.Value<string>()
-                .Should().Be("60616c8cf1d60aa637a427369a8833c8fdc0f8e21e1203ec27f95b0779120363");
+                .Should().Be("897a1081ba0d912e552c5beab7ba6e6575f0a9e2be14ca63460ae6d5c28b96a3");
             handler.Requests[2].Method.Should().Be(HttpMethod.Delete);
             handler.Requests.Should().OnlyContain(
                 request => request.Authorization == "Bearer token");
@@ -161,10 +161,11 @@ namespace NINA.Plugins.PolarAlignment.Test {
             }).ToArray();
             return new(
                 Guid.Parse($"10000000-0000-4000-8000-{suffix:D12}"),
+                new string(suffix == 1 ? 'f' : '0', 64),
+                new string(suffix == 1 ? '9' : '8', 64),
                 startedUtc,
                 completedUtc,
                 "safe-arc-a",
-                true,
                 true,
                 new string('c', 40),
                 new string('d', 64),
@@ -192,12 +193,14 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 new JObject {
                     ["receipt"] = TppaCoarseDeterminationReceiptBuilder.Build(
                         Determination(1, 'a', RequestUtc.AddSeconds(-30), 120, 60),
-                        RequestUtc)
+                        RequestUtc),
+                    ["observationAttestationSha256"] = new string('9', 64)
                 },
                 new JObject {
                     ["receipt"] = TppaCoarseDeterminationReceiptBuilder.Build(
                         Determination(2, 'd', RequestUtc.AddSeconds(-1), 121.2, 59.4),
-                        RequestUtc)
+                        RequestUtc),
+                    ["observationAttestationSha256"] = new string('8', 64)
                 }
             }
         };

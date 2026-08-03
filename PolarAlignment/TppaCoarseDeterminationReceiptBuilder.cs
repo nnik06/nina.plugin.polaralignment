@@ -28,11 +28,11 @@ namespace NINA.Plugins.PolarAlignment {
                 ["schemaVersion"] = 1,
                 ["receiptSha256"] = new string('0', 64),
                 ["determinationId"] = value.DeterminationId.ToString("D"),
+                ["observationLeaseNonce"] = value.ObservationLeaseNonce,
                 ["startedUtc"] = Utc(value.StartedUtc),
                 ["completedUtc"] = Utc(value.CompletedUtc),
                 ["targetSkyArcId"] = value.TargetSkyArcId,
                 ["truePoleRefractionEnabled"] = value.TruePoleRefractionEnabled,
-                ["stationary"] = value.Stationary,
                 ["repositoryHead"] = value.RepositoryHead,
                 ["pluginAssemblySha256"] = value.PluginAssemblySha256,
                 ["hardwareConfigurationId"] = value.HardwareConfigurationId,
@@ -73,6 +73,10 @@ namespace NINA.Plugins.PolarAlignment {
             RequireEqual(first.MechanicalStateSha256, second.MechanicalStateSha256, "mechanical state");
             RequireEqual(first.SolverIdentity, second.SolverIdentity, "solver");
             RequireEqual(first.CatalogIdentity, second.CatalogIdentity, "catalog");
+            if (first.ObservationLeaseNonce == second.ObservationLeaseNonce
+                    || first.ObservationAttestationSha256 == second.ObservationAttestationSha256) {
+                throw new ArgumentException("Coarse TPPA observation attestations must be independent.");
+            }
             var images = first.SourceSolves.Concat(second.SourceSolves)
                 .Select(item => item.SourceImageSha256).ToArray();
             var outputs = first.SourceSolves.Concat(second.SourceSolves)
@@ -113,9 +117,11 @@ namespace NINA.Plugins.PolarAlignment {
                     || (nowUtc - value.CompletedUtc).TotalSeconds > 180.0) {
                 throw new ArgumentException("Coarse TPPA determination is stale or mistimed.");
             }
-            if (!value.TruePoleRefractionEnabled || !value.Stationary) {
-                throw new ArgumentException("Coarse TPPA requires true-pole stationary evidence.");
+            if (!value.TruePoleRefractionEnabled) {
+                throw new ArgumentException("Coarse TPPA requires true-pole evidence.");
             }
+            RequireLowerHex(value.ObservationLeaseNonce, 64, "observation lease nonce");
+            RequireLowerHex(value.ObservationAttestationSha256, 64, "observation attestation");
             RequireText(value.TargetSkyArcId, "sky arc");
             RequireLowerHex(value.RepositoryHead, 40, "repository head");
             RequireLowerHex(value.PluginAssemblySha256, 64, "plugin assembly");
