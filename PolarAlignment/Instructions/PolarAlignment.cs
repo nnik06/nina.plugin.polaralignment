@@ -548,6 +548,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 && executionPolicy.AllowActuatorMovement;
             var fastRunId = enforceFastRuntimeBudget ? Guid.NewGuid() : Guid.Empty;
             var fastTerminalEventLogged = false;
+            var fastInitialAdmissionGranted = !enforceFastRuntimeBudget;
 
             bool TryLogFastRunEvent(
                     string eventName,
@@ -959,6 +960,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                 $"{TppaFastAlignmentExecutionBudget.MaximumQualifiedInitialTotalMinutes:F0}' five-minute window. " +
                                 "No UPAS movement was authorized.");
                         }
+                        fastInitialAdmissionGranted = true;
                     }
 
                     try {
@@ -1008,7 +1010,11 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     if (executionPolicy.ShouldConnectActuator(
                         TPAPAVM.ActiveAlignmentSystemVM != null,
                         TPAPAVM.ActiveAlignmentSystemVM?.DoAutomatedAdjustments == true)) {
-                        await TPAPAVM.ActiveAlignmentSystemVM.Connect();
+                        await TppaFastActuatorAdmissionGate.ExecuteIfAuthorizedAsync(
+                            enforceFastRuntimeBudget,
+                            fastInitialAdmissionGranted,
+                            "connection",
+                            () => TPAPAVM.ActiveAlignmentSystemVM.Connect());
                         if (!TPAPAVM.ActiveAlignmentSystemVM.Connected) {
                             throw new SequenceEntityFailedException("Unable to connect to Polar Alignment system. Cancelling polar alignment routine as automated adjustments are impossible.");
                         }
@@ -1273,7 +1279,11 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                     TPAPAVM.PolarErrorDetermination.InitialMountAxisAltitudeError.ArcMinutes,
                                     TPAPAVM.PolarErrorDetermination.InitialMountAxisTotalError.ArcMinutes);
                                 var moved = executionPolicy.AllowActuatorMovement
-                                    && await TPAPAVM.MoveCloser(progress, localCTS.Token);
+                                    && await TppaFastActuatorAdmissionGate.ExecuteIfAuthorizedAsync(
+                                        enforceFastRuntimeBudget,
+                                        fastInitialAdmissionGranted,
+                                        "movement",
+                                        () => TPAPAVM.MoveCloser(progress, localCTS.Token));
                                 if (moved && TPAPAVM.AutomatedAdjustmentRequiresFreshMeasurementFeedback) {
                                     freshFeedbackMoveCount++;
                                     Logger.Info("UPAS move completed. Measuring an independent fresh three-point response before allowing another automated move.");

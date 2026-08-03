@@ -1,3 +1,11 @@
+## Version 2.2.6.96
+
+- Add a run-scoped fast-alignment admission latch at both actuator connection
+  and movement boundaries. A rejected or not-yet-admitted fast run cannot reach
+  either actuator callback even if later control flow is reordered.
+- Add executable callback coverage proving denied fast admission performs zero
+  actuator calls while admitted and non-fast paths retain their intended access.
+
 ## Version 2.2.6.95
 
 - Reject five-minute fixed-gain actuator starts above the preregistered 24

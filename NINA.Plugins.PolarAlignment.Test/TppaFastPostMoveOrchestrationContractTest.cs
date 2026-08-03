@@ -9,11 +9,11 @@ namespace NINA.Plugins.PolarAlignment.Test {
             var source = File.ReadAllText(Path.Combine(RepositoryRoot(), "PolarAlignment", "Instructions", "PolarAlignment.cs"));
             var loopStart = source.IndexOf("do {", StringComparison.Ordinal);
             var confirmationGate = source.IndexOf("independent fresh completion confirmation", loopStart, StringComparison.Ordinal);
-            var move = source.IndexOf("await TPAPAVM.MoveCloser", confirmationGate, StringComparison.Ordinal);
+            var move = source.IndexOf("() => TPAPAVM.MoveCloser", confirmationGate, StringComparison.Ordinal);
             var convergenceBranch = source.IndexOf("if (responseDisposition.ContinueToStationaryConfirmation)", move, StringComparison.Ordinal);
             var directContinue = source.IndexOf("continue;", convergenceBranch, StringComparison.Ordinal);
             var loopEnd = source.IndexOf("} while (!localCTS.Token.IsCancellationRequested);", directContinue, StringComparison.Ordinal);
-            var laterMove = source.IndexOf("await TPAPAVM.MoveCloser", directContinue, StringComparison.Ordinal);
+            var laterMove = source.IndexOf("() => TPAPAVM.MoveCloser", directContinue, StringComparison.Ordinal);
 
             loopStart.Should().BeGreaterThanOrEqualTo(0);
             confirmationGate.Should().BeGreaterThan(loopStart);
