@@ -78,6 +78,17 @@ public class TppaActualExposureStarShapeTest {
     }
 
     [Test]
+    public void InternallyConsistentButWrongFilterFailsPolicyBinding() {
+        var policy = Policy();
+        policy.RequiredFilterName = "Ha 3nm";
+        policy.AllowedFilterNames = new[] { "Ha 3nm" };
+        var result = TppaActualExposureStarShapeAnalyzer.Analyze(
+            policy, BuildBracket(1.9, 1.8));
+        result.EvidenceValid.Should().BeFalse();
+        result.Issues.Should().Contain(issue => issue.Contains("preregistered filter"));
+    }
+
+    [Test]
     public void UndersampledTrainNeverGetsAbsoluteEccentricityAuthority() {
         var policy = Policy();
         policy.OpticalTrainId = "WO-GT81-IV-0.8-ASI2600MM";
@@ -177,6 +188,8 @@ public class TppaActualExposureStarShapeTest {
 
     private TppaActualExposureStarShapePolicy Policy() => new() {
         OpticalTrainId = "EdgeHD-9.25-0.7-ASI2600MM",
+        RequiredFilterName = "OIII 3nm",
+        AllowedFilterNames = new[] { "OIII 3nm" },
         PixelScaleArcsecondsPerPixel = 1.0,
         GainElectronsPerAdu = 0.25,
         ApertureRadiusArcseconds = 8.0,
@@ -239,7 +252,7 @@ public class TppaActualExposureStarShapeTest {
             var sigmaX = isLong ? longSigmaX : outlier ? 2.8 : controlSigma;
             var sigmaY = isLong ? longSigmaY : outlier ? 2.8 : controlSigma;
             var exposure = isLong ? 900.0 : 15.0;
-            var filter = isLong && changedLongFilter ? "Ha" : "OIII";
+            var filter = isLong && changedLongFilter ? "Ha 3nm" : "OIII 3nm";
             var fits = Path.Combine(root, $"frame-{index}.fits");
             var csv = Path.Combine(root, $"frame-{index}.csv");
             var positions = isLong

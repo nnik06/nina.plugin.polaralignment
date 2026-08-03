@@ -10,6 +10,13 @@ param(
         'WO-GT81-IV-0.8-OAG-L-ASI2600MM-gain100-bin1')]
     [string]$OpticalTrainId,
 
+    [Parameter(Mandatory)]
+    [ValidateScript({
+        -not [string]::IsNullOrWhiteSpace($_) -and
+        $_ -notmatch '^(?i:none|unknown|--)$'
+    })]
+    [string]$RequiredFilterName,
+
     [ValidateRange(10, 30)]
     [int]$ControlExposureSeconds = 30,
 
@@ -173,7 +180,7 @@ $postControls = New-LoopedExposureContainer `
 $annotation = [ordered]@{
     '$id' = '14'
     '$type' = 'NINA.Sequencer.SequenceItem.Utility.Annotation, NINA.Sequencer'
-    Text = "Actual-exposure witness for $OpticalTrainId. Preflight-fixed equipment, field, filter, focus, cooling, tracking, and guiding are required. This sequence only acquires image frames."
+    Text = "Actual-exposure witness for $OpticalTrainId. Required filter: '$RequiredFilterName'. Preflight-fixed equipment, field, focus, cooling, tracking, and guiding are required. This sequence only acquires image frames."
     Parent = New-Reference '11'
     ErrorBehavior = 0
     Attempts = 1
@@ -276,6 +283,7 @@ try {
 [pscustomobject]@{
     OutputPath = $fullOutputPath
     OpticalTrainId = $OpticalTrainId
+    RequiredFilterName = $RequiredFilterName
     ControlFrameCountBefore = 5
     LongExposureSeconds = 900
     ControlFrameCountAfter = 5

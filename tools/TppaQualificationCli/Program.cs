@@ -5,7 +5,7 @@ using Newtonsoft.Json.Linq;
 
 namespace NINA.Plugins.PolarAlignment;
 
-internal static class Program {
+internal static partial class Program {
     private static int Main(string[] args) {
         try {
             if (args.Length == 0) {
@@ -22,6 +22,7 @@ internal static class Program {
                 "validate-witness-request" => ValidateWitnessRequest(options),
                 "create-witness-outcome" => CreateWitnessOutcome(options),
                 "validate-witness-outcome" => ValidateWitnessOutcome(options),
+                "analyze-saturation-scout" => AnalyzeSaturationScout(options),
                 "analyze-actual-exposure" => AnalyzeActualExposure(options),
                 "verify-actual-exposure" => VerifyActualExposure(options),
                 _ => Usage($"Unknown command '{args[0]}'.")
@@ -504,7 +505,7 @@ internal static class Program {
             status = "usage-error",
             qualified = false,
             issues = new[] { issue },
-            usage = "tppa-qualify bind --tppa run.json --witness witness.json --receipt-out receipt.json | verify --tppa run.json --witness witness.json --receipt receipt.json | produce-witness --metadata metadata.json --points points.json --output-dir directory | create-witness-request --spec spec.json --request-out point.witness-request.ready.json | validate-witness-request --request request.json --now-utc timestamp | create-witness-outcome --request request.json --point point.json --outcome-out outcome.json --started-utc timestamp --completed-utc timestamp --observer-pipeline-digest sha256 | validate-witness-outcome --request request.json --outcome outcome.json | analyze-actual-exposure --manifest manifest.json --receipt-out receipt.json | verify-actual-exposure --manifest manifest.json --receipt receipt.json",
+            usage = "tppa-qualify bind --tppa run.json --witness witness.json --receipt-out receipt.json | verify --tppa run.json --witness witness.json --receipt receipt.json | produce-witness --metadata metadata.json --points points.json --output-dir directory | create-witness-request --spec spec.json --request-out point.witness-request.ready.json | validate-witness-request --request request.json --now-utc timestamp | create-witness-outcome --request request.json --point point.json --outcome-out outcome.json --started-utc timestamp --completed-utc timestamp --observer-pipeline-digest sha256 | validate-witness-outcome --request request.json --outcome outcome.json | analyze-saturation-scout --short-fits short.fits --long-fits long.fits --policy policy.json --receipt-out scout.json --now-utc timestamp | analyze-actual-exposure --manifest manifest.json --receipt-out receipt.json | verify-actual-exposure --manifest manifest.json --receipt receipt.json",
             grantsMotionAuthority = false
         });
         return 3;

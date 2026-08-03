@@ -11,7 +11,8 @@ function New-TestSequence {
         [Parameter(Mandatory)][string]$Path,
         [string]$Train = $edgeTrain
     )
-    & $toolPath -OutputPath $Path -OpticalTrainId $Train | Out-Null
+    & $toolPath -OutputPath $Path -OpticalTrainId $Train `
+        -RequiredFilterName 'OIII 3nm' | Out-Null
     return ([IO.File]::ReadAllText($Path) | ConvertFrom-Json)
 }
 
@@ -45,6 +46,13 @@ Describe 'actual 900-second NINA sequence generator' {
         $pre.Items.'$values'[0].ExposureTime | Should Be 30
         $long.ExposureTime | Should Be 900
         $post.Items.'$values'[0].ExposureTime | Should Be 30
+    }
+
+    It 'preregisters the exact fixed filter in the passive annotation' {
+        $path = Join-Path $TestDrive 'filter.json'
+        $root = New-TestSequence $path
+        $annotation = $root.Items.'$values'[1].Items.'$values'[0].Items.'$values'[0]
+        $annotation.Text.Contains("Required filter: 'OIII 3nm'.") | Should Be $true
     }
 
     It 'pins light-frame camera settings in every exposure node' {
@@ -96,7 +104,8 @@ Describe 'actual 900-second NINA sequence generator' {
         [IO.File]::WriteAllText($path, 'do not replace')
         $threw = $false
         try {
-            & $toolPath -OutputPath $path -OpticalTrainId $edgeTrain |
+            & $toolPath -OutputPath $path -OpticalTrainId $edgeTrain `
+                -RequiredFilterName 'OIII 3nm' |
                 Out-Null
         } catch {
             $threw = $true
@@ -117,6 +126,21 @@ Describe 'actual 900-second NINA sequence generator' {
         }
         $threw | Should Be $true
         [IO.File]::Exists($path) | Should Be $false
+    }
+
+    It 'rejects an empty or sentinel filter name' {
+        foreach ($filter in @('', 'None', 'Unknown', '--')) {
+            $path = Join-Path $TestDrive ("bad-filter-" + [Guid]::NewGuid() + '.json')
+            $threw = $false
+            try {
+                & $toolPath -OutputPath $path -OpticalTrainId $edgeTrain `
+                    -RequiredFilterName $filter | Out-Null
+            } catch {
+                $threw = $true
+            }
+            $threw | Should Be $true
+            [IO.File]::Exists($path) | Should Be $false
+        }
     }
 
     It 'produces deterministic bytes for the same inputs' {

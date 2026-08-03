@@ -14,6 +14,8 @@ internal sealed class TppaActualExposureStarShapePolicy {
     public const int CurrentSchemaVersion = 1;
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
     public string OpticalTrainId { get; set; } = string.Empty;
+    public string RequiredFilterName { get; set; } = string.Empty;
+    public string[] AllowedFilterNames { get; set; } = Array.Empty<string>();
     public double PixelScaleArcsecondsPerPixel { get; set; }
     public double GainElectronsPerAdu { get; set; }
     public double ApertureRadiusArcseconds { get; set; } = 8.0;
@@ -429,6 +431,14 @@ internal static class TppaActualExposureStarShapeAnalyzer {
             if (values.Count == all.Length
                     && values.Distinct(StringComparer.OrdinalIgnoreCase).Count() != 1) {
                 issues.Add($"FITS state keyword {key} changed within the bracket");
+            }
+        }
+        foreach (var frame in all) {
+            if (!frame.Fits.TryGetString("FILTER", out var filter)
+                    || !string.Equals(filter.Trim(), policy.RequiredFilterName,
+                        StringComparison.Ordinal)) {
+                issues.Add("FITS FILTER does not exactly match the preregistered filter");
+                break;
             }
         }
         var measuredScales = new List<double>();
@@ -896,7 +906,14 @@ internal static class TppaActualExposureStarShapeAnalyzer {
         var issues = new List<string>();
         if (policy == null) { issues.Add("star-shape policy is missing"); return issues; }
         if (policy.SchemaVersion != TppaActualExposureStarShapePolicy.CurrentSchemaVersion
-                || string.IsNullOrWhiteSpace(policy.OpticalTrainId)) issues.Add("star-shape policy schema or optical-train identity is invalid");
+                || string.IsNullOrWhiteSpace(policy.OpticalTrainId)
+                || string.IsNullOrWhiteSpace(policy.RequiredFilterName)
+                || policy.RequiredFilterName.StartsWith("REPLACE-", StringComparison.Ordinal)
+                || policy.AllowedFilterNames == null
+                || !policy.AllowedFilterNames.Contains(
+                    policy.RequiredFilterName, StringComparer.Ordinal)) {
+            issues.Add("star-shape policy schema, train, or exact filter identity is invalid");
+        }
         var positive = new[] { policy.PixelScaleArcsecondsPerPixel, policy.GainElectronsPerAdu,
             policy.ApertureRadiusArcseconds, policy.BackgroundInnerRadiusArcseconds,
             policy.BackgroundOuterRadiusArcseconds, policy.BlendExclusionRadiusArcseconds,

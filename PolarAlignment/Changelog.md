@@ -1,3 +1,17 @@
+## Version 2.2.6.94
+
+- Bind the passive 900-second sequence, calibrated policy, scout evidence, and
+  delivered-star analysis to one exact non-placeholder filter identity.
+- Add a fail-closed 10-second/60-second saturation scout that projects the
+  measured 900-second background and saturation headroom while exempting only
+  bounded sparse bright sources; extended saturation remains a failure.
+- Require every scout-critical policy value to be explicit, hash and reproduce
+  both FITS inputs and the deterministic scout receipt at readiness, and reject
+  stale, separated, tampered, wrong-train, wrong-filter, wrong-gain/offset/bin,
+  or authority-expanding evidence.
+- Keep the scout authority narrow: passing establishes sensor/background
+  headroom only and never predicts guiding or star-shape success, starts a
+  sequence, authorizes movement, or claims absolute polar accuracy.
 ## Version 2.2.6.93
 
 - Reopen and hash-verify the distinct main- and guide-camera WCS sources named
@@ -596,6 +610,11 @@
 - Poll the compact Advanced API sequence JSON route during guarded runs, avoiding the image-heavy state payload that can block for minutes.
 
 # Changelog
+
+- Added a fail-closed guided-900-second readiness gate that validates the exact
+  passive NINA sequence and live runtime manifest, rejects nominal policy
+  templates, reproduces OAG geometry from immutable WCS sources, and requires a
+  fresh passing TPPA operational report before acquisition.
 
 ## 2.2.6.68
 

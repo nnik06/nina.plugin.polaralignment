@@ -67,7 +67,30 @@ bracket:
    diagnostic-only. Never reuse a receipt across optical trains or camera
    geometry changes.
 10. Replace each nominal policy pixel scale with the same-session measured WCS
-   scale and preserve the resulting policy file and SHA-256.
+    scale, replace the filter placeholder with the exact NINA/FITS filter name,
+    and preserve the resulting policy file and SHA-256. The exact filter must
+    appear in both `RequiredFilterName` and `AllowedFilterNames`; `None`,
+    `Unknown`, `--`, placeholders, aliases, and case-only approximations fail.
+11. At the unchanged field, focus, cooling, gain 100, offset 50, bin 1, and exact
+    filter, acquire one 10-second and one 60-second LIGHT scout no more than five
+    minutes apart. Run `tools/new_actual_exposure_saturation_scout.ps1` and
+    preserve the two FITS files, calibrated policy, receipt, and all SHA-256
+    values. Every scout-critical policy field must be explicit rather than
+    inherited from analyzer defaults.
+12. A `PASS` scout establishes only that the measured background, gradient,
+    pedestal consistency, and projected saturation headroom do not prohibit a
+    900-second attempt. It grants no connection, sequence-start, motion, polar-
+    alignment, guiding, or star-shape authority. A pass never predicts that a
+    900-second exposure will guide well or produce acceptable stars.
+13. Before starting the collector, run `tools/test_guided_900s_readiness.ps1`
+    with the loaded plugin directory, exact passive sequence, calibrated policy,
+    both scouts and their passing receipt, schema-v2 OAG receipt, and fresh TPPA
+    operational report. It independently checks every declared hash, reproduces
+    the scout and OAG receipts from their immutable sources, rejects `.template.`
+    policies, and requires a passing three-or-more-run TPPA set inside the
+    declared 3-arcminute ceiling. Its create-new receipt is a readiness record
+    only: it grants no connection, sequence-start, motion, or absolute-accuracy
+    authority.
 
 ## Acquisition
 
