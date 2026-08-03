@@ -53,17 +53,22 @@ namespace NINA.Plugins.PolarAlignment {
         private readonly TimeSpan operationTimeout;
         private readonly Func<string> idempotencyKeyProvider;
         private readonly Func<DateTime> utcNowProvider;
+        private readonly string covarianceAuthoritySha256;
 
         public HttpsUpasSupervisorCoarseTppaExecutor(
                 HttpClient httpClient,
                 string endpoint,
                 Func<string> tokenProvider,
+                string covarianceAuthoritySha256,
                 TimeSpan? operationTimeout = null,
                 Func<string> idempotencyKeyProvider = null,
                 Func<DateTime> utcNowProvider = null) {
             this.httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
             this.endpoint = HttpsUpasSupervisorCoarseEvidenceSource.ValidateEndpoint(endpoint);
             this.tokenProvider = tokenProvider ?? throw new ArgumentNullException(nameof(tokenProvider));
+            RequireLowerHexSha256(
+                covarianceAuthoritySha256, nameof(covarianceAuthoritySha256));
+            this.covarianceAuthoritySha256 = covarianceAuthoritySha256;
             this.operationTimeout = operationTimeout ?? TimeSpan.FromSeconds(120);
             if (this.operationTimeout <= TimeSpan.Zero) {
                 throw new ArgumentOutOfRangeException(nameof(operationTimeout));
@@ -128,6 +133,7 @@ namespace NINA.Plugins.PolarAlignment {
                     ["currentTemperatureMilliCelsius"] = ToScaledInteger(
                         currentTemperatureC, 1000.0, nameof(currentTemperatureC)),
                     ["currentLoadProfileId"] = currentLoadProfileId,
+                    ["covarianceAuthoritySha256"] = covarianceAuthoritySha256,
                     ["determinations"] = new JArray {
                         firstDetermination,
                         secondDetermination

@@ -8,6 +8,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
     public class HttpsUpasSupervisorCoarseTppaExecutorTest {
         private const string LeaseId = "20000000-0000-4000-8000-000000000002";
         private const string TransactionId = "30000000-0000-4000-8000-000000000001";
+        private static readonly string CovarianceAuthoritySha256 = new('c', 64);
         private static readonly DateTime RequestUtc =
             new(2026, 8, 3, 16, 0, 0, DateTimeKind.Utc);
 
@@ -17,7 +18,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
 
             HttpsUpasSupervisorCoarseTppaExecutor
                 .ComputeRequestBodySha256(payload)
-                .Should().Be("ec441a2c1ccc8553c773e6cd9e0a9fc09d9a0b4ccf7b4f47975d07ba71bbdf5b");
+                .Should().Be("f4d90a6d78c384ebc70348202a35933a3d48671ca6df138ff42f406d09e6a7f9");
         }
 
         [Test]
@@ -28,6 +29,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 client,
                 "https://supervisor.test/",
                 () => "token",
+                CovarianceAuthoritySha256,
                 idempotencyKeyProvider: () => "fixed-key",
                 utcNowProvider: () => RequestUtc);
 
@@ -47,7 +49,9 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 .Should().Be(8.8);
             handler.Requests[1].Uri.AbsolutePath.Should().Be("/v1/coarse/tppa-correction");
             handler.Requests[1].Body["requestBodySha256"]!.Value<string>()
-                .Should().Be("ec441a2c1ccc8553c773e6cd9e0a9fc09d9a0b4ccf7b4f47975d07ba71bbdf5b");
+                .Should().Be("f4d90a6d78c384ebc70348202a35933a3d48671ca6df138ff42f406d09e6a7f9");
+            handler.Requests[1].Body["covarianceAuthoritySha256"]!.Value<string>()
+                .Should().Be(CovarianceAuthoritySha256);
             var determinations = (JArray)handler.Requests[1].Body["determinations"]!;
             determinations[0]!["ageAtRequestMilliseconds"]!.Value<long>().Should().Be(2000);
             determinations[0]!["azimuthErrorMicrodegrees"]!.Value<long>()
@@ -67,6 +71,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 client,
                 "https://supervisor.test/",
                 () => "token",
+                CovarianceAuthoritySha256,
                 utcNowProvider: () => RequestUtc);
 
             var action = () => executor.ExecuteAsync(
@@ -106,6 +111,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
             ["idempotencyKey"] = "fixed-key",
             ["currentTemperatureMilliCelsius"] = 35000,
             ["currentLoadProfileId"] = "hae29c-ec-full-rig-v1",
+            ["covarianceAuthoritySha256"] = CovarianceAuthoritySha256,
             ["determinations"] = new JArray {
                 WireDetermination(1, 'a', 2000, 2_000_000, 1_000_000),
                 WireDetermination(2, 'b', 1000, 2_020_000, 990_000)
