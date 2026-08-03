@@ -21,6 +21,22 @@ function FullFile([string]$Path, [string]$Label) {
     return $full
 }
 
+function Read-AssemblyProvenance([string]$Path, [string]$Label) {
+    try {
+        $assemblyVersion = [Reflection.AssemblyName]::GetAssemblyName($Path).Version.ToString()
+        $versionInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo($Path)
+    } catch {
+        throw "$Label is not a readable managed assembly: $($_.Exception.Message)"
+    }
+    Require (-not [string]::IsNullOrWhiteSpace($assemblyVersion)) "$Label has no assembly version."
+    Require (-not [string]::IsNullOrWhiteSpace($versionInfo.ProductVersion)) "$Label has no informational product version."
+    return [pscustomobject]@{
+        AssemblyVersion = $assemblyVersion
+        FileVersion = [string]$versionInfo.FileVersion
+        ProductVersion = [string]$versionInfo.ProductVersion
+    }
+}
+
 $repo = [IO.Path]::GetFullPath($RepositoryRoot)
 Require ([IO.Directory]::Exists($repo)) "RepositoryRoot does not exist: $repo"
 $plugin = FullFile $PluginDllPath 'PluginDllPath'
@@ -35,6 +51,17 @@ Require ($LASTEXITCODE -eq 0 -and $head -ceq $SourceCommit.ToLowerInvariant()) `
 $trackedDirty = @(& git -C $repo status --porcelain=v1 --untracked-files=no)
 Require ($LASTEXITCODE -eq 0 -and $trackedDirty.Count -eq 0) `
     "Repository has tracked changes: $($trackedDirty -join '; ')"
+$normalizedCommit = $SourceCommit.ToLowerInvariant()
+$pluginProvenance = Read-AssemblyProvenance $plugin 'PluginDllPath'
+Require ($pluginProvenance.AssemblyVersion -ceq $PluginVersion) `
+    "Plugin assembly version does not match PluginVersion: expected $PluginVersion, found $($pluginProvenance.AssemblyVersion)"
+Require ($pluginProvenance.FileVersion -ceq $PluginVersion) `
+    "Plugin file version does not match PluginVersion: expected $PluginVersion, found $($pluginProvenance.FileVersion)"
+Require ($pluginProvenance.ProductVersion -ceq "$PluginVersion+$normalizedCommit") `
+    "Plugin informational version is not bound to SourceCommit: expected $PluginVersion+$normalizedCommit, found $($pluginProvenance.ProductVersion)"
+$coreProvenance = Read-AssemblyProvenance $core 'QualificationCoreDllPath'
+Require ($coreProvenance.ProductVersion.EndsWith("+$normalizedCommit", [StringComparison]::Ordinal)) `
+    "Qualification core informational version is not bound to SourceCommit: expected suffix +$normalizedCommit, found $($coreProvenance.ProductVersion)"
 
 $templateRoot = Join-Path $repo 'tools\field_packet_templates'
 $manifestTool = Join-Path $repo 'tools\new_tppa_runtime_manifest.ps1'

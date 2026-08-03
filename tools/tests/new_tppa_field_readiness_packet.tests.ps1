@@ -16,16 +16,32 @@ function New-TestRepository([string]$Root) {
     return $repo
 }
 
+function New-ProvenanceAssembly([string]$Root, [string]$Name, [string]$AssemblyVersion, [string]$InformationalVersion) {
+    $project = Join-Path $Root $Name
+    New-Item -ItemType Directory -Path $project -Force | Out-Null
+    $projectText = @"
+<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net8.0</TargetFramework><AssemblyName>$Name</AssemblyName><Version>$AssemblyVersion</Version><AssemblyVersion>$AssemblyVersion</AssemblyVersion><FileVersion>$AssemblyVersion</FileVersion><InformationalVersion>$InformationalVersion</InformationalVersion><IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion></PropertyGroup></Project>
+"@
+    [IO.File]::WriteAllText((Join-Path $project "$Name.csproj"), $projectText, [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText((Join-Path $project 'Fixture.cs'), "namespace TppaPacketFixture; public sealed class $($Name.Replace('.', '_')) {}", [Text.UTF8Encoding]::new($false))
+    $output = Join-Path $project 'out'
+    & dotnet build (Join-Path $project "$Name.csproj") -c Release -o $output --nologo | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Unable to build provenance fixture $Name." }
+    return Join-Path $output "$Name.dll"
+}
+function New-MatchingRuntimePair([string]$Root, [string]$Commit) {
+    [pscustomobject]@{ Plugin = New-ProvenanceAssembly $Root 'Fixture.Plugin' '2.2.6.104' "2.2.6.104+$Commit"; Core = New-ProvenanceAssembly $Root 'Fixture.Core' '1.0.0.0' "1.0.0+$Commit" }
+}
+
 Describe 'TPPA field readiness packet builder' {
     It 'atomically emits one provenance-bound packet with current qualification semantics' {
         $root = Join-Path $TestDrive 'success'
         New-Item -ItemType Directory -Path $root | Out-Null
         $repo = New-TestRepository $root
         $head = (& git -C $repo rev-parse HEAD).Trim()
-        $plugin = Join-Path $root 'plugin.dll'
-        $core = Join-Path $root 'core.dll'
-        [IO.File]::WriteAllBytes($plugin, [byte[]](1, 2, 3, 4))
-        [IO.File]::WriteAllBytes($core, [byte[]](5, 6, 7, 8))
+        $runtime = New-MatchingRuntimePair $root $head
+        $plugin = $runtime.Plugin
+        $core = $runtime.Core
         $output = Join-Path $root 'packet'
 
         $result = & $builder -RepositoryRoot $repo -PluginDllPath $plugin `
@@ -101,5 +117,23 @@ Describe 'TPPA field readiness packet builder' {
         $caught | Should Not BeNullOrEmpty
         $caught.Exception.Message | Should Match 'tracked changes'
         Test-Path -LiteralPath $output | Should Be $false
+    }
+    It 'rejects a stale plugin version before producing a packet' {
+        $root = Join-Path $TestDrive 'stale-version'; New-Item -ItemType Directory -Path $root | Out-Null
+        $repo = New-TestRepository $root; $head = (& git -C $repo rev-parse HEAD).Trim(); $runtime = New-MatchingRuntimePair $root $head; $output = Join-Path $root 'packet'; $caught = $null
+        try { & $builder -RepositoryRoot $repo -PluginDllPath $runtime.Plugin -QualificationCoreDllPath $runtime.Core -OutputDirectory $output -SourceCommit $head -PluginVersion '2.2.6.105' | Out-Null } catch { $caught = $_ }
+        $caught | Should Not BeNullOrEmpty; $caught.Exception.Message | Should Match 'assembly version does not match'; Test-Path -LiteralPath $output | Should Be $false
+    }
+    It 'rejects stale plugin provenance before producing a packet' {
+        $root = Join-Path $TestDrive 'stale-commit'; New-Item -ItemType Directory -Path $root | Out-Null
+        $repo = New-TestRepository $root; $head = (& git -C $repo rev-parse HEAD).Trim(); $plugin = New-ProvenanceAssembly $root 'Stale.Plugin' '2.2.6.104' '2.2.6.104+0000000000000000000000000000000000000000'; $core = New-ProvenanceAssembly $root 'Stale.Core' '1.0.0.0' "1.0.0+$head"; $output = Join-Path $root 'packet'; $caught = $null
+        try { & $builder -RepositoryRoot $repo -PluginDllPath $plugin -QualificationCoreDllPath $core -OutputDirectory $output -SourceCommit $head -PluginVersion '2.2.6.104' | Out-Null } catch { $caught = $_ }
+        $caught | Should Not BeNullOrEmpty; $caught.Exception.Message | Should Match 'informational version is not bound'; Test-Path -LiteralPath $output | Should Be $false
+    }
+    It 'rejects stale qualification-core provenance before producing a packet' {
+        $root = Join-Path $TestDrive 'stale-core'; New-Item -ItemType Directory -Path $root | Out-Null
+        $repo = New-TestRepository $root; $head = (& git -C $repo rev-parse HEAD).Trim(); $plugin = New-ProvenanceAssembly $root 'Current.Plugin' '2.2.6.104' "2.2.6.104+$head"; $core = New-ProvenanceAssembly $root 'Stale.Core' '1.0.0.0' '1.0.0+0000000000000000000000000000000000000000'; $output = Join-Path $root 'packet'; $caught = $null
+        try { & $builder -RepositoryRoot $repo -PluginDllPath $plugin -QualificationCoreDllPath $core -OutputDirectory $output -SourceCommit $head -PluginVersion '2.2.6.104' | Out-Null } catch { $caught = $_ }
+        $caught | Should Not BeNullOrEmpty; $caught.Exception.Message | Should Match 'core informational version is not bound'; Test-Path -LiteralPath $output | Should Be $false
     }
 }
