@@ -66,7 +66,8 @@ contains:
   and reserve, also used only as a mismatch-rejecting cross-check;
 - `axes.az` and `axes.alt`, each containing:
   - signed physical position in degrees;
-  - conservative position covariance/uncertainty in degrees;
+  - conservative one-standard-deviation position uncertainty in degrees and
+    covariance entries in square degrees;
   - engagement state (`positive`, `negative`, or `unknown`);
   - witness ID, artifact SHA-256, age at response, source identity,
     source-correlation group, and sensor-calibration ID; and

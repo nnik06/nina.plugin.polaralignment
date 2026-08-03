@@ -24,10 +24,10 @@ namespace NINA.Plugins.PolarAlignment {
         public const double FineControllerHandoffMinutes = 24.0;
         public static readonly double MaximumAxisErrorForGuaranteedTotalHandoffMinutes =
             FineControllerHandoffMinutes / Math.Sqrt(2.0);
-        public const double PhysicalHardLimitDegrees = 5.4;
-        public const double MinimumReservedTravelDegrees = 1.0;
+        public const double PhysicalHardLimitDegrees = UpasCoarsePlanningSafetyPolicy.PhysicalHardLimitDegrees;
+        public const double MinimumReservedTravelDegrees = UpasCoarsePlanningSafetyPolicy.MinimumReservedTravelDegrees;
         public const double CoarseCorrectionFraction = 0.90;
-        public const string RequiredCoordinateConvention = "azEastPositive_altUpPositive";
+        public const string RequiredCoordinateConvention = UpasCoarsePlanningSafetyPolicy.RequiredCoordinateConvention;
         public const string RequiredErrorEquation =
             "tppaErrorAfter=tppaErrorBefore+response*physicalDelta";
 
