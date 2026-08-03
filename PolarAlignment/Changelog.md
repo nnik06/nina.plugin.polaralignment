@@ -1,5 +1,8 @@
 ## Version 2.2.6.97
 
+- Expand the non-actuating preregistered evidence denominator to the full
+  0--300' objective while retaining the separately guarded 0--240' planner envelope.
+
 - Use a conservative `24'/sqrt(2)` per-axis no-move threshold so two accepted
   axes cannot silently exceed the `24'` total-vector fine-controller handoff.
 - Report conservative lower and upper post-move residual bounds from response

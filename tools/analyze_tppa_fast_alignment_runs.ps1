@@ -7,9 +7,9 @@ param(
     [string]$ExpectedCampaignManifestSha256 = '',
     [string]$OutputPath = '',
     [ValidateRange(1, 100)]
-    [int]$MinimumEligibleRuns = 10,
+    [int]$MinimumEligibleRuns = 20,
     [ValidateRange(1, 100)]
-    [int]$RequiredPassingRuns = 8,
+    [int]$RequiredPassingRuns = 16,
     [ValidateRange(0.01, 1.0)]
     [double]$RequiredPassRate = 0.8,
     [ValidateRange(1, 30)]
@@ -23,7 +23,7 @@ param(
     [ValidateRange(0.0, 300.0)]
     [double]$MinimumInitialTotalMinutes = 0.0,
     [ValidateRange(0.1, 300.0)]
-    [double]$MaximumInitialTotalMinutes = 240.0,
+    [double]$MaximumInitialTotalMinutes = 300.0,
     [ValidateRange(0, 2)]
     [int]$MinimumMoveCount = 1,
     [ValidateRange(1, 2)]

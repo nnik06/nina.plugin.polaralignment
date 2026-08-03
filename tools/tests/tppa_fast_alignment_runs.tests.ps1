@@ -23,16 +23,16 @@ function New-FastRunLog(
     $lines = [Collections.Generic.List[string]]::new()
     $stratifiedTotals = [Collections.Generic.List[double]]::new()
     if ($UseObjectiveStrata) {
-        $bounds = @(0.0, 30.0, 60.0, 120.0, 180.0, 240.0)
-        $counts = [int[]]::new(5)
-        $minimum = [Math]::Floor($RunCount / 5)
+        $bounds = @(0.0, 30.0, 60.0, 120.0, 180.0, 240.0, 300.0)
+        $counts = [int[]]::new(6)
+        $minimum = [Math]::Floor($RunCount / 6)
         if ($minimum -lt 1) { throw 'Stratified synthetic logs require at least six runs.' }
-        for ($stratum = 0; $stratum -lt 5; $stratum++) { $counts[$stratum] = $minimum }
-        $remainderOrder = @(0, 4, 1, 3, 2)
-        for ($extra = 0; $extra -lt ($RunCount - 5 * $minimum); $extra++) {
+        for ($stratum = 0; $stratum -lt 6; $stratum++) { $counts[$stratum] = $minimum }
+        $remainderOrder = @(0, 5, 1, 4, 2, 3)
+        for ($extra = 0; $extra -lt ($RunCount - 6 * $minimum); $extra++) {
             $counts[$remainderOrder[$extra]]++
         }
-        for ($stratum = 0; $stratum -lt 5; $stratum++) {
+        for ($stratum = 0; $stratum -lt 6; $stratum++) {
             $midpoint = ($bounds[$stratum] + $bounds[$stratum + 1]) / 2.0
             for ($sample = 0; $sample -lt $counts[$stratum]; $sample++) { $stratifiedTotals.Add($midpoint) }
         }
@@ -152,8 +152,8 @@ Describe 'TPPA fast alignment evidence analyzer contract' {
         $result = & $scriptPath -LogPath $log -CampaignManifestPath $manifest `
             -ExpectedCampaignManifestSha256 $sealed.Sha256
 
-        $result.MinimumEligibleRuns | Should Be 10
-        $result.RequiredPassingRuns | Should Be 8
+        $result.MinimumEligibleRuns | Should Be 20
+        $result.RequiredPassingRuns | Should Be 16
         $result.RequiredPassRate | Should Be 0.8
         $result.EligibleRunCount | Should Be 20
         $result.PassingRunCount | Should Be 18
@@ -163,7 +163,7 @@ Describe 'TPPA fast alignment evidence analyzer contract' {
         $result.FastAlignmentEvidenceQualified | Should Be $true
         $result.CampaignPopulationComplete | Should Be $true
         $result.CampaignStrataComplete | Should Be $true
-        $result.CampaignStrata.Count | Should Be 5
+        $result.CampaignStrata.Count | Should Be 6
         $result.PopulationAttemptCount | Should Be 20
         $result.PopulationPassRate | Should Be 0.9
         $result.PopulationPassRateWilson95Lower | Should BeGreaterThan 0.69

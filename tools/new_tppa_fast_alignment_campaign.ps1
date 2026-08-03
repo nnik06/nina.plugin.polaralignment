@@ -7,10 +7,10 @@ param(
     [string]$OpticalTrainId,
     [Parameter(Mandatory)][string[]]$LogPath,
     [Parameter(Mandatory)][string]$OutputPath,
-    [ValidateRange(1, 100)][int]$ExpectedAttemptCount = 10,
+    [ValidateRange(1, 100)][int]$ExpectedAttemptCount = 20,
     [ValidateRange(0.01, 1.0)][double]$RequiredPassRate = 0.8,
-    [ValidateRange(1, 100)][int]$MinimumSuccessfulAttempts = 8,
-    [ValidateRange(1, 100)][int]$MinimumEligibleRuns = 10,
+    [ValidateRange(1, 100)][int]$MinimumSuccessfulAttempts = 16,
+    [ValidateRange(1, 100)][int]$MinimumEligibleRuns = 20,
     [ValidateRange(1, 30)][int]$MinimumNights = 3,
     [ValidateRange(1.0, 1800.0)][double]$MaximumRuntimeSeconds = 300.0,
     [ValidateRange(0.0, 120.0)][double]$MinimumSettleSeconds = 30.0,
@@ -46,8 +46,8 @@ if ([IO.File]::Exists($output)) { throw "Refusing to overwrite campaign manifest
 $directory = [IO.Path]::GetDirectoryName($output)
 if (-not [string]::IsNullOrWhiteSpace($directory)) { [void][IO.Directory]::CreateDirectory($directory) }
 $minimumInitialTotalMinutes = 0.0
-$maximumInitialTotalMinutes = 240.0
-$stratumBounds = @(0.0, 30.0, 60.0, 120.0, 180.0, 240.0)
+$maximumInitialTotalMinutes = 300.0
+$stratumBounds = @(0.0, 30.0, 60.0, 120.0, 180.0, 240.0, 300.0)
 $stratumCounts = [int[]]::new($stratumBounds.Count - 1)
 $minimumPerStratum = [Math]::Floor($ExpectedAttemptCount / $stratumCounts.Count)
 if ($minimumPerStratum -lt 1) {
@@ -56,7 +56,7 @@ if ($minimumPerStratum -lt 1) {
 for ($index = 0; $index -lt $stratumCounts.Count; $index++) {
     $stratumCounts[$index] = $minimumPerStratum
 }
-$remainderOrder = @(0, 4, 1, 3, 2)
+$remainderOrder = @(0, 5, 1, 4, 2, 3)
 $remainder = $ExpectedAttemptCount - ($minimumPerStratum * $stratumCounts.Count)
 for ($index = 0; $index -lt $remainder; $index++) {
     $stratumCounts[$remainderOrder[$index]]++
