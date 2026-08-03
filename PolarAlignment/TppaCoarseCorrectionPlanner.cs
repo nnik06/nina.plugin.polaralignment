@@ -7,6 +7,8 @@ namespace NINA.Plugins.PolarAlignment {
         double RequestedDeltaDegrees,
         double RequestUncertaintyDegrees,
         double ProjectedResidualMinutes,
+        double ProjectedResidualLowerMinutes,
+        double ProjectedResidualUpperMinutes,
         string Reason);
 
     internal sealed record TppaAxisResponseCalibration(
@@ -57,7 +59,7 @@ namespace NINA.Plugins.PolarAlignment {
                 return Denied("witnessed UPAS position does not preserve the required one-degree travel reserve");
             }
             if (magnitudeMinutes <= FineControllerHandoffMinutes) {
-                return new(true, false, 0.0, 0.0, magnitudeMinutes,
+                return new(true, false, 0.0, 0.0, magnitudeMinutes, magnitudeMinutes, magnitudeMinutes,
                     $"axis error is already inside the {FineControllerHandoffMinutes:F0}' fine-controller envelope");
             }
 
@@ -75,14 +77,27 @@ namespace NINA.Plugins.PolarAlignment {
                     $"planned endpoint plus uncertainty is {guardedExtent:F3} degrees from zero and would consume the required one-degree reserve");
             }
 
-            var projectedResidual = Math.Abs(
-                errorDegrees + requestedDelta * calibration.ErrorDeltaDegreesPerPhysicalDegree) * 60.0;
+            var nominalSignedResidualDegrees =
+                errorDegrees + requestedDelta * calibration.ErrorDeltaDegreesPerPhysicalDegree;
+            var responseResidualUncertaintyDegrees =
+                Math.Abs(requestedDelta * calibration.ErrorDeltaDegreesPerPhysicalDegree)
+                * calibration.ResponseRelativeUncertainty;
+            var commandResidualUncertaintyDegrees =
+                calibration.FixedCommandUncertaintyDegrees
+                * calibration.ErrorDeltaDegreesPerPhysicalDegree
+                * (1.0 + calibration.ResponseRelativeUncertainty);
+            var residualRadiusMinutes =
+                (responseResidualUncertaintyDegrees + commandResidualUncertaintyDegrees) * 60.0;
+            var projectedResidual = Math.Abs(nominalSignedResidualDegrees) * 60.0;
+            var projectedResidualLower = Math.Max(0.0, projectedResidual - residualRadiusMinutes);
+            var projectedResidualUpper = projectedResidual + residualRadiusMinutes;
             return new(true, true, requestedDelta, requestUncertainty, projectedResidual,
+                projectedResidualLower, projectedResidualUpper,
                 $"bounded coarse correction uses signed calibration {calibration.CalibrationId:D} and preserves witnessed headroom; supervisor verification is still required");
         }
 
         private static TppaCoarseCorrectionDecision Denied(string reason) =>
-            new(false, false, 0.0, 0.0, double.NaN, reason);
+            new(false, false, 0.0, 0.0, double.NaN, double.NaN, double.NaN, reason);
 
         private static void RequireFinite(double value, string name) {
             if (!double.IsFinite(value)) {

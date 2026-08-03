@@ -1,5 +1,8 @@
 ## Version 2.2.6.97
 
+- Report conservative lower and upper post-move residual bounds from response
+  and fixed-command uncertainty; the nominal residual alone does not authorize
+  a fine-controller handoff.
 - Version the newly complete fast-alignment preregistration policy as campaign
   manifest schema v2; legacy v1 manifests cannot qualify the sealed-policy verdict.
 - Add a create-once, externally hash-anchored fast-alignment campaign manifest

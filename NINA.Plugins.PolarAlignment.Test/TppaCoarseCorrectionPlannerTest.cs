@@ -18,6 +18,8 @@ namespace NINA.Plugins.PolarAlignment.Test {
             result.RequiresMove.Should().BeTrue();
             result.RequestedDeltaDegrees.Should().BeApproximately(expectedDelta, 1e-9);
             result.ProjectedResidualMinutes.Should().BeApproximately(Math.Abs(errorMinutes) * 0.1, 1e-9);
+            result.ProjectedResidualLowerMinutes.Should().BeLessThanOrEqualTo(result.ProjectedResidualMinutes);
+            result.ProjectedResidualUpperMinutes.Should().BeGreaterThanOrEqualTo(result.ProjectedResidualMinutes);
         }
 
         [Test]
@@ -42,6 +44,19 @@ namespace NINA.Plugins.PolarAlignment.Test {
 
             result.IsAuthorized.Should().BeTrue();
             result.RequiresMove.Should().BeFalse();
+            result.ProjectedResidualLowerMinutes.Should().Be(24.0);
+            result.ProjectedResidualUpperMinutes.Should().Be(24.0);
+        }
+
+        [Test]
+        public void TopStratumReportsConservativeResidualInterval() {
+            var result = Plan(240.0, witnessedPosition: 0.0);
+
+            result.ProjectedResidualMinutes.Should().BeApproximately(24.0, 1e-9);
+            result.ProjectedResidualLowerMinutes.Should().BeApproximately(11.94, 1e-9);
+            result.ProjectedResidualUpperMinutes.Should().BeApproximately(36.06, 1e-9);
+            result.ProjectedResidualUpperMinutes.Should().BeGreaterThan(
+                TppaCoarseCorrectionPlanner.FineControllerHandoffMinutes);
         }
 
         [Test]
