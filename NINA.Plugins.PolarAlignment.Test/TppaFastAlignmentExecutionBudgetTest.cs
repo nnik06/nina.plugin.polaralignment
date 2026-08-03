@@ -27,14 +27,16 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
-        public void FastContractExplicitlyPermitsOnlyOneFreshFeedbackMove() {
-            TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMoves.Should().Be(1);
+        public void FastContractCapsFreshFeedbackMovesAtTwo() {
+            TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMoves.Should().Be(2);
         }
 
         [Test]
         public void CleanInitialDeterminationUsesMinimumMoveTail() {
             var result = TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
-                TimeSpan.FromSeconds(60));
+                TimeSpan.FromSeconds(60),
+                observedFreshDeterminationSeconds: 60,
+                completedMoves: 0);
 
             result.CanStart.Should().BeTrue(result.Reason);
             result.RequiredReserveSeconds.Should().Be(165);
@@ -43,7 +45,9 @@ namespace NINA.Plugins.PolarAlignment.Test {
         [Test]
         public void ObservedNinetySecondCadencePermitsOneMoveAndBothFreshChecks() {
             var result = TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
-                TimeSpan.FromSeconds(90));
+                TimeSpan.FromSeconds(90),
+                observedFreshDeterminationSeconds: 85,
+                completedMoves: 0);
 
             result.CanStart.Should().BeTrue(result.Reason);
             result.RemainingSeconds.Should().Be(210);
@@ -53,7 +57,9 @@ namespace NINA.Plugins.PolarAlignment.Test {
         [Test]
         public void ObservedCadencePermitsMoveAtExactDynamicBoundary() {
             var result = TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
-                TimeSpan.FromSeconds(95));
+                TimeSpan.FromSeconds(95),
+                observedFreshDeterminationSeconds: 90,
+                completedMoves: 0);
 
             result.CanStart.Should().BeTrue(result.Reason);
             result.RemainingSeconds.Should().Be(205);
@@ -63,11 +69,54 @@ namespace NINA.Plugins.PolarAlignment.Test {
         [Test]
         public void RejectsMoveBeyondDynamicCadenceBoundary() {
             var result = TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
-                TimeSpan.FromSeconds(95.001));
+                TimeSpan.FromSeconds(95.001),
+                observedFreshDeterminationSeconds: 90.001,
+                completedMoves: 0);
 
             result.CanStart.Should().BeFalse();
             result.RemainingSeconds.Should().BeApproximately(204.999, 0.0001);
             result.RequiredReserveSeconds.Should().BeApproximately(205.002, 0.0001);
+        }
+
+        [Test]
+        public void SecondMoveUsesMeasuredFreshCadenceInsteadOfTotalElapsedTime() {
+            var result = TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
+                TimeSpan.FromSeconds(130),
+                observedFreshDeterminationSeconds: 70,
+                completedMoves: 1);
+
+            result.CanStart.Should().BeTrue(result.Reason);
+            result.RemainingSeconds.Should().Be(170);
+            result.RequiredReserveSeconds.Should().Be(165);
+        }
+
+        [Test]
+        public void SecondMoveIsDeniedWhenFreshCadenceCannotFundTerminalVerification() {
+            var result = TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
+                TimeSpan.FromSeconds(140),
+                observedFreshDeterminationSeconds: 80,
+                completedMoves: 1);
+
+            result.CanStart.Should().BeFalse(result.Reason);
+            result.RequiredReserveSeconds.Should().Be(185);
+        }
+
+        [Test]
+        public void ThirdMoveCannotBeEvaluated() {
+            var action = () => TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
+                TimeSpan.FromSeconds(150), 70, completedMoves: 2);
+
+            action.Should().Throw<ArgumentOutOfRangeException>();
+        }
+
+        [TestCase(0)]
+        [TestCase(double.NaN)]
+        [TestCase(double.PositiveInfinity)]
+        public void RejectsInvalidObservedCadence(double cadenceSeconds) {
+            var action = () => TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
+                TimeSpan.FromSeconds(60), cadenceSeconds, completedMoves: 0);
+
+            action.Should().Throw<ArgumentOutOfRangeException>();
         }
 
         [Test]

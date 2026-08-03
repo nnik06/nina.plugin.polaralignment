@@ -16,20 +16,22 @@ namespace NINA.Plugins.PolarAlignment {
         string Reason);
 
     internal static class TppaFastAlignmentExecutionBudget {
-        public const int MaximumFreshFeedbackMoves = 1;
+        public const int MaximumFreshFeedbackMoves = 2;
 
         public const double MaximumRuntimeSeconds = 300;
         // The clean field maximum was 72.726s for a same-arc three-point
         // determination and return solve at the qualified 30s settle setting.
         public const double FreshDeterminationReserveSeconds = 75;
+        public const double ObservedCadenceSlackSeconds = 5;
         // Initial admission remains retry-capable before any actuator movement.
         public const double FreshDeterminationRetryReserveSeconds = 125;
         public const double UpasMoveReserveSeconds = 15;
         public const double MoveAndFreshFeedbackReserveSeconds =
             UpasMoveReserveSeconds + FreshDeterminationReserveSeconds;
-        // Before any move, reserve both independent post-move feedback and the
-        // mandatory stationary confirmation. A retry may still exhaust the hard
-        // deadline, but no subsequent movement is then authorized.
+        // Every move must leave enough time for its independent fresh response
+        // and a terminal verify-only determination. The response may authorize
+        // one further bounded move, but a successful run never ends on evidence
+        // that was used to calculate another move.
         public const double MinimumCompleteMoveAndConfirmationReserveSeconds =
             MoveAndFreshFeedbackReserveSeconds + FreshDeterminationReserveSeconds;
         public const double ContinuousSolveReserveSeconds = 20;
@@ -69,18 +71,27 @@ namespace NINA.Plugins.PolarAlignment {
 
         public static TppaFastAlignmentBudgetDecision EvaluateBeforeMove(
                 TimeSpan elapsed,
+                double observedFreshDeterminationSeconds,
+                int completedMoves,
                 double maximumRuntimeSeconds = MaximumRuntimeSeconds) {
             if (elapsed < TimeSpan.Zero) {
                 throw new ArgumentOutOfRangeException(nameof(elapsed));
             }
+            if (completedMoves < 0 || completedMoves >= MaximumFreshFeedbackMoves) {
+                throw new ArgumentOutOfRangeException(nameof(completedMoves));
+            }
+            if (!double.IsFinite(observedFreshDeterminationSeconds)
+                    || observedFreshDeterminationSeconds <= 0) {
+                throw new ArgumentOutOfRangeException(nameof(observedFreshDeterminationSeconds));
+            }
 
-            // Total pre-move runtime is a deliberately conservative proxy for
-            // the cadence of each future fresh determination. It catches slow
-            // solve/settle nights before physical motion instead of assuming
-            // every post-move determination will match the 75s clean minimum.
+            // Before the first move, total runtime is a conservative proxy for
+            // the initial fresh cadence. Later moves use the measured duration
+            // of the immediately preceding post-move fresh determination so
+            // setup time is not counted again as solve cadence.
             var observedCadenceSeconds = Math.Max(
                 FreshDeterminationReserveSeconds,
-                elapsed.TotalSeconds);
+                observedFreshDeterminationSeconds + ObservedCadenceSlackSeconds);
             var requiredReserveSeconds = UpasMoveReserveSeconds
                 + 2 * observedCadenceSeconds;
             return Evaluate(

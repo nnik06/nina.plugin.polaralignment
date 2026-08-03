@@ -1003,6 +1003,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     var sw = Stopwatch.StartNew();
                     var completionGuard = new AutomatedAlignmentCompletionGuard();
                     var freshFeedbackMoveCount = 0;
+                    var maximumObservedFreshDeterminationSeconds = alignmentRuntime.Elapsed.TotalSeconds;
                     TppaPolarErrorVector? qualifiedFinalVector = null;
                     const int MaximumExtendedFreshFeedbackMoves = 18;
                     do {
@@ -1223,7 +1224,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                 if (TPAPAVM.AutomatedAdjustmentRequiresFreshMeasurementFeedback
                                         && enforceFastRuntimeBudget
                                         && freshFeedbackMoveCount >= TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMoves) {
-                                    throw new InvalidOperationException("UPAS five-minute automated alignment is one-shot and stopped after its fresh-measured move did not converge. No second UPAS movement was authorized.");
+                                    throw new InvalidOperationException($"UPAS five-minute automated alignment stopped after {TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMoves} fresh-measured moves without converging. No further UPAS movement was authorized.");
                                 }
                                 if (TPAPAVM.AutomatedAdjustmentRequiresFreshMeasurementFeedback
                                         && !enforceFastRuntimeBudget
@@ -1235,13 +1236,15 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                         && executionPolicy.AllowActuatorMovement
                                         && TPAPAVM.ActiveAlignmentSystemVM?.DoAutomatedAdjustments == true) {
                                     var moveDecision = TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
-                                        alignmentRuntime.Elapsed);
+                                        alignmentRuntime.Elapsed,
+                                        maximumObservedFreshDeterminationSeconds,
+                                        freshFeedbackMoveCount);
                                     Logger.Info(
-                                        $"TPPA_FAST_RUNTIME_BUDGET operation=one-shot UPAS move, independent fresh response, and stationary confirmation; " +
+                                        $"TPPA_FAST_RUNTIME_BUDGET operation=bounded UPAS move {freshFeedbackMoveCount + 1}, independent fresh response, and terminal verify-only determination; " +
                                         $"elapsedSeconds={moveDecision.ElapsedSeconds:F1}; remainingSeconds={moveDecision.RemainingSeconds:F1}; " +
                                         $"requiredReserveSeconds={moveDecision.RequiredReserveSeconds:F1}; allowed={moveDecision.CanStart}.");
                                     if (!moveDecision.CanStart) {
-                                        throw new SequenceEntityFailedException($"Automated polar alignment cannot complete the one-shot UPAS move and both required fresh determinations inside the five-minute runtime contract: {moveDecision.Reason}. No UPAS movement was authorized.");
+                                        throw new SequenceEntityFailedException($"Automated polar alignment cannot complete bounded UPAS move {freshFeedbackMoveCount + 1}, its fresh response, and a terminal verify-only determination inside the five-minute runtime contract: {moveDecision.Reason}. No UPAS movement was authorized.");
                                     }
                                 }
                                 var preMoveFreshVector = TppaPolarErrorVector.FromMinutes(
@@ -1255,11 +1258,16 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                     Logger.Info("UPAS move completed. Measuring an independent fresh three-point response before allowing another automated move.");
                                     progress?.Report(new ApplicationStatus() { Status = "Measuring fresh three-point UPAS response" });
 
+                                    var freshDeterminationStopwatch = Stopwatch.StartNew();
                                     var feedbackDetermination = await MeasureFreshThreePointCompletionVerification(TPAPAVM,
                                                                                                                     automatedVerificationStartPointing,
                                                                                                                     automatedVerificationEastDirection,
                                                                                                                     progress,
                                                                                                                     localCTS.Token);
+                                    freshDeterminationStopwatch.Stop();
+                                    maximumObservedFreshDeterminationSeconds = Math.Max(
+                                        maximumObservedFreshDeterminationSeconds,
+                                        freshDeterminationStopwatch.Elapsed.TotalSeconds);
                                     TPAPAVM.PolarErrorDetermination = feedbackDetermination;
                                     BindFreshGeometryQualification(
                                         TPAPAVM,
@@ -1294,6 +1302,12 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                     var responseDisposition = TppaPostMoveResponsePolicy.DispositionForMode(
                                         responseDecision,
                                         enforceFastRuntimeBudget);
+
+                                    if (enforceFastRuntimeBudget
+                                            && responseDecision.CouldAuthorizeAnotherMove
+                                            && freshFeedbackMoveCount >= TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMoves) {
+                                        throw new SequenceEntityFailedException($"The maximum {TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMoves} bounded UPAS moves produced meaningful improvement but remained above tolerance. The run stopped on fresh evidence without authorizing another move.");
+                                    }
 
                                     if (responseDisposition.UpdateController) {
                                         TPAPAVM.UpdateAutomatedAdjustmentFromFreshDetermination();

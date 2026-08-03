@@ -134,9 +134,9 @@ namespace NINA.Plugins.PolarAlignment {
                     ContinueToStationaryConfirmation: true,
                     FailureMessage: null),
                 TppaPostMoveResponseClassification.Improved => new(
-                    UpdateController: false,
+                    UpdateController: true,
                     ContinueToStationaryConfirmation: false,
-                    FailureMessage: "The one permitted UPAS move produced meaningful fresh TPPA improvement but remains above tolerance. A second move cannot fit the currently qualified 30-second-settle five-minute budget, so the run stopped without additional motion."),
+                    FailureMessage: null),
                 TppaPostMoveResponseClassification.Inconclusive => new(
                     UpdateController: false,
                     ContinueToStationaryConfirmation: false,

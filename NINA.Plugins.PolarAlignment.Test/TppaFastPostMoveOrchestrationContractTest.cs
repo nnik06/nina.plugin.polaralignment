@@ -26,6 +26,20 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public void FastModeBudgetsEveryMoveForFreshResponseAndTerminalVerification() {
+            var source = File.ReadAllText(Path.Combine(RepositoryRoot(), "PolarAlignment", "Instructions", "PolarAlignment.cs"));
+
+            source.Should().Contain("maximumObservedFreshDeterminationSeconds,");
+            source.Should().Contain("freshFeedbackMoveCount);");
+            source.Should().Contain("terminal verify-only determination");
+            source.Should().Contain("responseDecision.CouldAuthorizeAnotherMove");
+            source.Should().Contain("freshFeedbackMoveCount >= TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMoves");
+            source.Should().Contain("The run stopped on fresh evidence without authorizing another move.");
+            source.Should().Contain("maximumObservedFreshDeterminationSeconds = Math.Max(");
+            source.Should().Contain("freshDeterminationStopwatch.Elapsed.TotalSeconds");
+        }
+
+        [Test]
         public void FastModeRequiresLifecycleEvidenceBeforeQualificationOrMovement() {
             var source = File.ReadAllText(Path.Combine(RepositoryRoot(), "PolarAlignment", "Instructions", "PolarAlignment.cs"));
 

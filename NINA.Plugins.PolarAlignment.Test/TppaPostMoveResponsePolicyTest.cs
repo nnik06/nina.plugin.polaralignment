@@ -104,10 +104,9 @@ namespace NINA.Plugins.PolarAlignment.Test {
             Evaluate(after, before).Classification.Should().Be(TppaPostMoveResponseClassification.Regressed);
         }
 
-        [TestCase((int)TppaPostMoveResponseClassification.Improved)]
         [TestCase((int)TppaPostMoveResponseClassification.Inconclusive)]
         [TestCase((int)TppaPostMoveResponseClassification.Regressed)]
-        public void FastModeStopsNonConvergedResponsesWithoutUpdatingController(int classificationValue) {
+        public void FastModeStopsUnqualifiedResponsesWithoutUpdatingController(int classificationValue) {
             var classification = (TppaPostMoveResponseClassification)classificationValue;
             var disposition = TppaPostMoveResponsePolicy.DispositionForMode(
                 Decision(classification),
@@ -116,6 +115,17 @@ namespace NINA.Plugins.PolarAlignment.Test {
             disposition.UpdateController.Should().BeFalse();
             disposition.ContinueToStationaryConfirmation.Should().BeFalse();
             disposition.FailureMessage.Should().NotBeNullOrWhiteSpace();
+        }
+
+        [Test]
+        public void FastModeMeaningfulImprovementUpdatesControllerForBudgetedSecondMove() {
+            var disposition = TppaPostMoveResponsePolicy.DispositionForMode(
+                Decision(TppaPostMoveResponseClassification.Improved),
+                enforceFastRuntimeBudget: true);
+
+            disposition.UpdateController.Should().BeTrue();
+            disposition.ContinueToStationaryConfirmation.Should().BeFalse();
+            disposition.FailureMessage.Should().BeNull();
         }
 
         [Test]
