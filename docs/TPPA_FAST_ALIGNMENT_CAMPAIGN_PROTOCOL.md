@@ -3,12 +3,30 @@
 This protocol qualifies an operational alignment result, not traceable absolute
 polar-axis accuracy.
 
-1. Before sealing a campaign, commission one cadence-authority artifact from at
-   least 20 transitions over at least two nights. It must show zero false-stable
-   exits and no more than 0.5 arcminute vector separation from the 30-second
-   reference. The authority is valid only for its exact plugin DLL, hardware
-   configuration, mechanical epoch, load profile, temperature range, settle,
-   and measured worst-case fresh-determination duration.
+1. Before sealing a campaign, commission one schema-2 cadence authority through
+   four mandatory, report-only arms using the exact runtime manifest, plugin
+   DLL, hardware configuration, mechanical epoch, load profile, and temperature
+   range:
+   - A: at least 20 cadence-nomination transitions over at least two nights,
+     with zero false-stable exits.
+   - B: at least 20 candidate-versus-30-second-reference vector pairs over at
+     least two nights, with direction-order coverage, maximum separation no
+     greater than 0.5 arcminute, and no single-night dominance above 70 percent.
+   - C: at least 10 same-cadence null pairs over at least two nights. This arm is
+     mandatory: null p95 must be positive and no greater than 0.25 arcminute,
+     while candidate p95 must be no greater than 1.5 times null p95.
+   - D: at least 59 successful no-motion determinations over at least two nights
+     and both slew directions using the exact
+     fresh-three-point-plus-return-field path, true-pole refraction, no cadence
+     authority, and the unconditional 30-second settle. The observed maximum
+     plus a five-second reserve must not exceed 75 seconds. The 59-observation
+     sample maximum covers the population p95 with greater than 95 percent
+     confidence under the preregistered independent-sample model.
+   Produce timing receipts only with
+   new_tppa_fresh_determination_timing_receipts.ps1; each receipt remains bound
+   to its exact NINA log file, line, runtime manifest, and installed DLL.
+   Analyze all four arms without exclusions, then invoke
+   new_tppa_cadence_authority.ps1 once. No arm report grants UPAS movement.
 2. Create one schema-5 manifest with `new_tppa_fast_alignment_campaign.ps1`
    before the first attempt. Bind the exact repository HEAD, plugin DLL SHA-256,
    covariance authority, cadence authority, qualified settle and fresh duration,

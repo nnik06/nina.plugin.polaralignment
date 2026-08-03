@@ -14,6 +14,8 @@ namespace NINA.Plugins.PolarAlignment {
         DateTime ValidUntilUtc,
         string RepositoryHead,
         string PluginAssemblySha256,
+        string RuntimeManifestSha256,
+        string CommissioningPolicySha256,
         string HardwareConfigurationId,
         string MechanicalStateSha256,
         string LoadProfileId,
@@ -23,26 +25,56 @@ namespace NINA.Plugins.PolarAlignment {
         double MaximumFreshDeterminationSeconds,
         string SourceNominationSha256,
         string SourceVectorPairCampaignSha256,
+        string SourceNullPairCampaignSha256,
+        string SourceTimingCampaignSha256,
         int SourceTransitionCount,
+        int SourceNullPairCount,
+        int SourceTimingDeterminationCount,
         int SourceNightCount,
         double MaximumVectorSeparationMinutes,
+        double NullP95SeparationMinutes,
+        double CandidateP95SeparationMinutes,
+        double CandidateToNullP95Ratio,
+        double TimingObservedMaximumSeconds,
+        double TimingUpperToleranceSeconds,
+        int TimingExcludedSampleCount,
+        bool DirectionOrderCoveragePassed,
+        bool NoSingleNightDominance,
         bool ZeroFalseStableExits);
 
     internal static class TppaCommissionedCadenceAuthorityParser {
         private static readonly string[] ExactProperties = {
             "schemaVersion", "authorityId", "commissionedUtc", "validUntilUtc",
-            "repositoryHead", "pluginAssemblySha256", "hardwareConfigurationId",
+            "repositoryHead", "pluginAssemblySha256", "runtimeManifestSha256",
+            "commissioningPolicySha256", "hardwareConfigurationId",
             "mechanicalStateId", "loadProfileId", "temperatureC",
             "qualifiedSettleSeconds", "maximumFreshDeterminationSeconds",
             "sourceNominationSha256", "sourceVectorPairCampaignSha256",
-            "sourceTransitionCount", "sourceNightCount",
-            "maximumVectorSeparationMinutes", "zeroFalseStableExits"
+            "sourceNullPairCampaignSha256", "sourceTimingCampaignSha256",
+            "sourceTransitionCount", "sourceNullPairCount",
+            "sourceTimingDeterminationCount", "sourceNightCount",
+            "maximumVectorSeparationMinutes", "nullP95SeparationMinutes",
+            "candidateP95SeparationMinutes", "candidateToNullP95Ratio",
+            "timingObservedMaximumSeconds", "timingUpperToleranceSeconds",
+            "timingExcludedSampleCount", "directionOrderCoveragePassed",
+            "noSingleNightDominance", "zeroFalseStableExits"
         };
+
+        internal const string CommissioningPolicy =
+            "tppa-cadence-v2|transitions>=20|nullPairs>=10|timings>=59|nights>=2|" +
+            "maxVector<=0.5|nullP95<=0.25|candidateToNullP95<=1.5|" +
+            "timingMax+5<=timingUpperTolerance<=75|excluded=0|" +
+            "directionOrderCoverage=true|nightDominance<=0.70|falseStableExits=0";
+
+        internal static string CommissioningPolicySha256 =>
+            Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(CommissioningPolicy)))
+                .ToLowerInvariant();
 
         public static TppaCommissionedCadenceAuthority Parse(
                 byte[] exactArtifactBytes,
                 DateTime nowUtc,
                 string loadedPluginAssemblySha256,
+                string currentRuntimeManifestSha256,
                 string currentHardwareConfigurationId,
                 string currentMechanicalStateId,
                 string currentLoadProfileId,
@@ -52,6 +84,7 @@ namespace NINA.Plugins.PolarAlignment {
             }
             RequireUtc(nowUtc, nameof(nowUtc));
             RequireLowerHex(loadedPluginAssemblySha256, 64, nameof(loadedPluginAssemblySha256));
+            RequireLowerHex(currentRuntimeManifestSha256, 64, nameof(currentRuntimeManifestSha256));
             RequireLowerHex(currentHardwareConfigurationId, 64, nameof(currentHardwareConfigurationId));
             RequireLowerHex(currentMechanicalStateId, 64, nameof(currentMechanicalStateId));
             RequireText(currentLoadProfileId, nameof(currentLoadProfileId));
@@ -74,7 +107,7 @@ namespace NINA.Plugins.PolarAlignment {
             }
 
             RequireExactProperties(root, ExactProperties);
-            if (RequireInteger(root, "schemaVersion") != 1) {
+            if (RequireInteger(root, "schemaVersion") != 2) {
                 throw new JsonException("Unsupported cadence authority schema.");
             }
             var authorityIdText = RequireText(root, "authorityId");
@@ -92,6 +125,14 @@ namespace NINA.Plugins.PolarAlignment {
             var pluginSha = RequireLowerHex(root, "pluginAssemblySha256", 64);
             if (pluginSha != loadedPluginAssemblySha256) {
                 throw new JsonException("Cadence authority plugin assembly does not match the loaded DLL.");
+            }
+            var runtimeManifestSha = RequireLowerHex(root, "runtimeManifestSha256", 64);
+            if (runtimeManifestSha != currentRuntimeManifestSha256) {
+                throw new JsonException("Cadence authority runtime manifest does not match the installed package.");
+            }
+            var policySha = RequireLowerHex(root, "commissioningPolicySha256", 64);
+            if (policySha != CommissioningPolicySha256) {
+                throw new JsonException("Cadence authority commissioning policy does not match this plugin build.");
             }
             var hardware = RequireLowerHex(root, "hardwareConfigurationId", 64);
             if (hardware != currentHardwareConfigurationId) {
@@ -128,23 +169,50 @@ namespace NINA.Plugins.PolarAlignment {
             }
             var nomination = RequireLowerHex(root, "sourceNominationSha256", 64);
             var vectorPairs = RequireLowerHex(root, "sourceVectorPairCampaignSha256", 64);
+            var nullPairs = RequireLowerHex(root, "sourceNullPairCampaignSha256", 64);
+            var timing = RequireLowerHex(root, "sourceTimingCampaignSha256", 64);
             var transitions = checked((int)RequireInteger(root, "sourceTransitionCount"));
+            var nullPairCount = checked((int)RequireInteger(root, "sourceNullPairCount"));
+            var timingCount = checked((int)RequireInteger(root, "sourceTimingDeterminationCount"));
             var nights = checked((int)RequireInteger(root, "sourceNightCount"));
             var maximumSeparation = RequireFinite(root, "maximumVectorSeparationMinutes");
-            if (transitions < 20 || nights < 2 || maximumSeparation < 0.0 || maximumSeparation > 0.5) {
+            var nullP95 = RequireFinite(root, "nullP95SeparationMinutes");
+            var candidateP95 = RequireFinite(root, "candidateP95SeparationMinutes");
+            var candidateToNullP95 = RequireFinite(root, "candidateToNullP95Ratio");
+            var timingMaximum = RequireFinite(root, "timingObservedMaximumSeconds");
+            var timingUpperTolerance = RequireFinite(root, "timingUpperToleranceSeconds");
+            var timingExcluded = checked((int)RequireInteger(root, "timingExcludedSampleCount"));
+            if (transitions < 20 || nullPairCount < 10 || timingCount < 59 || nights < 2
+                    || maximumSeparation < 0.0 || maximumSeparation > 0.5
+                    || nullP95 <= 0.0 || nullP95 > 0.25
+                    || candidateP95 < 0.0 || candidateP95 > 0.5
+                    || candidateToNullP95 < 0.0 || candidateToNullP95 > 1.5
+                    || timingMaximum <= settle || timingMaximum > freshDuration
+                    || timingUpperTolerance < timingMaximum + TppaFastAlignmentExecutionBudget.ObservedCadenceSlackSeconds
+                    || timingUpperTolerance > freshDuration
+                    || timingExcluded != 0) {
                 throw new JsonException("Cadence authority source campaign does not meet the commissioned evidence floor.");
             }
-            if (root["zeroFalseStableExits"]?.Type != JTokenType.Boolean
-                    || !root["zeroFalseStableExits"]!.Value<bool>()) {
+            if (!RequireTrue(root, "directionOrderCoveragePassed")
+                    || !RequireTrue(root, "noSingleNightDominance")) {
+                throw new JsonException("Cadence authority source coverage is incomplete.");
+            }
+            if (!RequireTrue(root, "zeroFalseStableExits")) {
                 throw new JsonException("Cadence authority must attest zero false-stable exits.");
             }
 
             return new(
                 Convert.ToHexString(SHA256.HashData(exactArtifactBytes)).ToLowerInvariant(),
-                authorityId, commissioned, validUntil, repositoryHead, pluginSha, hardware,
-                mechanical, loadProfile, minimumTemperature, maximumTemperature, settle,
-                freshDuration, nomination, vectorPairs, transitions, nights, maximumSeparation, true);
+                authorityId, commissioned, validUntil, repositoryHead, pluginSha,
+                runtimeManifestSha, policySha, hardware, mechanical, loadProfile,
+                minimumTemperature, maximumTemperature, settle, freshDuration, nomination,
+                vectorPairs, nullPairs, timing, transitions, nullPairCount, timingCount,
+                nights, maximumSeparation, nullP95, candidateP95, candidateToNullP95,
+                timingMaximum, timingUpperTolerance, timingExcluded, true, true, true);
         }
+
+        private static bool RequireTrue(JObject value, string name) =>
+            value[name]?.Type == JTokenType.Boolean && value[name]!.Value<bool>();
 
         private static void RequireExactProperties(JObject value, params string[] expected) {
             var actual = value.Properties().Select(item => item.Name).OrderBy(item => item, StringComparer.Ordinal);

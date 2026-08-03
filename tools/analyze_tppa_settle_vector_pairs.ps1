@@ -1,4 +1,4 @@
-﻿#requires -Version 7.5
+#requires -Version 7.5
 param(
     [Parameter(Mandatory = $true)]
     [string[]]$PairManifestPath,
@@ -23,7 +23,9 @@ param(
     [ValidateRange(0.001, 1.0)]
     [double]$SettleToleranceSeconds = 0.01,
     [ValidateRange(1.0, 60.0)]
-    [double]$MaximumInterRunGapMinutes = 15.0
+    [double]$MaximumInterRunGapMinutes = 15.0,
+    [ValidateRange(0.5, 1.0)]
+    [double]$MaximumNightFraction = 0.70
 )
 
 Set-StrictMode -Version 2.0
@@ -338,6 +340,25 @@ foreach ($night in $nights) {
     if ($count -lt $MinimumPairsPerDubaiNight) { $campaignIssues.Add("Only $count pairs on Dubai night $night; $MinimumPairsPerDubaiNight required") }
 }
 
+function Get-ObservedDistribution([object[]]$Values) {
+    $sorted = @($Values | Sort-Object)
+    if ($sorted.Count -eq 0) { return [pscustomobject]@{ Maximum=$null; Median=$null; P95=$null } }
+    $middle = [int][Math]::Floor($sorted.Count / 2)
+    $median = if ($sorted.Count % 2 -eq 0) { ([double]$sorted[$middle - 1] + [double]$sorted[$middle]) / 2.0 } else { [double]$sorted[$middle] }
+    $p95Index = [Math]::Min($sorted.Count - 1, [Math]::Ceiling(0.95 * $sorted.Count) - 1)
+    return [pscustomobject]@{ Maximum=[double]$sorted[-1]; Median=$median; P95=[double]$sorted[$p95Index] }
+}
+$worstSeparations = @($validPairs | ForEach-Object {
+    [Math]::Max([double]$_.MaximumLegVectorSeparationMinutes, [double]$_.MidpointVectorSeparationMinutes)
+})
+$separationDistribution = Get-ObservedDistribution $worstSeparations
+$maximumObservedNightFraction = if ($validPairs.Count -gt 0) {
+    [double](($nights | ForEach-Object { @($validPairs | Where-Object DubaiNight -eq $_).Count } | Measure-Object -Maximum).Maximum) / $validPairs.Count
+} else { $null }
+if ($null -ne $maximumObservedNightFraction -and $maximumObservedNightFraction -gt $MaximumNightFraction) {
+    $campaignIssues.Add("One Dubai night supplies $($maximumObservedNightFraction.ToString('P1')) of vector pairs; maximum is $($MaximumNightFraction.ToString('P1'))")
+}
+
 $pairedCandidateQualified = $campaignIssues.Count -eq 0
 [pscustomobject][ordered]@{
     SchemaVersion = 2
@@ -349,7 +370,12 @@ $pairedCandidateQualified = $campaignIssues.Count -eq 0
     CandidateSettleSeconds = if ($candidateSettles.Count -eq 1) { $candidateSettles[0] } else { $null }
     ReferenceSettleSeconds = $ReferenceSettleSeconds
     MaximumInterRunGapMinutes = $MaximumInterRunGapMinutes
+    MaximumNightFraction = $MaximumNightFraction
+    MaximumObservedNightFraction = $maximumObservedNightFraction
     MaximumVectorSeparationMinutes = $MaximumVectorSeparationMinutes
+    ObservedMaximumPairSeparationMinutes = $separationDistribution.Maximum
+    ObservedMedianPairSeparationMinutes = $separationDistribution.Median
+    ObservedP95PairSeparationMinutes = $separationDistribution.P95
     MinimumPairs = $MinimumPairs
     MinimumDubaiNights = $MinimumDubaiNights
     MinimumPairsPerDirection = $MinimumPairsPerDirection

@@ -1655,6 +1655,16 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 var assemblyDirectory = Path.GetDirectoryName(assemblyEvidence.Location)
                     ?? throw new InvalidOperationException(
                         "Loaded TPPA assembly has no parent directory.");
+                var runtimeManifestPath = Path.Combine(
+                    assemblyDirectory,
+                    "TPPA.runtime-manifest.json");
+                if (!File.Exists(runtimeManifestPath)) {
+                    throw new FileNotFoundException(
+                        "Installed TPPA runtime manifest was not found.",
+                        runtimeManifestPath);
+                }
+                var runtimeManifestSha256 =
+                    TppaQualificationRunEvidenceProducer.Sha256File(runtimeManifestPath);
                 var configuredPath = Environment.GetEnvironmentVariable(
                     "TPPA_CADENCE_AUTHORITY_PATH");
                 var artifactPath = string.IsNullOrWhiteSpace(configuredPath)
@@ -1675,6 +1685,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     File.ReadAllBytes(artifactPath),
                     DateTime.UtcNow,
                     assemblyEvidence.Sha256,
+                    runtimeManifestSha256,
                     covarianceAuthority.HardwareConfigurationId,
                     covarianceAuthority.MechanicalStateSha256,
                     covarianceAuthority.LoadProfileId,
@@ -3068,6 +3079,8 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                                                                                   IProgress<ApplicationStatus> progress,
                                                                                                   CancellationToken token,
                                                                                                   Action<TppaFreshDeterminationCapture> capture = null) {
+            var timingReceiptId = Guid.NewGuid();
+            var timingStartedUtc = DateTime.UtcNow;
             var completionVerificationStopwatch = Stopwatch.StartNew();
             var threePointMilliseconds = double.NaN;
             var correctionPointing = telescopeMediator.GetCurrentPosition();
@@ -3168,7 +3181,16 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                 returnPosition.Vector.Z));
                         Logger.Info(threeSolveShadowEvidence.ToLogString());
                         Logger.Info(
-                            $"TPPA_COMPLETION_VERIFICATION_TIMING schemaVersion=1; phase=return-field; " +
+                            $"TPPA_COMPLETION_VERIFICATION_TIMING schemaVersion=2; phase=return-field; " +
+                            $"receiptId={timingReceiptId:D}; " +
+                            $"startedUtc={timingStartedUtc:O}; completedUtc={DateTime.UtcNow:O}; " +
+                            $"slewDirection={(eastDirection ? "IncreasingRA" : "DecreasingRA")}; " +
+                            $"effectiveSettleSeconds={TppaVerificationSettlePolicy.Resolve(profileService.ActiveProfile.TelescopeSettings.SettleTime, VerificationPointSettleTimeSeconds):F3}; " +
+                            $"timingPath=fresh-three-point-plus-return-field; " +
+                            $"measurementOnly={VerificationOnly.ToString().ToLowerInvariant()}; " +
+                            $"refractionAdjustmentEnabled={Properties.Settings.Default.RefractionAdjustment.ToString().ToLowerInvariant()}; " +
+                            $"cadenceAuthorityConsumed={(activeTppaCadenceAuthority != null).ToString().ToLowerInvariant()}; " +
+                            $"upasMovementCount={(VerificationOnly ? 0 : -1)}; " +
                             $"threePointMilliseconds={threePointMilliseconds:F1}; " +
                             $"returnFieldMilliseconds={returnFieldStopwatch.Elapsed.TotalMilliseconds:F1}; " +
                             $"totalMilliseconds={completionVerificationStopwatch.Elapsed.TotalMilliseconds:F1}");

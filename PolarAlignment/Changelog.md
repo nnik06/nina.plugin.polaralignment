@@ -1,3 +1,17 @@
+## Version 2.2.6.103
+
+- Require schema-2 cadence authority to bind the exact runtime manifest, policy,
+  mandatory candidate and null campaigns, and an independent timing campaign.
+- Qualify candidate cadence only against both a 0.5-arcminute absolute ceiling
+  and a 1.5-times same-cadence null p95 ceiling, with direction-order and
+  cross-night balance gates.
+- Require at least 59 no-motion, true-pole, 30-second-fallback observations of
+  the exact fresh-three-point-plus-return-field path; reserve the observed
+  maximum plus five seconds and deny authority above 75 seconds.
+- Emit self-describing schema-2 runtime timing events and produce receipts only
+  from hash-bound NINA log lines and the exact installed runtime manifest.
+- Keep every commissioning arm report-only; only the create-once minter can
+  produce an exact-build cadence authority.
 ## Version 2.2.6.102
 
 - Extend guarded automated-correction admission to the full 0--300 arcminute
