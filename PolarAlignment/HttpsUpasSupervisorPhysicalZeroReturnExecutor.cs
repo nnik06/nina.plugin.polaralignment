@@ -46,6 +46,7 @@ namespace NINA.Plugins.PolarAlignment {
                 double currentTemperatureC,
                 double requiredTravelDegrees,
                 string currentLoadProfileId,
+                string preregisteredCampaignId,
                 CancellationToken token) {
             RequireLowerHexSha256(preEvidenceId, nameof(preEvidenceId));
             if (!double.IsFinite(currentTemperatureC)
@@ -58,6 +59,13 @@ namespace NINA.Plugins.PolarAlignment {
             if (string.IsNullOrWhiteSpace(currentLoadProfileId)) {
                 throw new ArgumentException("Current load profile is required.",
                     nameof(currentLoadProfileId));
+            }
+            if (!Guid.TryParseExact(preregisteredCampaignId, "D", out var campaignId)
+                    || campaignId == Guid.Empty
+                    || preregisteredCampaignId != campaignId.ToString("D")) {
+                throw new ArgumentException(
+                    "Preregistered campaign ID must be a canonical lowercase UUID.",
+                    nameof(preregisteredCampaignId));
             }
             var bearerToken = tokenProvider();
             if (string.IsNullOrWhiteSpace(bearerToken)) {
@@ -82,6 +90,7 @@ namespace NINA.Plugins.PolarAlignment {
                     ["leaseId"] = leaseId,
                     ["idempotencyKey"] = idempotencyKey,
                     ["preEvidenceId"] = preEvidenceId,
+                    ["preregisteredCampaignId"] = preregisteredCampaignId,
                     ["currentTemperatureMilliCelsius"] = temperatureMilliCelsius,
                     ["currentLoadProfileId"] = currentLoadProfileId,
                     ["zeroReferenceId"] = ZeroReferenceId

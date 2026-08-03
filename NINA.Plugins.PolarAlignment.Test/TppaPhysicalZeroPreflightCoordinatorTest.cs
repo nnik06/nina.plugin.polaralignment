@@ -2,6 +2,9 @@ using FluentAssertions;
 
 namespace NINA.Plugins.PolarAlignment.Test {
     public class TppaPhysicalZeroPreflightCoordinatorTest {
+        private static readonly Guid CampaignId =
+            Guid.Parse("50000000-0000-4000-8000-000000000001");
+
         [Test]
         public async Task AlreadyZeroDoesNotRequestMotion() {
             var evidence = new QueueEvidenceSource(
@@ -10,13 +13,14 @@ namespace NINA.Plugins.PolarAlignment.Test {
             var executor = new RecordingReturnExecutor();
 
             var result = await new TppaPhysicalZeroPreflightCoordinator(evidence, executor)
-                .RunAsync(null, 35.0, "hae29c-ec-full-rig-v1", CancellationToken.None);
+                .RunAsync(null, 35.0, "hae29c-ec-full-rig-v1", CampaignId,
+                    CancellationToken.None);
 
             result.ReturnWasRequired.Should().BeFalse();
             result.Admission.IsEligible.Should().BeTrue();
             executor.Calls.Should().Be(1);
             evidence.Calls.Should().Be(2);
-            result.CampaignId.Should().Be("campaign-1");
+            result.CampaignId.Should().Be(CampaignId.ToString("D"));
         }
 
         [Test]
@@ -27,7 +31,8 @@ namespace NINA.Plugins.PolarAlignment.Test {
             var executor = new RecordingReturnExecutor();
 
             var result = await new TppaPhysicalZeroPreflightCoordinator(evidence, executor)
-                .RunAsync(null, 35.0, "hae29c-ec-full-rig-v1", CancellationToken.None);
+                .RunAsync(null, 35.0, "hae29c-ec-full-rig-v1", CampaignId,
+                    CancellationToken.None);
 
             result.ReturnWasRequired.Should().BeTrue();
             result.TransactionId.Should().Be("zero-transaction");
@@ -44,13 +49,30 @@ namespace NINA.Plugins.PolarAlignment.Test {
             var executor = new RecordingReturnExecutor(completed: false);
 
             var action = () => new TppaPhysicalZeroPreflightCoordinator(evidence, executor)
-                .RunAsync(null, 35.0, "hae29c-ec-full-rig-v1", CancellationToken.None);
+                .RunAsync(null, 35.0, "hae29c-ec-full-rig-v1", CampaignId,
+                    CancellationToken.None);
 
             await action.Should().ThrowAsync<InvalidOperationException>()
                 .WithMessage("*did not complete*");
             evidence.Calls.Should().Be(1);
         }
 
+        [Test]
+        public async Task RejectsMismatchedCampaignIdentity() {
+            var evidence = new QueueEvidenceSource(
+                Parse(0.0, 0.0, "b"),
+                Parse(0.0, 0.0, "c"));
+            var executor = new RecordingReturnExecutor(
+                returnedCampaignId: "60000000-0000-4000-8000-000000000001");
+
+            var action = () => new TppaPhysicalZeroPreflightCoordinator(evidence, executor)
+                .RunAsync(null, 35.0, "hae29c-ec-full-rig-v1", CampaignId,
+                    CancellationToken.None);
+
+            await action.Should().ThrowAsync<InvalidOperationException>()
+                .WithMessage("*did not preserve*campaign identity*");
+            evidence.Calls.Should().Be(1);
+        }
         [Test]
         public async Task RejectsReusedEvidenceIdentity() {
             var evidence = new QueueEvidenceSource(
@@ -59,7 +81,8 @@ namespace NINA.Plugins.PolarAlignment.Test {
 
             var action = () => new TppaPhysicalZeroPreflightCoordinator(
                     evidence, new RecordingReturnExecutor())
-                .RunAsync(null, 35.0, "hae29c-ec-full-rig-v1", CancellationToken.None);
+                .RunAsync(null, 35.0, "hae29c-ec-full-rig-v1", CampaignId,
+                    CancellationToken.None);
 
             await action.Should().ThrowAsync<InvalidOperationException>()
                 .WithMessage("*reused*evidence identity*");
@@ -73,7 +96,8 @@ namespace NINA.Plugins.PolarAlignment.Test {
 
             var action = () => new TppaPhysicalZeroPreflightCoordinator(
                     evidence, new RecordingReturnExecutor())
-                .RunAsync(null, 35.0, "hae29c-ec-full-rig-v1", CancellationToken.None);
+                .RunAsync(null, 35.0, "hae29c-ec-full-rig-v1", CampaignId,
+                    CancellationToken.None);
 
             await action.Should().ThrowAsync<InvalidOperationException>()
                 .WithMessage("*still rejects TPPA admission*");
@@ -115,14 +139,19 @@ namespace NINA.Plugins.PolarAlignment.Test {
 
         private sealed class RecordingReturnExecutor : IUpasSupervisorPhysicalZeroReturnExecutor {
             private readonly bool completed;
-            public RecordingReturnExecutor(bool completed = true) => this.completed = completed;
+            private readonly string? returnedCampaignId;
+            public RecordingReturnExecutor(bool completed = true,
+                    string? returnedCampaignId = null) {
+                this.completed = completed;
+                this.returnedCampaignId = returnedCampaignId;
+            }
             public double RequiredTravelDegrees { get; private set; }
             public int Calls { get; private set; }
             public string PreEvidenceId { get; private set; } = string.Empty;
             public Task<UpasSupervisorPhysicalZeroReturnResult> ReturnAsync(
                     string preEvidenceId, double currentTemperatureC,
                     double requiredTravelDegrees, string currentLoadProfileId,
-                    CancellationToken token) {
+                    string preregisteredCampaignId, CancellationToken token) {
                 Calls++;
                 RequiredTravelDegrees = requiredTravelDegrees;
                 PreEvidenceId = preEvidenceId;
@@ -130,7 +159,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
                     completed,
                     completed ? "zero-transaction" : null,
                     completed ? "completed" : "denied",
-                    completed ? "campaign-1" : null,
+                    completed ? returnedCampaignId ?? preregisteredCampaignId : null,
                     completed ? 300_000_000_000 : 0));
             }
         }

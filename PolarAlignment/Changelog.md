@@ -1,3 +1,11 @@
+## Version 2.2.6.107
+
+- Bind the witnessed UPAS physical-zero transaction to the sealed preregistered
+  TPPA campaign ID and reject missing or malformed campaign identity before any
+  return-to-zero motion.
+- Admit that same campaign only after fresh post-return scale evidence confirms
+  both physical axes near zero; the five-minute runtime begins afterward.
+
 ## Version 2.2.6.106
 
 - Add the missing per-load-profile coarse-response and travel prerequisite to

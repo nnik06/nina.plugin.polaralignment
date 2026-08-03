@@ -9,6 +9,7 @@ namespace NINA.Plugins.PolarAlignment {
             double currentTemperatureC,
             double requiredTravelDegrees,
             string currentLoadProfileId,
+            string preregisteredCampaignId,
             CancellationToken token);
     }
 
@@ -43,7 +44,13 @@ namespace NINA.Plugins.PolarAlignment {
                 Guid? expectedCallerLeaseId,
                 double currentTemperatureC,
                 string currentLoadProfileId,
+                Guid preregisteredCampaignId,
                 CancellationToken token) {
+            if (preregisteredCampaignId == Guid.Empty) {
+                throw new ArgumentException(
+                    "A sealed preregistered campaign ID is required.",
+                    nameof(preregisteredCampaignId));
+            }
             var before = await evidenceSource.GetAsync(
                 expectedCallerLeaseId,
                 currentTemperatureC,
@@ -61,6 +68,7 @@ namespace NINA.Plugins.PolarAlignment {
                 currentTemperatureC,
                 requiredTravelDegrees,
                 currentLoadProfileId,
+                preregisteredCampaignId.ToString("D"),
                 token).ConfigureAwait(false);
             if (returned == null || !returned.IsCompleted
                     || string.IsNullOrWhiteSpace(returned.TransactionId)
@@ -69,6 +77,13 @@ namespace NINA.Plugins.PolarAlignment {
                 throw new InvalidOperationException(
                     "UPAS supervisor did not complete a witnessed physical-zero return: "
                     + (returned?.Reason ?? "no transaction result"));
+            }
+            if (!string.Equals(returned.CampaignId,
+                    preregisteredCampaignId.ToString("D"),
+                    StringComparison.Ordinal)) {
+                throw new InvalidOperationException(
+                    "UPAS supervisor physical-zero response did not preserve the sealed "
+                    + "preregistered campaign identity.");
             }
 
             var after = await evidenceSource.GetAsync(

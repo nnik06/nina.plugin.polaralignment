@@ -569,7 +569,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 if (!Guid.TryParseExact(physicalZero.CampaignId, "D", out activeTppaCampaignId)
                         || activeTppaCampaignId == Guid.Empty) {
                     throw new SequenceEntityFailedException(
-                        "Supervisor physical-zero admission did not mint a valid TPPA campaign.");
+                        "Supervisor physical-zero admission did not admit the sealed TPPA campaign.");
                 }
                 coarseSolveEvidence = new ConditionalWeakTable<PlateSolveResult, TppaCapturedSolveEvidence>();
                 captureCoarseSolveEvidence = true;
@@ -1725,6 +1725,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     expectedCallerLeaseId: null,
                     currentTemperatureC: temperature,
                     currentLoadProfileId: Properties.Settings.Default.UpasSupervisorLoadProfileId,
+                    preregisteredCampaignId: activePreregisteredCampaignId,
                     token).ConfigureAwait(false);
             } catch (Exception ex) when (ex is not OperationCanceledException) {
                 throw new SequenceEntityFailedException(

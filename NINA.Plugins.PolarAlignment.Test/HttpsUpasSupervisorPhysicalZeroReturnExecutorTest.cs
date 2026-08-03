@@ -17,6 +17,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 ["leaseId"] = LeaseId,
                 ["idempotencyKey"] = "fixed-key",
                 ["preEvidenceId"] = new string('b', 64),
+                ["preregisteredCampaignId"] = "50000000-0000-4000-8000-000000000001",
                 ["currentTemperatureMilliCelsius"] = 35000,
                 ["currentLoadProfileId"] = "hae29c-ec-full-rig-v1",
                 ["zeroReferenceId"] = "upas-physical-zero-v1"
@@ -24,7 +25,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
 
             HttpsUpasSupervisorPhysicalZeroReturnExecutor
                 .ComputeRequestBodySha256(payload)
-                .Should().Be("3f76066ab4fa85cfbc6e491ee250a9e6676deb61e4bb643136860a5bf90af625");
+                .Should().Be("849ae63fb977916d45351d7cc486c79269f536f5be973b7fbecffe3a9f716f77");
         }
 
         [Test]
@@ -42,6 +43,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 35.0,
                 8.8,
                 "hae29c-ec-full-rig-v1",
+                "50000000-0000-4000-8000-000000000001",
                 CancellationToken.None);
 
             result.IsCompleted.Should().BeTrue();
@@ -56,8 +58,10 @@ namespace NINA.Plugins.PolarAlignment.Test {
             handler.Requests[1].Uri.AbsolutePath.Should().Be("/v1/coarse/physical-zero");
             handler.Requests[1].Body["currentTemperatureMilliCelsius"]!.Value<int>()
                 .Should().Be(35000);
+            handler.Requests[1].Body["preregisteredCampaignId"]!.Value<string>()
+                .Should().Be("50000000-0000-4000-8000-000000000001");
             handler.Requests[1].Body["requestBodySha256"]!.Value<string>()
-                .Should().Be("3f76066ab4fa85cfbc6e491ee250a9e6676deb61e4bb643136860a5bf90af625");
+                .Should().Be("849ae63fb977916d45351d7cc486c79269f536f5be973b7fbecffe3a9f716f77");
             handler.Requests[2].Method.Should().Be(HttpMethod.Delete);
             handler.Requests[2].Uri.AbsolutePath.Should().Be("/v1/leases/" + LeaseId);
             handler.Requests.Should().OnlyContain(
@@ -76,7 +80,9 @@ namespace NINA.Plugins.PolarAlignment.Test {
 
             var action = () => executor.ReturnAsync(
                 new string('b', 64), 35.0, 0.5,
-                "hae29c-ec-full-rig-v1", CancellationToken.None);
+                "hae29c-ec-full-rig-v1",
+                "50000000-0000-4000-8000-000000000001",
+                CancellationToken.None);
 
             await action.Should().ThrowAsync<InvalidOperationException>()
                 .WithMessage("*not a valid completed transaction*");

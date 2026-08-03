@@ -40,13 +40,18 @@ polar-axis accuracy.
 4. Publish the manifest SHA-256 in the append-only field ledger and pass it to
    the analyzer as `-ExpectedCampaignManifestSha256`.
 5. Every attempt begins with a fresh supervisor observation of the physical
-   UPAS scales. If both conservative signed bounds lie within +/-0.1 degree,
-   the supervisor mints a fresh zero witness without movement. Otherwise it
-   performs one bounded physical-zero transaction and must re-witness both axes
-   inside +/-0.1 degree. Missing, ambiguous, stale, or reused evidence denies
-   TPPA start. Controller MPos is never accepted as physical zero.
-6. The five-minute clock starts only after physical-zero admission. Runtime
-   settle must exactly match the commissioned cadence, and the runtime reserves
+   UPAS scales. The physical-zero request carries the sealed preregistered
+   campaign ID and its authenticated body digest covers that ID. If both
+   conservative signed bounds lie within +/-0.1 degree, the supervisor records
+   a fresh zero witness without movement. Otherwise it performs one bounded
+   physical-zero transaction and must re-witness both axes inside +/-0.1
+   degree. Missing, ambiguous, stale, reused, single-authority, or campaign-
+   mismatched evidence denies TPPA start. Controller MPos is never accepted as
+   physical zero.
+6. A successful physical-zero response admits that same sealed campaign and
+   opens its 300-second runtime window; it does not mint or substitute a new
+   campaign identity. The five-minute clock starts only after that admission.
+   Runtime settle must exactly match the commissioned cadence, and the runtime reserves
    the authority's measured worst-case fresh-determination duration before each
    move and final confirmation. Without a current matching cadence authority,
    the actuator-capable fast path does not start; ordinary non-fast operation
