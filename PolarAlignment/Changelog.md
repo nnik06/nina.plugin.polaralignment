@@ -1,3 +1,27 @@
+## Version 2.2.6.97
+
+- Version the newly complete fast-alignment preregistration policy as campaign
+  manifest schema v2; legacy v1 manifests cannot qualify the sealed-policy verdict.
+- Add a create-once, externally hash-anchored fast-alignment campaign manifest
+  with a fixed time window, exact log set, expected attempt denominator, and
+  every verdict parameter sealed before the first attempt.
+- Add `PreregisteredCampaignPassRateMet` as an honestly scoped single-campaign
+  point estimate. It counts admission rejections, crashes, cancellations, and
+  missing telemetry as denominator failures; it does not claim confidence-
+  bounded population reliability or absolute polar accuracy.
+- Reject missing or mismatched manifest hashes, backdated windows, omitted
+  preregistered logs, attempt-count mismatches, and post-seal policy changes.
+- Report a Wilson 95 percent interval beside the sealed campaign point estimate
+  so small campaign denominators cannot be mistaken for population reliability.
+- Seal the full 0--240 arcminute objective envelope, reserving the final degree of physical travel independently of the
+  controller's present 0--24 arcminute motion qualification; in-envelope
+  admission rejections remain failed attempts and never widen motion authority.
+- Require contiguous preregistered starting-error strata across the envelope,
+  exact per-stratum attempt counts, and at least one success in every stratum.
+- Add a non-actuating coarse-correction planner for the 24--240 arcminute
+  transition. It converts calibrated TPPA response into signed physical-degree
+  intents and denies plans that violate the +/-5.4 degree software limit, the
+  one-degree reserve, or witnessed/calibration uncertainty.
 ## Version 2.2.6.96
 
 - Add a run-scoped fast-alignment admission latch at both actuator connection

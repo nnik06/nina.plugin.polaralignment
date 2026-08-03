@@ -2,6 +2,9 @@
 param(
     [Parameter(Mandatory = $true)]
     [string[]]$LogPath,
+    [string]$CampaignManifestPath = '',
+    [ValidatePattern('^$|^[0-9A-Fa-f]{64}$')]
+    [string]$ExpectedCampaignManifestSha256 = '',
     [string]$OutputPath = '',
     [ValidateRange(1, 100)]
     [int]$MinimumEligibleRuns = 10,
@@ -17,10 +20,10 @@ param(
     [double]$MinimumSettleSeconds = 30.0,
     [ValidateRange(0.1, 60.0)]
     [double]$MaximumToleranceMinutes = 3.0,
-    [ValidateRange(0.0, 180.0)]
+    [ValidateRange(0.0, 300.0)]
     [double]$MinimumInitialTotalMinutes = 0.0,
-    [ValidateRange(0.1, 180.0)]
-    [double]$MaximumInitialTotalMinutes = 24.0,
+    [ValidateRange(0.1, 300.0)]
+    [double]$MaximumInitialTotalMinutes = 240.0,
     [ValidateRange(0, 2)]
     [int]$MinimumMoveCount = 1,
     [ValidateRange(1, 2)]
@@ -91,6 +94,21 @@ function Get-PropertyValue([object]$Record, [string]$Name) {
     return $property.Value
 }
 
+function Get-WilsonInterval95([int]$Successes, [int]$Trials) {
+    if ($Trials -le 0 -or $Successes -lt 0 -or $Successes -gt $Trials) {
+        return $null
+    }
+    $z = 1.959963984540054
+    $p = $Successes / [double]$Trials
+    $z2 = $z * $z
+    $denominator = 1.0 + $z2 / $Trials
+    $center = ($p + $z2 / (2.0 * $Trials)) / $denominator
+    $halfWidth = $z * [Math]::Sqrt(($p * (1.0 - $p) / $Trials) + ($z2 / (4.0 * $Trials * $Trials))) / $denominator
+    return [pscustomobject]@{
+        Lower = [Math]::Max(0.0, $center - $halfWidth)
+        Upper = [Math]::Min(1.0, $center + $halfWidth)
+    }
+}
 function ConvertTo-ObservedUtc([object]$Value) {
     if ($Value -isnot [string] -or
         [string]::IsNullOrWhiteSpace([string]$Value) -or
@@ -132,7 +150,146 @@ foreach ($requestedPath in $LogPath) {
 }
 if ($records.Count -eq 0) { throw 'No TPPA_FAST_RUN_EVENT records were found.' }
 
-$runGroups = $records | Group-Object { [string](Get-PropertyValue $_.Payload 'runId') }
+$resolvedLogPaths = @($LogPath | ForEach-Object { (Resolve-Path -LiteralPath $_).Path })
+$campaignManifest = $null
+$campaignManifestSha256 = $null
+$campaignIssues = [Collections.Generic.List[string]]::new()
+$campaignExpectedAttemptCount = $null
+$campaignId = $null
+$declaredOpticalTrainId = $null
+$campaignCreatedUtc = $null
+$campaignStartUtc = $null
+$campaignEndUtc = $null
+$campaignStrata = @()
+if (-not [string]::IsNullOrWhiteSpace($CampaignManifestPath)) {
+    try {
+        $manifestPath = (Resolve-Path -LiteralPath $CampaignManifestPath).Path
+        $campaignManifestSha256 = (Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ([string]::IsNullOrWhiteSpace($ExpectedCampaignManifestSha256)) {
+            throw 'ExpectedCampaignManifestSha256 is required for a preregistered campaign'
+        }
+        if ($campaignManifestSha256 -ne $ExpectedCampaignManifestSha256.ToLowerInvariant()) {
+            throw "campaign manifest SHA-256 mismatch; expected $ExpectedCampaignManifestSha256; actual $campaignManifestSha256"
+        }
+        $campaignManifest = [IO.File]::ReadAllText($manifestPath) | ConvertFrom-Json -DateKind String
+        $allowedManifestFields = @(
+            'SchemaVersion', 'CampaignId', 'CreatedUtc', 'CampaignStartUtc',
+            'CampaignEndUtc', 'OpticalTrainId', 'ExpectedAttemptCount',
+            'LogPaths', 'RequiredPassRate', 'MinimumSuccessfulAttempts',
+            'MinimumEligibleRuns', 'MinimumNights', 'MaximumRuntimeSeconds',
+            'MinimumSettleSeconds', 'MaximumToleranceMinutes',
+            'MinimumMoveCount', 'MaximumMoveCount', 'MinimumInitialTotalMinutes',
+            'MaximumInitialTotalMinutes', 'InitialTotalStrata')
+        $actualManifestFields = @($campaignManifest.PSObject.Properties.Name)
+        $unexpected = @($actualManifestFields | Where-Object { $_ -notin $allowedManifestFields })
+        $missing = @($allowedManifestFields | Where-Object { $_ -notin $actualManifestFields })
+        if ($unexpected.Count -gt 0 -or $missing.Count -gt 0) {
+            throw "campaign manifest fields are not exact; missing=$($missing -join ','); unexpected=$($unexpected -join ',')"
+        }
+        if ((ConvertTo-StrictInt (Get-PropertyValue $campaignManifest 'SchemaVersion') 'campaign.SchemaVersion') -ne 2) {
+            throw 'campaign manifest SchemaVersion is not 2; legacy manifests cannot qualify the sealed-policy campaign verdict'
+        }
+        $campaignId = [string](Get-PropertyValue $campaignManifest 'CampaignId')
+        $declaredOpticalTrainId = [string](Get-PropertyValue $campaignManifest 'OpticalTrainId')
+        if ([string]::IsNullOrWhiteSpace($campaignId) -or [string]::IsNullOrWhiteSpace($declaredOpticalTrainId)) {
+            throw 'campaign identity or declared optical train is blank'
+        }
+        $campaignCreatedUtc = ConvertTo-ObservedUtc (Get-PropertyValue $campaignManifest 'CreatedUtc')
+        $campaignStartUtc = ConvertTo-ObservedUtc (Get-PropertyValue $campaignManifest 'CampaignStartUtc')
+        $campaignEndUtc = ConvertTo-ObservedUtc (Get-PropertyValue $campaignManifest 'CampaignEndUtc')
+        if ($campaignStartUtc -lt $campaignCreatedUtc -or $campaignEndUtc -le $campaignStartUtc -or
+                ($campaignEndUtc - $campaignStartUtc).TotalDays -gt 7.0) {
+            throw 'campaign time window must begin at or after creation, end later, and span at most seven days'
+        }
+        $campaignExpectedAttemptCount = ConvertTo-StrictInt (Get-PropertyValue $campaignManifest 'ExpectedAttemptCount') 'campaign.ExpectedAttemptCount'
+        if ($campaignExpectedAttemptCount -lt 1) { throw 'campaign ExpectedAttemptCount must be positive' }
+        $manifestDirectory = Split-Path -Parent $manifestPath
+        $manifestLogs = @((Get-PropertyValue $campaignManifest 'LogPaths') | ForEach-Object {
+            if ($_ -isnot [string] -or [string]::IsNullOrWhiteSpace([string]$_)) {
+                throw 'campaign LogPaths contains a blank or non-string path'
+            }
+            $candidate = if ([IO.Path]::IsPathRooted([string]$_)) { [string]$_ } else { Join-Path $manifestDirectory ([string]$_) }
+            [IO.Path]::GetFullPath($candidate)
+        })
+        if ($manifestLogs.Count -eq 0 -or @($manifestLogs | Sort-Object -Unique).Count -ne $manifestLogs.Count) {
+            throw 'campaign LogPaths is empty or contains duplicates'
+        }
+        $supplied = @($resolvedLogPaths | Sort-Object)
+        $declared = @($manifestLogs | Sort-Object)
+        if ($supplied.Count -ne $declared.Count -or @(Compare-Object $supplied $declared).Count -ne 0) {
+            throw 'supplied LogPath set does not exactly match the preregistered campaign LogPaths'
+        }
+        $policyChecks = @(
+            @('RequiredPassRate', [double]$RequiredPassRate),
+            @('MinimumSuccessfulAttempts', [double]$RequiredPassingRuns),
+            @('MinimumEligibleRuns', [double]$MinimumEligibleRuns),
+            @('MinimumNights', [double]$MinimumNights),
+            @('MaximumRuntimeSeconds', [double]$MaximumRuntimeSeconds),
+            @('MinimumSettleSeconds', [double]$MinimumSettleSeconds),
+            @('MaximumToleranceMinutes', [double]$MaximumToleranceMinutes),
+            @('MinimumMoveCount', [double]$MinimumMoveCount),
+            @('MaximumMoveCount', [double]$MaximumMoveCount),
+            @('MinimumInitialTotalMinutes', [double]$MinimumInitialTotalMinutes),
+            @('MaximumInitialTotalMinutes', [double]$MaximumInitialTotalMinutes))
+        foreach ($check in $policyChecks) {
+            $actual = ConvertTo-FiniteDouble (Get-PropertyValue $campaignManifest $check[0]) "campaign.$($check[0])"
+            if ([Math]::Abs($actual - [double]$check[1]) -gt 1e-9) {
+                throw "campaign $($check[0])=$actual does not match analyzer policy $($check[1])"
+            }
+        }
+        $rawStrata = @((Get-PropertyValue $campaignManifest 'InitialTotalStrata'))
+        if ($rawStrata.Count -eq 0) { throw 'campaign InitialTotalStrata is empty' }
+        $nextMinimum = [double]$MinimumInitialTotalMinutes
+        $stratumAttemptTotal = 0
+        foreach ($rawStratum in $rawStrata) {
+            $expectedFields = @('MinimumMinutesInclusive', 'MaximumMinutesExclusive', 'RequiredAttempts', 'MinimumSuccessfulAttempts')
+            $actualFields = @($rawStratum.PSObject.Properties.Name)
+            if ($actualFields.Count -ne $expectedFields.Count -or @(Compare-Object $actualFields $expectedFields).Count -ne 0) {
+                throw 'campaign InitialTotalStrata entry fields are not exact'
+            }
+            $minimum = ConvertTo-FiniteDouble (Get-PropertyValue $rawStratum 'MinimumMinutesInclusive') 'campaign.stratum.minimum'
+            $maximum = ConvertTo-FiniteDouble (Get-PropertyValue $rawStratum 'MaximumMinutesExclusive') 'campaign.stratum.maximum'
+            $required = ConvertTo-StrictInt (Get-PropertyValue $rawStratum 'RequiredAttempts') 'campaign.stratum.RequiredAttempts'
+            $minimumPasses = ConvertTo-StrictInt (Get-PropertyValue $rawStratum 'MinimumSuccessfulAttempts') 'campaign.stratum.MinimumSuccessfulAttempts'
+            if ([Math]::Abs($minimum - $nextMinimum) -gt 1e-9 -or $maximum -le $minimum -or
+                    $required -lt 1 -or $minimumPasses -lt 1 -or $minimumPasses -gt $required) {
+                throw 'campaign InitialTotalStrata is non-contiguous or has invalid counts'
+            }
+            $campaignStrata += [pscustomobject]@{
+                MinimumMinutesInclusive = $minimum
+                MaximumMinutesExclusive = $maximum
+                RequiredAttempts = $required
+                MinimumSuccessfulAttempts = $minimumPasses
+            }
+            $nextMinimum = $maximum
+            $stratumAttemptTotal += $required
+        }
+        if ([Math]::Abs($nextMinimum - [double]$MaximumInitialTotalMinutes) -gt 1e-9 -or
+                $stratumAttemptTotal -ne $campaignExpectedAttemptCount) {
+            throw 'campaign InitialTotalStrata does not cover the sealed envelope or denominator exactly'
+        }
+    } catch {
+        $campaignIssues.Add($_.Exception.Message)
+    }
+}
+
+$analysisRecords = @($records)
+$excludedOutOfWindowRecordCount = 0
+if ($null -ne $campaignManifest -and $campaignIssues.Count -eq 0) {
+    try {
+        $analysisRecords = @($records | Where-Object {
+            $observed = ConvertTo-ObservedUtc (Get-PropertyValue $_.Payload 'observedUtc')
+            $inside = $observed -ge $campaignStartUtc -and $observed -le $campaignEndUtc
+            if (-not $inside) { $script:excludedOutOfWindowRecordCount++ }
+            $inside
+        })
+    } catch {
+        $campaignIssues.Add("campaign time-window filtering failed: $($_.Exception.Message)")
+        $analysisRecords = @()
+    }
+}
+
+$runGroups = $analysisRecords | Group-Object { [string](Get-PropertyValue $_.Payload 'runId') }
 $runResults = [Collections.Generic.List[object]]::new()
 foreach ($group in $runGroups) {
     $issues = [Collections.Generic.List[string]]::new()
@@ -142,6 +299,8 @@ foreach ($group in $runGroups) {
 
     $previousElapsed = -1.0
     $previousObserved = [DateTimeOffset]::MinValue
+    $firstObserved = $null
+    $lastObserved = $null
     foreach ($record in $events) {
         $payload = $record.Payload
         try {
@@ -158,6 +317,8 @@ foreach ($group in $runGroups) {
             $previousElapsed = $elapsed
             $observed = ConvertTo-ObservedUtc (Get-PropertyValue $payload 'observedUtc')
             if ($observed -lt $previousObserved) { $issues.Add('observedUtc is not monotonic') }
+            if ($null -eq $firstObserved) { $firstObserved = $observed }
+            $lastObserved = $observed
             $previousObserved = $observed
         } catch {
             $issues.Add($_.Exception.Message)
@@ -332,6 +493,8 @@ foreach ($group in $runGroups) {
     $runResults.Add([pscustomobject]@{
         RunId = $runId.ToString('D')
         NightDubai = $night
+        ObservedStartUtc = $firstObserved
+        ObservedEndUtc = $lastObserved
         Eligible = $eligible
         AdmissionRejected = $admissionWasRejected
         AdmissionRejectionStage = $rejectionStage
@@ -356,6 +519,59 @@ $fastEvidenceQualified =
     $eligibleRuns.Count -ge $MinimumEligibleRuns -and
     $passingRuns.Count -ge $RequiredPassingRuns -and
     $passRate -ge $RequiredPassRate -and
+    $nightCount -ge $MinimumNights -and
+    $falseSuccesses.Count -eq 0 -and
+    $invalidEvidenceRuns.Count -eq 0
+
+$campaignPopulationComplete = $null -ne $campaignManifest -and
+    $campaignIssues.Count -eq 0 -and
+    $runResults.Count -eq $campaignExpectedAttemptCount
+if ($null -ne $campaignManifest -and $campaignIssues.Count -eq 0 -and
+        $runResults.Count -ne $campaignExpectedAttemptCount) {
+    $campaignIssues.Add("campaign expected $campaignExpectedAttemptCount attempts but telemetry contains $($runResults.Count) distinct run IDs")
+    $campaignPopulationComplete = $false
+}
+$populationAttemptCount = if ($null -eq $campaignExpectedAttemptCount) { $null } else { $campaignExpectedAttemptCount }
+$populationPassRate = if ($null -eq $populationAttemptCount -or $populationAttemptCount -eq 0) { $null } else {
+    $passingRuns.Count / [double]$populationAttemptCount
+}
+$populationWilson95 = if ($null -eq $populationAttemptCount) { $null } else {
+    Get-WilsonInterval95 $passingRuns.Count $populationAttemptCount
+}
+$requiredPopulationPasses = if ($null -eq $populationAttemptCount) { $null } else {
+    [Math]::Max($RequiredPassingRuns, [Math]::Ceiling($RequiredPassRate * $populationAttemptCount - 1e-12))
+}
+$campaignStratumResults = @()
+$campaignStrataComplete = $null -ne $campaignManifest -and $campaignIssues.Count -eq 0
+if ($campaignStrataComplete) {
+    for ($index = 0; $index -lt $campaignStrata.Count; $index++) {
+        $stratum = $campaignStrata[$index]
+        $isLast = $index -eq $campaignStrata.Count - 1
+        $members = @($runResults | Where-Object {
+            $null -ne $_.InitialTotalMinutes -and
+            $_.InitialTotalMinutes -ge $stratum.MinimumMinutesInclusive -and
+            ($_.InitialTotalMinutes -lt $stratum.MaximumMinutesExclusive -or
+                ($isLast -and $_.InitialTotalMinutes -le $stratum.MaximumMinutesExclusive))
+        })
+        $memberPasses = @($members | Where-Object Passed)
+        $met = $members.Count -eq $stratum.RequiredAttempts -and
+            $memberPasses.Count -ge $stratum.MinimumSuccessfulAttempts
+        if (-not $met) { $campaignStrataComplete = $false }
+        $campaignStratumResults += [pscustomobject]@{
+            MinimumMinutesInclusive = $stratum.MinimumMinutesInclusive
+            MaximumMinutesExclusive = $stratum.MaximumMinutesExclusive
+            RequiredAttempts = $stratum.RequiredAttempts
+            ObservedAttempts = $members.Count
+            MinimumSuccessfulAttempts = $stratum.MinimumSuccessfulAttempts
+            ObservedSuccessfulAttempts = $memberPasses.Count
+            Met = $met
+        }
+    }
+}
+$preregisteredCampaignPassRateMet = $campaignPopulationComplete -and
+    $campaignStrataComplete -and
+    $populationAttemptCount -ge $MinimumEligibleRuns -and
+    $passingRuns.Count -ge $requiredPopulationPasses -and
     $nightCount -ge $MinimumNights -and
     $falseSuccesses.Count -eq 0 -and
     $invalidEvidenceRuns.Count -eq 0
@@ -387,10 +603,27 @@ $report = [ordered]@{
     InvalidEvidenceRunCount = $invalidEvidenceRuns.Count
     PassingNightCount = $nightCount
     FastAlignmentEvidenceQualified = $fastEvidenceQualified
+    CampaignManifestProvided = $null -ne $campaignManifest
+    CampaignManifestSha256 = $campaignManifestSha256
+    CampaignId = $campaignId
+    DeclaredOpticalTrainId = $declaredOpticalTrainId
+    CampaignStartUtc = $campaignStartUtc
+    CampaignEndUtc = $campaignEndUtc
+    ExcludedOutOfWindowRecordCount = $excludedOutOfWindowRecordCount
+    CampaignPopulationComplete = $campaignPopulationComplete
+    CampaignStrataComplete = $campaignStrataComplete
+    CampaignStrata = $campaignStratumResults
+    PopulationAttemptCount = $populationAttemptCount
+    PopulationPassRate = $populationPassRate
+    PopulationPassRateWilson95Lower = if ($null -eq $populationWilson95) { $null } else { $populationWilson95.Lower }
+    PopulationPassRateWilson95Upper = if ($null -eq $populationWilson95) { $null } else { $populationWilson95.Upper }
+    RequiredPopulationPasses = $requiredPopulationPasses
+    PreregisteredCampaignPassRateMet = $preregisteredCampaignPassRateMet
+    CampaignIssues = $campaignIssues.ToArray()
     AbsoluteAccuracyQualified = $false
     DeliveredExposureQualified = $false
     OverallGoalQualified = $false
-    ScopeNote = 'This is an admitted-envelope screening result for logged run lifecycle, timing, true-pole settings and reported convergence only; 8/10 is not population reliability. It retains structured admission rejections, but attempts that never emit a fast-run event remain undetectable. It does not independently prove absolute PA accuracy, physical hard-limit clearance, delivered-image quality, or absence of selection bias.'
+    ScopeNote = 'FastAlignmentEvidenceQualified screens only supplied telemetry. PreregisteredCampaignPassRateMet is a single-train campaign point estimate over an externally hash-anchored, fixed time window and exact attempt denominator; it is not a confidence-bound population reliability claim, and attempts within one night are correlated. Admission rejections and abnormal outcomes remain denominator failures. No verdict proves absolute PA accuracy, physical hard-limit clearance, delivered-image quality, or honest publication of every sealed campaign.'
     Runs = $runResults.ToArray()
 }
 

@@ -18,16 +18,39 @@ function New-FastRunLog(
     [int]$PreMismatchRun = 0,
     [int]$RuntimeExceededRun = 0,
     [int]$FinalAboveToleranceRun = 0,
-    [int]$InitialOutsideRangeRun = 0) {
+    [int]$InitialOutsideRangeRun = 0,
+    [switch]$UseObjectiveStrata) {
     $lines = [Collections.Generic.List[string]]::new()
+    $stratifiedTotals = [Collections.Generic.List[double]]::new()
+    if ($UseObjectiveStrata) {
+        $bounds = @(0.0, 30.0, 60.0, 120.0, 180.0, 240.0)
+        $counts = [int[]]::new(5)
+        $minimum = [Math]::Floor($RunCount / 5)
+        if ($minimum -lt 1) { throw 'Stratified synthetic logs require at least six runs.' }
+        for ($stratum = 0; $stratum -lt 5; $stratum++) { $counts[$stratum] = $minimum }
+        $remainderOrder = @(0, 4, 1, 3, 2)
+        for ($extra = 0; $extra -lt ($RunCount - 5 * $minimum); $extra++) {
+            $counts[$remainderOrder[$extra]]++
+        }
+        for ($stratum = 0; $stratum -lt 5; $stratum++) {
+            $midpoint = ($bounds[$stratum] + $bounds[$stratum + 1]) / 2.0
+            for ($sample = 0; $sample -lt $counts[$stratum]; $sample++) { $stratifiedTotals.Add($midpoint) }
+        }
+    }
     for ($index = 1; $index -le $RunCount; $index++) {
         $runId = [Guid]::NewGuid().ToString('D')
         $nightOffset = [Math]::Floor(($index - 1) / 7)
         $start = [DateTimeOffset]::Parse('2026-08-03T18:00:00Z').AddDays($nightOffset).AddMinutes($index)
         $refraction = if ($index -eq $RefractionStringRun) { 'false' } else { $index -ne $RefractionOffRun }
-        $initialAzimuth = if ($index -eq $InitialOutsideRangeRun) { 64.0 } else { 19.2 }
-        $initialAltitude = if ($index -eq $InitialOutsideRangeRun) { 48.0 } else { 14.4 }
-        $initialTotal = if ($index -eq $InitialOutsideRangeRun) { 80.0 } else { 24.0 }
+        $initialTotal = if ($index -eq $InitialOutsideRangeRun) {
+            [Math]::Sqrt(2.0 * 240.0 * 240.0)
+        } elseif ($UseObjectiveStrata) {
+            $stratifiedTotals[$index - 1]
+        } else {
+            24.0
+        }
+        $initialAzimuth = if ($index -eq $InitialOutsideRangeRun) { 240.0 } else { 0.8 * $initialTotal }
+        $initialAltitude = if ($index -eq $InitialOutsideRangeRun) { 240.0 } else { 0.6 * $initialTotal }
         $events = @(
             [ordered]@{
                 schemaVersion = 1; runId = $runId; event = 'started'
@@ -99,6 +122,19 @@ function New-FastRunLog(
     $lines | Set-Content -LiteralPath $Path -Encoding utf8
 }
 
+function New-FastCampaignManifest([string]$Path, [string[]]$Logs, [int]$ExpectedAttempts = 20) {
+    $creator = Join-Path $PSScriptRoot '..\new_tppa_fast_alignment_campaign.ps1'
+    & $creator -OpticalTrainId 'WO-GT81-IV-0.8-OAG-L-ASI2600MM-gain100-bin1' `
+        -LogPath $Logs -OutputPath $Path -ExpectedAttemptCount $ExpectedAttempts `
+        -CampaignEndUtc ([DateTimeOffset]::UtcNow.AddDays(4)) | Out-Null
+    $manifest = [IO.File]::ReadAllText($Path) | ConvertFrom-Json
+    $manifest.CreatedUtc = '2026-08-03T17:00:00Z'
+    $manifest.CampaignStartUtc = '2026-08-03T17:00:00Z'
+    $manifest.CampaignEndUtc = '2026-08-07T23:00:00Z'
+    [IO.File]::WriteAllText($Path, ($manifest | ConvertTo-Json -Depth 6) + "`r`n", [Text.UTF8Encoding]::new($false))
+    return [pscustomobject]@{ Path = $Path; Sha256 = (Get-FileHash $Path -Algorithm SHA256).Hash }
+}
+
 Describe 'TPPA fast alignment evidence analyzer contract' {
     It 'pins the limited claim boundary' {
         $scriptText.Contains('FastAlignmentEvidenceQualified') | Should Be $true
@@ -109,9 +145,12 @@ Describe 'TPPA fast alignment evidence analyzer contract' {
 
     It 'qualifies eighteen of twenty eligible one-move runs across three Dubai nights' {
         $log = Join-Path $TestDrive 'qualified.log'
-        New-FastRunLog $log
+        New-FastRunLog $log -UseObjectiveStrata
 
-        $result = & $scriptPath -LogPath $log
+        $manifest = Join-Path $TestDrive 'campaign.json'
+        $sealed = New-FastCampaignManifest $manifest @($log)
+        $result = & $scriptPath -LogPath $log -CampaignManifestPath $manifest `
+            -ExpectedCampaignManifestSha256 $sealed.Sha256
 
         $result.MinimumEligibleRuns | Should Be 10
         $result.RequiredPassingRuns | Should Be 8
@@ -122,9 +161,170 @@ Describe 'TPPA fast alignment evidence analyzer contract' {
         $result.FalseSuccessCount | Should Be 0
         $result.InvalidEvidenceRunCount | Should Be 0
         $result.FastAlignmentEvidenceQualified | Should Be $true
+        $result.CampaignPopulationComplete | Should Be $true
+        $result.CampaignStrataComplete | Should Be $true
+        $result.CampaignStrata.Count | Should Be 5
+        $result.PopulationAttemptCount | Should Be 20
+        $result.PopulationPassRate | Should Be 0.9
+        $result.PopulationPassRateWilson95Lower | Should BeGreaterThan 0.69
+        $result.PopulationPassRateWilson95Lower | Should BeLessThan 0.71
+        $result.PopulationPassRateWilson95Upper | Should BeGreaterThan 0.96
+        $result.PopulationPassRateWilson95Upper | Should BeLessThan 0.98
+        $result.PreregisteredCampaignPassRateMet | Should Be $true
         $result.AbsoluteAccuracyQualified | Should Be $false
         $result.DeliveredExposureQualified | Should Be $false
         $result.OverallGoalQualified | Should Be $false
+    }
+
+    It 'rejects a complete denominator concentrated in only the easiest starting stratum' {
+        $log = Join-Path $TestDrive 'unstratified.log'
+        New-FastRunLog $log
+        $manifest = Join-Path $TestDrive 'unstratified-campaign.json'
+        $sealed = New-FastCampaignManifest $manifest @($log)
+        $result = & $scriptPath -LogPath $log -CampaignManifestPath $manifest `
+            -ExpectedCampaignManifestSha256 $sealed.Sha256
+        $result.CampaignPopulationComplete | Should Be $true
+        $result.PopulationPassRate | Should Be 0.9
+        $result.PopulationPassRateWilson95Lower | Should BeGreaterThan 0.69
+        $result.PopulationPassRateWilson95Lower | Should BeLessThan 0.71
+        $result.PopulationPassRateWilson95Upper | Should BeGreaterThan 0.96
+        $result.PopulationPassRateWilson95Upper | Should BeLessThan 0.98
+        $result.CampaignStrataComplete | Should Be $false
+        $result.PreregisteredCampaignPassRateMet | Should Be $false
+    }
+
+    It 'does not promote supplied-log screening to population reliability without preregistration' {
+        $log = Join-Path $TestDrive 'screening-only.log'
+        New-FastRunLog $log
+        $result = & $scriptPath -LogPath $log
+        $result.FastAlignmentEvidenceQualified | Should Be $true
+        $result.CampaignManifestProvided | Should Be $false
+        $result.PreregisteredCampaignPassRateMet | Should Be $false
+    }
+
+    It 'fails population reliability when one preregistered attempt has no telemetry' {
+        $log = Join-Path $TestDrive 'missing-attempt.log'
+        New-FastRunLog $log -RunCount 19 -PassingRunCount 18
+        $manifest = Join-Path $TestDrive 'missing-attempt-campaign.json'
+        $sealed = New-FastCampaignManifest $manifest @($log) 20
+        $result = & $scriptPath -LogPath $log -CampaignManifestPath $manifest `
+            -ExpectedCampaignManifestSha256 $sealed.Sha256
+        $result.CampaignPopulationComplete | Should Be $false
+        $result.PreregisteredCampaignPassRateMet | Should Be $false
+        ($result.CampaignIssues -join ' ') | Should Match 'expected 20 attempts.*19 distinct run IDs'
+    }
+
+    It 'rejects omission of a preregistered log file' {
+        $first = Join-Path $TestDrive 'first.log'
+        $second = Join-Path $TestDrive 'second.log'
+        New-FastRunLog $first -RunCount 10 -PassingRunCount 9
+        New-FastRunLog $second -RunCount 10 -PassingRunCount 9
+        $manifest = Join-Path $TestDrive 'two-log-campaign.json'
+        $sealed = New-FastCampaignManifest $manifest @($first, $second) 20
+        $result = & $scriptPath -LogPath $first -CampaignManifestPath $manifest `
+            -ExpectedCampaignManifestSha256 $sealed.Sha256
+        $result.CampaignPopulationComplete | Should Be $false
+        $result.PreregisteredCampaignPassRateMet | Should Be $false
+        ($result.CampaignIssues -join ' ') | Should Match 'does not exactly match'
+    }
+
+    It 'rejects a campaign policy changed after preregistration' {
+        $log = Join-Path $TestDrive 'policy-mismatch.log'
+        New-FastRunLog $log
+        $manifest = Join-Path $TestDrive 'policy-mismatch-campaign.json'
+        $sealed = New-FastCampaignManifest $manifest @($log)
+        $result = & $scriptPath -LogPath $log -CampaignManifestPath $manifest `
+            -ExpectedCampaignManifestSha256 $sealed.Sha256 -RequiredPassRate 0.9
+        $result.CampaignPopulationComplete | Should Be $false
+        $result.PreregisteredCampaignPassRateMet | Should Be $false
+        ($result.CampaignIssues -join ' ') | Should Match 'RequiredPassRate=.*does not match analyzer policy'
+    }
+
+    It 'seals settle and move-count eligibility policy before the campaign' {
+        $log = Join-Path $TestDrive 'eligibility-policy.log'
+        New-FastRunLog $log -UseObjectiveStrata
+        $manifest = Join-Path $TestDrive 'eligibility-policy-campaign.json'
+        $sealed = New-FastCampaignManifest $manifest @($log)
+
+        $settle = & $scriptPath -LogPath $log -CampaignManifestPath $manifest `
+            -ExpectedCampaignManifestSha256 $sealed.Sha256 -MinimumSettleSeconds 10
+        ($settle.CampaignIssues -join ' ') | Should Match 'MinimumSettleSeconds=.*does not match analyzer policy'
+
+        $minimumMoves = & $scriptPath -LogPath $log -CampaignManifestPath $manifest `
+            -ExpectedCampaignManifestSha256 $sealed.Sha256 -MinimumMoveCount 0
+        ($minimumMoves.CampaignIssues -join ' ') | Should Match 'MinimumMoveCount=.*does not match analyzer policy'
+
+        $maximumMoves = & $scriptPath -LogPath $log -CampaignManifestPath $manifest `
+            -ExpectedCampaignManifestSha256 $sealed.Sha256 -MaximumMoveCount 1
+        ($maximumMoves.CampaignIssues -join ' ') | Should Match 'MaximumMoveCount=.*does not match analyzer policy'
+    }
+
+    It 'rejects a legacy schema v1 manifest from the sealed-policy verdict' {
+        $log = Join-Path $TestDrive 'legacy-schema.log'
+        New-FastRunLog $log -UseObjectiveStrata
+        $manifest = Join-Path $TestDrive 'legacy-schema-campaign.json'
+        $sealed = New-FastCampaignManifest $manifest @($log)
+        $document = [IO.File]::ReadAllText($manifest) | ConvertFrom-Json
+        $document.SchemaVersion = 1
+        [IO.File]::WriteAllText($manifest, ($document | ConvertTo-Json -Depth 6) + "`r`n", [Text.UTF8Encoding]::new($false))
+        $hash = (Get-FileHash $manifest -Algorithm SHA256).Hash
+        $result = & $scriptPath -LogPath $log -CampaignManifestPath $manifest -ExpectedCampaignManifestSha256 $hash
+        ($result.CampaignIssues -join ' ') | Should Match 'SchemaVersion is not 2; legacy manifests cannot qualify'
+    }
+
+    It 'rejects a campaign manifest whose external hash anchor does not match' {
+        $log = Join-Path $TestDrive 'hash-mismatch.log'
+        New-FastRunLog $log
+        $manifest = Join-Path $TestDrive 'hash-mismatch-campaign.json'
+        $sealed = New-FastCampaignManifest $manifest @($log)
+        $result = & $scriptPath -LogPath $log -CampaignManifestPath $manifest `
+            -ExpectedCampaignManifestSha256 ('0' * 64)
+        $result.PreregisteredCampaignPassRateMet | Should Be $false
+        ($result.CampaignIssues -join ' ') | Should Match 'SHA-256 mismatch'
+    }
+
+    It 'rejects a backdated campaign whose creation follows its run window' {
+        $log = Join-Path $TestDrive 'late-manifest.log'
+        New-FastRunLog $log
+        $manifest = Join-Path $TestDrive 'late-manifest-campaign.json'
+        $sealed = New-FastCampaignManifest $manifest @($log)
+        $document = [IO.File]::ReadAllText($manifest) | ConvertFrom-Json
+        $document.CreatedUtc = '2026-08-04T00:00:00Z'
+        [IO.File]::WriteAllText($manifest, ($document | ConvertTo-Json -Depth 6) + "`r`n", [Text.UTF8Encoding]::new($false))
+        $hash = (Get-FileHash $manifest -Algorithm SHA256).Hash
+        $result = & $scriptPath -LogPath $log -CampaignManifestPath $manifest `
+            -ExpectedCampaignManifestSha256 $hash
+        $result.PreregisteredCampaignPassRateMet | Should Be $false
+        ($result.CampaignIssues -join ' ') | Should Match 'time window must begin at or after creation'
+    }
+
+    It 'pins MinimumEligibleRuns inside the sealed campaign policy' {
+        $log = Join-Path $TestDrive 'minimum-policy.log'
+        New-FastRunLog $log
+        $manifest = Join-Path $TestDrive 'minimum-policy-campaign.json'
+        $sealed = New-FastCampaignManifest $manifest @($log)
+        $result = & $scriptPath -LogPath $log -CampaignManifestPath $manifest `
+            -ExpectedCampaignManifestSha256 $sealed.Sha256 -MinimumEligibleRuns 8
+        $result.PreregisteredCampaignPassRateMet | Should Be $false
+        ($result.CampaignIssues -join ' ') | Should Match 'MinimumEligibleRuns=.*does not match analyzer policy'
+    }
+
+    It 'ignores telemetry outside the sealed campaign time window' {
+        $log = Join-Path $TestDrive 'window.log'
+        New-FastRunLog $log -UseObjectiveStrata
+        $outside = [ordered]@{
+            schemaVersion = 1; runId = [Guid]::NewGuid().ToString('D'); event = 'admission-rejected'
+            observedUtc = '2026-08-08T18:00:00Z'; elapsedSeconds = 0.1
+            stage = 'configuration'; reasonCode = 'outside-window'
+        }
+        Add-Content $log ("outside TPPA_FAST_RUN_EVENT " + ($outside | ConvertTo-Json -Compress))
+        $manifest = Join-Path $TestDrive 'window-campaign.json'
+        $sealed = New-FastCampaignManifest $manifest @($log)
+        $result = & $scriptPath -LogPath $log -CampaignManifestPath $manifest `
+            -ExpectedCampaignManifestSha256 $sealed.Sha256
+        $result.CampaignPopulationComplete | Should Be $true
+        $result.ExcludedOutOfWindowRecordCount | Should Be 1
+        $result.PreregisteredCampaignPassRateMet | Should Be $true
     }
 
     It 'retains a structured configuration admission rejection without corrupting evidence' {
