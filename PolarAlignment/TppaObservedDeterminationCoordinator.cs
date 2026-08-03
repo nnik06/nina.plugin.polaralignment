@@ -23,7 +23,14 @@ namespace NINA.Plugins.PolarAlignment {
         double CovarianceAzAltSquareMinutes,
         double CovarianceAltAltSquareMinutes);
 
-    internal sealed class TppaObservedDeterminationCoordinator {
+    internal interface ITppaObservedDeterminationCoordinator {
+        Task<TppaCoarseDeterminationEvidence> AcquireAsync(
+            Guid campaignId,
+            Func<UpasSupervisorTppaObservationLease, CancellationToken,
+                Task<TppaCoarseDeterminationDraft>> acquireDraft,
+            CancellationToken token);
+    }
+    internal sealed class TppaObservedDeterminationCoordinator : ITppaObservedDeterminationCoordinator {
         private readonly IUpasSupervisorTppaObservationClient observationClient;
         private readonly TimeSpan leaseDuration;
 
