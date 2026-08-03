@@ -107,7 +107,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
 
         private static UpasSupervisorCoarsePlanningEvidence Parse(
                 string json,
-                string contentSha256 = null,
+                string? contentSha256 = null,
                 string evidenceId = EvidenceId,
                 string authenticationMethod = "httpsBearer") =>
             UpasSupervisorCoarsePlanningEvidenceParser.ParseAuthenticated(
@@ -115,7 +115,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 contentSha256 ?? UpasSupervisorCoarsePlanningEvidenceParser.Digest(json),
                 evidenceId, authenticationMethod);
 
-        private static string ValidJson() => """
+        internal static string ValidJson() => """
             {
               "schemaVersion": 2,
               "supervisorSessionId": "acaa2759-b829-41ec-9e93-59449a3ac38c",
