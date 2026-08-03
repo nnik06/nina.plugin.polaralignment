@@ -29,8 +29,12 @@ temperature interval, response applicability interval, and expiry.
    reassignment. Require both signs, both axes, coupled/diagonal challenges,
    and positions spanning the claimed applicability interval.
 6. Fit with `upas-coarse-response-fit`; a passing fit remains non-actuating.
-   Commission it through the append-only supervisor calibration ledger before
-   using it in authenticated coarse evidence.
+   Commission a canonical manifest with `upas-coarse-response-commission`,
+   preserving its immutable ledger generation and canonical receipt. For a
+   supersession, bind both the predecessor calibration ID and exact prior
+   ledger-tip SHA-256. A fresh supervisor instance must verify the new ledger
+   tip against runtime coarse evidence and the exact repository checkpoint
+   before it can be used.
 7. Prove every admitted uncertainty-expanded path and endpoint remains inside
    the commissioned operational envelope. Starts that cannot be reached safely
    fail closed and remain failures in the sealed campaign denominator.

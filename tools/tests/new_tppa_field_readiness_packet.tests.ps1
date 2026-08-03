@@ -58,6 +58,7 @@ Describe 'TPPA field readiness packet builder' {
         $allText | Should Match 'Totals are 4, 3, 3, 3, 3 and 4 attempts'
         $allText | Should Match '0--30 and 240--300'
         $allText | Should Match 'upas-coarse-response-fit'
+        $allText | Should Match 'upas-coarse-response-commission'
         $allText | Should Match 'one-degree reserve'
         ([IO.File]::ReadAllText((Join-Path $output 'verify_field_preflight.ps1'))) |
             Should Match 'NextStage = ''Per-train coarse-response and travel commissioning'''
