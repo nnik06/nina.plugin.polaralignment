@@ -254,6 +254,22 @@ namespace NINA.Plugins.PolarAlignment.Test {
             UpasSupervisorReadinessPolicy.Evaluate(unlocked, (Axis)99).IsReady.Should().BeFalse();
         }
 
+        [Test]
+        public void FrozenStatusV1CannotAuthorizeCoarsePlanning() {
+            var apparentlyReady = UpasSupervisorStatus.Parse(
+                ValidDryRunStatus
+                    .Replace("\"physicalMotion\": false", "\"physicalMotion\": true")
+                    .Replace("\"alt\": false", "\"alt\": true"));
+
+            var readiness = UpasSupervisorCoarsePlanningReadinessPolicy.Evaluate(apparentlyReady);
+
+            readiness.IsReady.Should().BeFalse();
+            readiness.Reason.Should().Contain("status V1");
+            readiness.Reason.Should().Contain("signed");
+            readiness.Reason.Should().Contain("calibration");
+            UpasSupervisorCoarsePlanningReadinessPolicy.Evaluate(null).IsReady.Should().BeFalse();
+        }
+
         private sealed class MutableRequirement : IExternalSupervisorRequirement {
             public bool IsRequired { get; set; }
         }

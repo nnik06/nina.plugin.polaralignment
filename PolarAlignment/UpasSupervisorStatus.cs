@@ -223,6 +223,22 @@ namespace NINA.Plugins.PolarAlignment {
         }
     }
 
+    internal static class UpasSupervisorCoarsePlanningReadinessPolicy {
+        public static UpasSupervisorReadiness Evaluate(UpasSupervisorStatus status) {
+            if (status == null) {
+                return new(false, "External UPAS supervisor status is missing.");
+            }
+
+            // Frozen status V1 proves service/capability state only. It does not carry signed
+            // witnessed positions, freshness, uncertainty, or response-calibration evidence.
+            // Coarse planning must therefore remain unavailable until a separately versioned
+            // evidence contract is implemented and validated end to end.
+            return new(false,
+                "Supervisor status V1 cannot authorize coarse planning because signed, fresh " +
+                "position and response-calibration evidence is unavailable.");
+        }
+    }
+
     internal interface IUpasSupervisorStatusSource {
         Task<UpasSupervisorStatus> GetStatusAsync(CancellationToken token);
     }
