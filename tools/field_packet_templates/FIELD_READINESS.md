@@ -21,16 +21,20 @@ installed plugin directory while NINA is closed.
 
 ## Campaign order
 
-1. Commission one cadence authority for one fixed hardware configuration,
+1. Commission and ledger one supervisor coarse-response fit for the exact load
+   profile and retain the one-degree reserve until travel uncertainty is proven.
+2. Commission one covariance authority for the same fixed optical train,
+   hardware configuration, mechanical epoch and load profile.
+3. Commission one cadence authority for the same fixed hardware configuration,
    mechanical epoch, load profile and environmental envelope.
-2. Mint the cadence authority only after all four report-only arms pass.
-3. Seal and run a separate 20-attempt fast-alignment campaign for each optical
+4. Mint the cadence authority only after all four report-only arms pass.
+5. Seal and run a separate 20-attempt fast-alignment campaign for each optical
    train. Every initiated attempt in the sealed window counts.
-4. Require at least 16/20 successes over at least three nights. Each
+6. Require at least 16/20 successes over at least three nights. Each
    four-attempt starting-error stratum requires at least two successes and each
    three-attempt stratum requires at least one, with zero false success and zero
    safety violation.
-5. After a same-session qualified alignment, acquire and qualify one guided
+7. After a same-session qualified alignment, acquire and qualify one guided
    900-second narrowband bracket for that unchanged optical train.
 
 Commissioning evidence must not be counted as a fast-alignment attempt.

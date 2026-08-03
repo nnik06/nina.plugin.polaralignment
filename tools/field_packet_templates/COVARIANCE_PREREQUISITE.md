@@ -32,7 +32,8 @@ invalidates it.
 
 Field order is therefore:
 
-1. covariance commissioning and authority;
-2. cadence commissioning arms A/B/C/D and authority;
-3. separate sealed GT81 and EdgeHD 20-attempt fast-alignment campaigns;
-4. same-session guided 900-second bracket for each unchanged optical train.
+1. supervisor travel/response commissioning and ledgered fit;
+2. covariance commissioning and authority;
+3. cadence commissioning arms A/B/C/D and authority;
+4. separate sealed GT81 and EdgeHD 20-attempt fast-alignment campaigns;
+5. same-session guided 900-second bracket for each unchanged optical train.

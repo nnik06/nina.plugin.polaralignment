@@ -18,6 +18,7 @@ trains between the two nights.
 
 | Arm | Night C1 | Night C2 | Total | Required distribution |
 | --- | ---: | ---: | ---: | --- |
+| Coarse response | staged | staged | protocol minimum | both signs/axes, fit plus held-out; outer range only after prior-stage pass |
 | Covariance VerificationOnly runs | 10 | 10 | 20 | unchanged train, UPAS stationary, schema 6 |
 | A settle probes | 10 | 10 | 20 | 5 each direction per night |
 | B candidate/reference pairs | 10 | 10 | 20 | 5 each direction and 5 each order per night |

@@ -1,3 +1,9 @@
+## Version 2.2.6.106
+
+- Add the missing per-load-profile coarse-response and travel prerequisite to
+  every field packet before covariance, cadence, or sealed 0--5 degree runs.
+- Bind that prerequisite into packet hashes and test that response fitting and
+  the retained one-degree reserve cannot disappear from field preparation.
 ## Version 2.2.6.105
 
 - Derive the legacy per-axis coarse objective from the 0--300 arcminute

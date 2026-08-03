@@ -97,6 +97,7 @@ try {
     }
 
     $templateNames = @(
+        'COARSE_RESPONSE_PREREQUISITE.md',
         'COVARIANCE_PREREQUISITE.md',
         'FIELD_CAMPAIGN_MATRIX.md',
         'FIELD_READINESS.md',
@@ -111,6 +112,7 @@ try {
     }
 
     $packetNames = @(
+        'COARSE_RESPONSE_PREREQUISITE.md',
         'COVARIANCE_PREREQUISITE.md',
         'FIELD_CAMPAIGN_MATRIX.md',
         'FIELD_READINESS.md',

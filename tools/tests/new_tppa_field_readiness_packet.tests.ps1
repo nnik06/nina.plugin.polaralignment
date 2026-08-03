@@ -50,19 +50,23 @@ Describe 'TPPA field readiness packet builder' {
 
         $result.SourceCommit | Should Be $head
         $result.PluginVersion | Should Be '2.2.6.104'
-        (Get-ChildItem -File $output).Count | Should Be 8
+        (Get-ChildItem -File $output).Count | Should Be 9
         $allText = (Get-ChildItem -File $output -Filter '*.md' |
             ForEach-Object { [IO.File]::ReadAllText($_.FullName) }) -join "`n"
         $allText | Should Not Match '__[A-Z0-9_]+__'
         $allText | Should Not Match '(?i)\bp95\b'
         $allText | Should Match 'Totals are 4, 3, 3, 3, 3 and 4 attempts'
         $allText | Should Match '0--30 and 240--300'
+        $allText | Should Match 'upas-coarse-response-fit'
+        $allText | Should Match 'one-degree reserve'
+        ([IO.File]::ReadAllText((Join-Path $output 'verify_field_preflight.ps1'))) |
+            Should Match 'NextStage = ''Per-train coarse-response and travel commissioning'''
 
         $manifest = [IO.File]::ReadAllText((Join-Path $output 'TPPA.runtime-manifest.json')) | ConvertFrom-Json
         $manifest.sourceCommit | Should Be $head
         $manifest.pluginVersion | Should Be '2.2.6.104'
         $hashLines = [IO.File]::ReadAllLines((Join-Path $output 'HASHES.sha256'))
-        $hashLines.Count | Should Be 7
+        $hashLines.Count | Should Be 8
         foreach ($line in $hashLines) {
             if ($line -notmatch '^([0-9A-F]{64})  ([A-Za-z0-9._-]+)$') {
                 throw "Malformed hash line: $line"
