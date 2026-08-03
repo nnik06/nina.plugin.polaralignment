@@ -1,3 +1,10 @@
+## Version 2.2.6.105
+
+- Derive the legacy per-axis coarse objective from the 0--300 arcminute
+  campaign envelope instead of independently truncating it at 240 arcminutes.
+- Derive the uncertainty-expanded operational position limit once from the
+  compiled +/-5.4 degree software limit and one-degree reserve, while retaining
+  fail-closed endpoint denial for uncommissioned edge-of-envelope corrections.
 ## Version 2.2.6.104
 
 - Replace the small-sample cadence p95 comparison with an explicit observed-

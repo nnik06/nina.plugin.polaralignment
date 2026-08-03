@@ -20,7 +20,8 @@ namespace NINA.Plugins.PolarAlignment {
         double FixedCommandUncertaintyDegrees);
 
     internal static class TppaCoarseCorrectionPlanner {
-        public const double MaximumObjectiveErrorMinutes = 240.0;
+        public const double MaximumObjectiveErrorMinutes =
+            TppaCoarseVectorPlanner.MaximumObjectiveTotalErrorMinutes;
         public const double FineControllerHandoffMinutes = 24.0;
         public static readonly double MaximumAxisErrorForGuaranteedTotalHandoffMinutes =
             FineControllerHandoffMinutes / Math.Sqrt(2.0);
@@ -57,7 +58,7 @@ namespace NINA.Plugins.PolarAlignment {
                 return Denied($"axis error {magnitudeMinutes:F2}' exceeds the {MaximumObjectiveErrorMinutes:F0}' coarse handoff envelope");
             }
             if (Math.Abs(witnessedPositionDegrees) + witnessUncertaintyDegrees
-                    > PhysicalHardLimitDegrees - MinimumReservedTravelDegrees) {
+                    > UpasCoarsePlanningSafetyPolicy.OperationalLimitDegrees) {
                 return Denied("witnessed UPAS position does not preserve the required one-degree travel reserve");
             }
             if (magnitudeMinutes <= MaximumAxisErrorForGuaranteedTotalHandoffMinutes) {
@@ -74,7 +75,7 @@ namespace NINA.Plugins.PolarAlignment {
             var guardedExtent = Math.Abs(projectedPosition)
                 + witnessUncertaintyDegrees
                 + requestUncertainty;
-            if (guardedExtent > PhysicalHardLimitDegrees - MinimumReservedTravelDegrees) {
+            if (guardedExtent > UpasCoarsePlanningSafetyPolicy.OperationalLimitDegrees) {
                 return Denied(
                     $"planned endpoint plus uncertainty is {guardedExtent:F3} degrees from zero and would consume the required one-degree reserve");
             }

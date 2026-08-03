@@ -11,6 +11,8 @@ namespace NINA.Plugins.PolarAlignment {
         public const int EvidenceSchemaVersion = 2;
         public const double PhysicalHardLimitDegrees = 5.4;
         public const double MinimumReservedTravelDegrees = 1.0;
+        public const double OperationalLimitDegrees =
+            PhysicalHardLimitDegrees - MinimumReservedTravelDegrees;
         public const string RequiredCoordinateConvention = "azEastPositive_altUpPositive";
         public const double MaximumEvidenceLifetimeMilliseconds = 5000.0;
         public const double MaximumEvidenceRoundTripMilliseconds = 2000.0;
@@ -147,7 +149,10 @@ namespace NINA.Plugins.PolarAlignment {
             ValidateLimitObject(RequireObject(root, "hardLimitDegrees"), -5.4, 5.4, "hardLimitDegrees");
             var reserve = RequireNonNegativeFinite(root, "operationalReserveDegrees");
             ValidateCompiledSafetyCrossChecks(-5.4, 5.4, reserve);
-            ValidateLimitObject(RequireObject(root, "operationalLimitDegrees"), -4.4, 4.4, "operationalLimitDegrees");
+            ValidateLimitObject(RequireObject(root, "operationalLimitDegrees"),
+                -UpasCoarsePlanningSafetyPolicy.OperationalLimitDegrees,
+                UpasCoarsePlanningSafetyPolicy.OperationalLimitDegrees,
+                "operationalLimitDegrees");
             RequireObject(root, "axes");
             RequireObject(root, "responseCalibration");
             RequireObject(root, "remainingTravelBudgetDegrees");

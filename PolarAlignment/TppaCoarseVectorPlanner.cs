@@ -153,8 +153,7 @@ namespace NINA.Plugins.PolarAlignment {
                 return Denied("cumulative supervisor travel budget does not cover the expanded plan",
                     requested, commandSigma, additive, azPath, altPath);
             }
-            var operationalLimit = UpasCoarsePlanningSafetyPolicy.PhysicalHardLimitDegrees
-                - UpasCoarsePlanningSafetyPolicy.MinimumReservedTravelDegrees;
+            var operationalLimit = UpasCoarsePlanningSafetyPolicy.OperationalLimitDegrees;
             var hardLimit = UpasCoarsePlanningSafetyPolicy.PhysicalHardLimitDegrees;
             if (!StrictlyInside(azPath, operationalLimit)
                     || !StrictlyInside(altPath, operationalLimit)) {

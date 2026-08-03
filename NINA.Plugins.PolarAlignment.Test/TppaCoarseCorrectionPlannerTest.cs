@@ -31,11 +31,19 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
-        public void ErrorOutsideFourDegreeObjectiveIsDenied() {
-            var result = Plan(240.01, witnessedPosition: 0.0);
+        public void AxisObjectiveLimitIsDerivedFromFiveDegreeTotalCampaignEnvelope() {
+            TppaCoarseCorrectionPlanner.MaximumObjectiveErrorMinutes.Should().Be(
+                TppaCoarseVectorPlanner.MaximumObjectiveTotalErrorMinutes);
+
+            Plan(300.01, witnessedPosition: 0.0).IsAuthorized.Should().BeFalse();
+        }
+
+        [Test]
+        public void FiveDegreeSingleAxisStartReachesEndpointGateInsteadOfStaleObjectiveCap() {
+            var result = Plan(300.0, witnessedPosition: 0.0);
 
             result.IsAuthorized.Should().BeFalse();
-            result.Reason.Should().Contain("exceeds");
+            result.Reason.Should().Contain("planned endpoint plus uncertainty");
         }
 
         [Test]

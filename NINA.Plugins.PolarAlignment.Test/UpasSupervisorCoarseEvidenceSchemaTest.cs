@@ -67,6 +67,9 @@ namespace NINA.Plugins.PolarAlignment.Test {
             settingNames.Should().NotContain(nameof(UpasCoarsePlanningSafetyPolicy.MinimumReservedTravelDegrees));
             UpasCoarsePlanningSafetyPolicy.PhysicalHardLimitDegrees.Should().Be(5.4);
             UpasCoarsePlanningSafetyPolicy.MinimumReservedTravelDegrees.Should().Be(1.0);
+            UpasCoarsePlanningSafetyPolicy.OperationalLimitDegrees.Should().Be(
+                UpasCoarsePlanningSafetyPolicy.PhysicalHardLimitDegrees
+                - UpasCoarsePlanningSafetyPolicy.MinimumReservedTravelDegrees);
         }
 
         [Test]
