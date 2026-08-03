@@ -1336,6 +1336,21 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                         TPAPAVM.PolarErrorDetermination.InitialMountAxisAzimuthError.ArcMinutes,
                                         TPAPAVM.PolarErrorDetermination.InitialMountAxisAltitudeError.ArcMinutes,
                                         TPAPAVM.PolarErrorDetermination.InitialMountAxisTotalError.ArcMinutes);
+                                    var postObservationBudget = TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
+                                        alignmentRuntime.Elapsed,
+                                        maximumObservedFreshDeterminationSeconds,
+                                        freshFeedbackMoveCount);
+                                    Logger.Info(
+                                        $"TPPA_FAST_RUNTIME_BUDGET operation=post-observation supervisor movement; " +
+                                        $"elapsedSeconds={postObservationBudget.ElapsedSeconds:F1}; " +
+                                        $"remainingSeconds={postObservationBudget.RemainingSeconds:F1}; " +
+                                        $"requiredReserveSeconds={postObservationBudget.RequiredReserveSeconds:F1}; " +
+                                        $"allowed={postObservationBudget.CanStart}.");
+                                    if (!postObservationBudget.CanStart) {
+                                        throw new SequenceEntityFailedException(
+                                            "The two required observed TPPA determinations consumed the remaining movement budget: " +
+                                            postObservationBudget.Reason + " No UPAS movement was authorized.");
+                                    }
                                     var firstObserved = activeObservedDeterminations[0];
                                     var secondObserved = activeObservedDeterminations[1];
                                     TppaCoarseDeterminationReceiptBuilder.ValidateIndependent(
