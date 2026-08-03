@@ -32,6 +32,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
             executor.Calls.Should().Be(1);
             executor.PreEvidenceId.Should().Be(new string('b', 64));
             evidence.Calls.Should().Be(2);
+            executor.RequiredTravelDegrees.Should().BeApproximately(0.96, 1e-12);
         }
 
         [Test]
@@ -112,12 +113,15 @@ namespace NINA.Plugins.PolarAlignment.Test {
         private sealed class RecordingReturnExecutor : IUpasSupervisorPhysicalZeroReturnExecutor {
             private readonly bool completed;
             public RecordingReturnExecutor(bool completed = true) => this.completed = completed;
+            public double RequiredTravelDegrees { get; private set; }
             public int Calls { get; private set; }
             public string PreEvidenceId { get; private set; } = string.Empty;
             public Task<UpasSupervisorPhysicalZeroReturnResult> ReturnAsync(
                     string preEvidenceId, double currentTemperatureC,
-                    string currentLoadProfileId, CancellationToken token) {
+                    double requiredTravelDegrees, string currentLoadProfileId,
+                    CancellationToken token) {
                 Calls++;
+                RequiredTravelDegrees = requiredTravelDegrees;
                 PreEvidenceId = preEvidenceId;
                 return Task.FromResult(new UpasSupervisorPhysicalZeroReturnResult(
                     completed,

@@ -11,25 +11,25 @@ namespace NINA.Plugins.PolarAlignment.Test {
 
         [Test]
         public void ExactLimitRemainsEligible() {
-            var decision = AutomatedAdjustmentInputPolicy.Evaluate(96.0, -72.0, 120.0);
+            var decision = AutomatedAdjustmentInputPolicy.Evaluate(240.0, -180.0, 300.0);
 
             decision.IsEligible.Should().BeTrue();
         }
 
         [Test]
         public void ResultAboveLimitIsDenied() {
-            var decision = AutomatedAdjustmentInputPolicy.Evaluate(-234.2, 25.5, 235.6);
+            var decision = AutomatedAdjustmentInputPolicy.Evaluate(-300.1, 0.0, 300.1);
 
             decision.IsEligible.Should().BeFalse();
-            decision.Reason.Should().Contain("120'");
+            decision.Reason.Should().Contain("300'");
         }
 
         [Test]
         public void ComponentMagnitudeAboveLimitIsDeniedWhenReportedTotalIsInsideLimit() {
-            var decision = AutomatedAdjustmentInputPolicy.Evaluate(100.0, 100.0, 100.0);
+            var decision = AutomatedAdjustmentInputPolicy.Evaluate(250.0, 250.0, 250.0);
 
             decision.IsEligible.Should().BeFalse();
-            decision.Reason.Should().Contain("120'");
+            decision.Reason.Should().Contain("300'");
         }
 
         [TestCase(double.NaN, 0.0, 1.0)]

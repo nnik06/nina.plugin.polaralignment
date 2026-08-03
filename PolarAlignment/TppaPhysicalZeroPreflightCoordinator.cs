@@ -7,6 +7,7 @@ namespace NINA.Plugins.PolarAlignment {
         Task<UpasSupervisorPhysicalZeroReturnResult> ReturnAsync(
             string preEvidenceId,
             double currentTemperatureC,
+            double requiredTravelDegrees,
             string currentLoadProfileId,
             CancellationToken token);
     }
@@ -49,9 +50,13 @@ namespace NINA.Plugins.PolarAlignment {
                 return new(false, null, initialAdmission);
             }
 
+            var requiredTravelDegrees = initialAdmission.AzimuthAbsoluteBoundDegrees
+                + initialAdmission.AltitudeAbsoluteBoundDegrees
+                + 2.0 * TppaPhysicalZeroAdmissionPolicy.ZeroToleranceDegrees;
             var returned = await returnExecutor.ReturnAsync(
                 initialAdmission.EvidenceId,
                 currentTemperatureC,
+                requiredTravelDegrees,
                 currentLoadProfileId,
                 token).ConfigureAwait(false);
             if (returned == null || !returned.IsCompleted

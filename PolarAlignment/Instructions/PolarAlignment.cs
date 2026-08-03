@@ -91,7 +91,9 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
         private const double MinimumPositiveAlignmentTolerance = 0.5;
         private double alignmentTolerance;
         private bool enforceFiveMinuteRuntimeBudget;
-        private static readonly HttpClient UpasSupervisorHttpClient = new() {
+        private static readonly HttpClient UpasSupervisorHttpClient = new(
+            new HttpClientHandler { AllowAutoRedirect = false }
+        ) {
             Timeout = Timeout.InfiniteTimeSpan
         };
         private IList<string> issues = new List<string>();
@@ -1445,31 +1447,39 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 UpasSupervisorHttpClient,
                 Properties.Settings.Default.UpasSupervisorEndpoint,
                 () => Environment.GetEnvironmentVariable("UPAS_SUPERVISOR_CLIENT_TOKEN"));
-            UpasSupervisorCoarsePlanningEvidence evidence;
+            var returnExecutor = new HttpsUpasSupervisorPhysicalZeroReturnExecutor(
+                UpasSupervisorHttpClient,
+                Properties.Settings.Default.UpasSupervisorEndpoint,
+                () => Environment.GetEnvironmentVariable("UPAS_SUPERVISOR_CLIENT_TOKEN"));
+            var coordinator = new TppaPhysicalZeroPreflightCoordinator(source, returnExecutor);
+            TppaPhysicalZeroPreflightResult result;
             try {
-                evidence = await source.GetAsync(
+                result = await coordinator.RunAsync(
                     expectedCallerLeaseId: null,
                     currentTemperatureC: temperature,
                     currentLoadProfileId: Properties.Settings.Default.UpasSupervisorLoadProfileId,
                     token).ConfigureAwait(false);
             } catch (Exception ex) when (ex is not OperationCanceledException) {
                 throw new SequenceEntityFailedException(
-                    "Automated TPPA physical-zero preflight could not obtain fresh authenticated "
-                    + $"UPAS evidence: {ex.Message} No TPPA timer, actuator connection, or movement was started.");
+                    "Automated TPPA physical-zero preflight did not complete: "
+                    + $"{ex.Message} No TPPA timer or TPPA actuator connection was started.");
             }
 
-            var decision = TppaPhysicalZeroAdmissionPolicy.Evaluate(evidence);
             Logger.Info(
-                $"TPPA_PHYSICAL_ZERO_ADMISSION eligible={decision.IsEligible}; "
-                + $"evidenceId={decision.EvidenceId}; "
-                + $"azimuthAbsoluteBoundDegrees={decision.AzimuthAbsoluteBoundDegrees:F4}; "
-                + $"altitudeAbsoluteBoundDegrees={decision.AltitudeAbsoluteBoundDegrees:F4}; "
-                + $"reason={decision.Reason}.");
-            if (!decision.IsEligible) {
+                $"TPPA_PHYSICAL_ZERO_ADMISSION eligible={result.Admission.IsEligible}; "
+                + $"returnWasRequired={result.ReturnWasRequired}; "
+                + $"transactionId={result.TransactionId ?? "none"}; "
+                + $"evidenceId={result.Admission.EvidenceId}; "
+                + $"azimuthAbsoluteBoundDegrees="
+                + $"{result.Admission.AzimuthAbsoluteBoundDegrees:F4}; "
+                + $"altitudeAbsoluteBoundDegrees="
+                + $"{result.Admission.AltitudeAbsoluteBoundDegrees:F4}; "
+                + $"reason={result.Admission.Reason}.");
+            if (!result.Admission.IsEligible) {
                 throw new SequenceEntityFailedException(
-                    "Automated TPPA requires a witnessed UPAS return to physical zero before starting: "
-                    + $"{decision.Reason}. Complete the supervisor return transaction and obtain a fresh "
-                    + "stationary zero re-verification. No TPPA timer, actuator connection, or movement was started.");
+                    "Automated TPPA physical-zero admission remained ineligible after supervisor "
+                    + $"coordination: {result.Admission.Reason}. No TPPA timer or TPPA actuator "
+                    + "connection was started.");
             }
         }
 

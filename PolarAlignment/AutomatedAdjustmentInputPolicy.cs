@@ -4,7 +4,9 @@ namespace NINA.Plugins.PolarAlignment {
         string Reason);
 
     internal static class AutomatedAdjustmentInputPolicy {
-        public const double MaximumInitialErrorArcMinutes = 120.0;
+        // The preregistered campaign uses the UPAS operational starting envelope,
+        // while the supervisor independently enforces physical position limits.
+        public const double MaximumInitialErrorArcMinutes = 300.0;
 
         public static AutomatedAdjustmentInputDecision Evaluate(
             double azimuthErrorArcMinutes,
