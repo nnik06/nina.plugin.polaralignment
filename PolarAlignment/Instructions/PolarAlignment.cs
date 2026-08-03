@@ -101,6 +101,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
         private bool captureCoarseSolveEvidence;
         private Guid activeTppaCampaignId;
         private TppaCommissionedCovarianceAuthority activeTppaCovarianceAuthority;
+        private readonly List<TppaCoarseDeterminationEvidence> activeObservedDeterminations = new();
         private IList<string> issues = new List<string>();
         private const string ResumeAlignmentTopic = $"{nameof(PolarAlignmentPlugin)}_{nameof(PolarAlignment)}_ResumeAlignment";
         private const string PauseAlignmentTopic = $"{nameof(PolarAlignmentPlugin)}_{nameof(PolarAlignment)}_PauseAlignment";        
@@ -567,6 +568,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 }
                 coarseSolveEvidence = new ConditionalWeakTable<PlateSolveResult, TppaCapturedSolveEvidence>();
                 captureCoarseSolveEvidence = true;
+                activeObservedDeterminations.Clear();
             }
             // The five-minute contract starts only after physical-zero admission.
             // A return-to-zero transaction and stationary reverification are preflight.
@@ -1069,7 +1071,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                             Logger.Info("Fresh UPAS measurement is below tolerance. Requiring one consecutive independent fresh three-point confirmation without moving.");
                             var completionCandidate = TPAPAVM.PolarErrorDetermination;
                             progress?.Report(new ApplicationStatus() { Status = "Confirming fresh three-point UPAS result" });
-                            var confirmationDetermination = await MeasureFreshThreePointCompletionVerification(TPAPAVM,
+                            var confirmationDetermination = await MeasureFreshThreePointForActiveCampaign(TPAPAVM,
                                                                                                                 automatedVerificationStartPointing,
                                                                                                                 automatedVerificationEastDirection,
                                                                                                                 progress,
@@ -1097,6 +1099,15 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                         $"dAlt={completionAgreement.AltitudeDeltaMinutes:+0.00;-0.00;0.00}', " +
                                         $"dTot={completionAgreement.TotalDeltaMinutes:+0.00;-0.00;0.00}', " +
                                         $"threshold={completionAgreement.ThresholdMinutes:F2}'.");
+                            if (confirmedTotalErrorMinutes <= AlignmentTolerance
+                                    && completionAgreement.IsRepeatable
+                                    && enforceFastRuntimeBudget
+                                    && activeObservedDeterminations.Count < 2) {
+                                Logger.Info(
+                                    "A below-tolerance result has only one supervisor observation attestation. " +
+                                    "Holding UPAS stationary and acquiring the required second fresh determination.");
+                                continue;
+                            }
                             if (confirmedTotalErrorMinutes <= AlignmentTolerance && completionAgreement.IsRepeatable) {
                                 Logger.Info($"Two consecutive fresh three-point UPAS measurements are below alignment tolerance ({AlignmentTolerance}'). Automatically finishing polar alignment.");
                                 Notification.ShowInformation(
@@ -1120,7 +1131,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                     TppaFastAlignmentExecutionBudget.FreshDeterminationReserveSeconds);
                                 Logger.Warning("Two below-tolerance fresh measurements disagreed. Running one stationary fresh three-point tie-breaker before failing closed.");
                                 progress?.Report(new ApplicationStatus() { Status = "Running fresh three-point completion tie-breaker" });
-                                var tieBreakerDetermination = await MeasureFreshThreePointCompletionVerification(TPAPAVM,
+                                var tieBreakerDetermination = await MeasureFreshThreePointForActiveCampaign(TPAPAVM,
                                                                                                                    automatedVerificationStartPointing,
                                                                                                                    automatedVerificationEastDirection,
                                                                                                                    progress,
@@ -1214,7 +1225,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                     Logger.Info("Two stationary correction-frame solves are below tolerance. Starting an independent fresh three-point completion verification before finishing.");
                                     progress?.Report(new ApplicationStatus() { Status = "Running fresh three-point completion verification" });
 
-                                    var verificationDetermination = await MeasureFreshThreePointCompletionVerification(TPAPAVM,
+                                    var verificationDetermination = await MeasureFreshThreePointForActiveCampaign(TPAPAVM,
                                                                                                                        automatedVerificationStartPointing,
                                                                                                                        automatedVerificationEastDirection,
                                                                                                                        progress,
@@ -1303,19 +1314,66 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                     TPAPAVM.PolarErrorDetermination.InitialMountAxisAzimuthError.ArcMinutes,
                                     TPAPAVM.PolarErrorDetermination.InitialMountAxisAltitudeError.ArcMinutes,
                                     TPAPAVM.PolarErrorDetermination.InitialMountAxisTotalError.ArcMinutes);
-                                var moved = executionPolicy.AllowActuatorMovement
-                                    && await TppaFastActuatorAdmissionGate.ExecuteIfAuthorizedAsync(
-                                        enforceFastRuntimeBudget,
-                                        fastInitialAdmissionGranted,
-                                        "movement",
-                                        () => TPAPAVM.MoveCloser(progress, localCTS.Token));
+                                bool moved;
+                                if (enforceFastRuntimeBudget && executionPolicy.AllowActuatorMovement) {
+                                    while (activeObservedDeterminations.Count < 2) {
+                                        Logger.Info("Acquiring an independently observed fresh TPPA determination before supervisor movement authority.");
+                                        var observedDetermination = await MeasureFreshThreePointForActiveCampaign(
+                                            TPAPAVM,
+                                            automatedVerificationStartPointing,
+                                            automatedVerificationEastDirection,
+                                            progress,
+                                            localCTS.Token);
+                                        TPAPAVM.PolarErrorDetermination = observedDetermination;
+                                        BindFreshGeometryQualification(
+                                            TPAPAVM,
+                                            observedDetermination,
+                                            true,
+                                            "pre-move observed determination");
+                                        TPAPAVM.UpdateAutomatedAdjustmentFromFreshDetermination();
+                                    }
+                                    preMoveFreshVector = TppaPolarErrorVector.FromMinutes(
+                                        TPAPAVM.PolarErrorDetermination.InitialMountAxisAzimuthError.ArcMinutes,
+                                        TPAPAVM.PolarErrorDetermination.InitialMountAxisAltitudeError.ArcMinutes,
+                                        TPAPAVM.PolarErrorDetermination.InitialMountAxisTotalError.ArcMinutes);
+                                    var firstObserved = activeObservedDeterminations[0];
+                                    var secondObserved = activeObservedDeterminations[1];
+                                    TppaCoarseDeterminationReceiptBuilder.ValidateIndependent(
+                                        firstObserved, secondObserved);
+                                    var agreement = FreshPolarAlignmentAgreementPolicy.Evaluate(
+                                        firstObserved.AzimuthErrorMinutes,
+                                        firstObserved.AltitudeErrorMinutes,
+                                        Math.Sqrt(firstObserved.AzimuthErrorMinutes * firstObserved.AzimuthErrorMinutes
+                                            + firstObserved.AltitudeErrorMinutes * firstObserved.AltitudeErrorMinutes),
+                                        secondObserved.AzimuthErrorMinutes,
+                                        secondObserved.AltitudeErrorMinutes,
+                                        Math.Sqrt(secondObserved.AzimuthErrorMinutes * secondObserved.AzimuthErrorMinutes
+                                            + secondObserved.AltitudeErrorMinutes * secondObserved.AltitudeErrorMinutes),
+                                        AlignmentTolerance);
+                                    if (!agreement.IsRepeatable) {
+                                        throw new SequenceEntityFailedException(
+                                            "Two supervisor-observed fresh TPPA determinations do not agree; no UPAS movement was authorized.");
+                                    }
+                                    moved = await ExecuteObservedCoarseCorrection(
+                                        firstObserved,
+                                        secondObserved,
+                                        localCTS.Token);
+                                    activeObservedDeterminations.Clear();
+                                } else {
+                                    moved = executionPolicy.AllowActuatorMovement
+                                        && await TppaFastActuatorAdmissionGate.ExecuteIfAuthorizedAsync(
+                                            false,
+                                            fastInitialAdmissionGranted,
+                                            "movement",
+                                            () => TPAPAVM.MoveCloser(progress, localCTS.Token));
+                                }
                                 if (moved && TPAPAVM.AutomatedAdjustmentRequiresFreshMeasurementFeedback) {
                                     freshFeedbackMoveCount++;
                                     Logger.Info("UPAS move completed. Measuring an independent fresh three-point response before allowing another automated move.");
                                     progress?.Report(new ApplicationStatus() { Status = "Measuring fresh three-point UPAS response" });
 
                                     var freshDeterminationStopwatch = Stopwatch.StartNew();
-                                    var feedbackDetermination = await MeasureFreshThreePointCompletionVerification(TPAPAVM,
+                                    var feedbackDetermination = await MeasureFreshThreePointForActiveCampaign(TPAPAVM,
                                                                                                                     automatedVerificationStartPointing,
                                                                                                                     automatedVerificationEastDirection,
                                                                                                                     progress,
@@ -1439,6 +1497,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 captureCoarseSolveEvidence = false;
                 activeTppaCampaignId = Guid.Empty;
                 activeTppaCovarianceAuthority = null;
+                activeObservedDeterminations.Clear();
                 coarseSolveEvidence = new ConditionalWeakTable<PlateSolveResult, TppaCapturedSolveEvidence>();
                 TryLogFastRunEvent("abandoned", new Dictionary<string, object> {
                     ["outcome"] = "no-terminal-event"
@@ -2760,11 +2819,123 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             }
         }
 
+        private async Task<bool> ExecuteObservedCoarseCorrection(
+                TppaCoarseDeterminationEvidence first,
+                TppaCoarseDeterminationEvidence second,
+                CancellationToken token) {
+            using var handler = new HttpClientHandler { AllowAutoRedirect = false };
+            using var httpClient = new HttpClient(handler);
+            var executor = new HttpsUpasSupervisorCoarseTppaExecutor(
+                httpClient,
+                Properties.Settings.Default.UpasSupervisorEndpoint,
+                () => Environment.GetEnvironmentVariable("UPAS_SUPERVISOR_CLIENT_TOKEN"),
+                activeTppaCovarianceAuthority.ArtifactSha256);
+            var temperature = RefractionParameters
+                .GetRefractionParameters(weatherDataMediator.GetInfo())
+                .Temperature;
+            var maximumTravelDegrees = Math.Abs(second.AzimuthErrorMinutes) / 60.0
+                + Math.Abs(second.AltitudeErrorMinutes) / 60.0
+                + 2.0 * TppaPhysicalZeroAdmissionPolicy.ZeroToleranceDegrees;
+            var result = await executor.ExecuteAsync(
+                first,
+                second,
+                temperature,
+                maximumTravelDegrees,
+                Properties.Settings.Default.UpasSupervisorLoadProfileId,
+                token).ConfigureAwait(false);
+            if (!result.Completed) {
+                throw new SequenceEntityFailedException(
+                    "UPAS supervisor did not return a completed coarse TPPA transaction.");
+            }
+            Logger.Info(
+                $"TPPA_SUPERVISOR_COARSE_COMPLETED transactionId={result.TransactionId}; " +
+                $"moveWasRequired={result.MoveWasRequired}; maximumTravelDegrees={maximumTravelDegrees:F3}.");
+            return result.MoveWasRequired;
+        }
+        private async Task<PolarErrorDetermination> MeasureFreshThreePointForActiveCampaign(
+                TPAPAVM context,
+                Coordinates automatedVerificationStartPointing,
+                bool eastDirection,
+                IProgress<ApplicationStatus> progress,
+                CancellationToken token) {
+            if (activeTppaCovarianceAuthority == null) {
+                return await MeasureFreshThreePointCompletionVerification(
+                    context, automatedVerificationStartPointing, eastDirection,
+                    progress, token).ConfigureAwait(false);
+            }
+            var observed = await MeasureObservedFreshThreePointDetermination(
+                context, automatedVerificationStartPointing, eastDirection,
+                progress, token).ConfigureAwait(false);
+            activeObservedDeterminations.Add(observed.Evidence);
+            while (activeObservedDeterminations.Count > 2) {
+                activeObservedDeterminations.RemoveAt(0);
+            }
+            return observed.Determination;
+        }
+        private async Task<TppaObservedPolarErrorDetermination> MeasureObservedFreshThreePointDetermination(
+                TPAPAVM context,
+                Coordinates automatedVerificationStartPointing,
+                bool eastDirection,
+                IProgress<ApplicationStatus> progress,
+                CancellationToken token) {
+            if (activeTppaCampaignId == Guid.Empty
+                    || activeTppaCovarianceAuthority == null
+                    || !captureCoarseSolveEvidence) {
+                throw new InvalidOperationException(
+                    "Observed TPPA determination requires an active commissioned campaign.");
+            }
+
+            using var handler = new HttpClientHandler { AllowAutoRedirect = false };
+            using var httpClient = new HttpClient(handler);
+            var observationClient = new HttpsUpasSupervisorTppaObservationClient(
+                httpClient,
+                Properties.Settings.Default.UpasSupervisorEndpoint,
+                () => Environment.GetEnvironmentVariable("UPAS_SUPERVISOR_CLIENT_TOKEN"));
+            var coordinator = new TppaObservedDeterminationCoordinator(
+                observationClient,
+                HttpsUpasSupervisorTppaObservationClient.MaximumLeaseDuration);
+            TppaFreshDeterminationCapture captured = null;
+            var evidence = await coordinator.AcquireAsync(
+                activeTppaCampaignId,
+                async (_, observationToken) => {
+                    var determination = await MeasureFreshThreePointCompletionVerification(
+                        context,
+                        automatedVerificationStartPointing,
+                        eastDirection,
+                        progress,
+                        observationToken,
+                        value => captured = value).ConfigureAwait(false);
+                    if (captured == null || !ReferenceEquals(
+                            determination, captured.Determination)) {
+                        throw new InvalidOperationException(
+                            "Fresh TPPA determination did not expose its exact source solves.");
+                    }
+                    var source = captured.SourceSolves
+                        .Select(RequireCoarseSolveEvidence)
+                        .ToArray();
+                    var startedUtc = source.Min(item => item.ExposureStartedUtc);
+                    var completedUtc = DateTime.UtcNow;
+                    return TppaCoarseDeterminationDraftFactory.Create(
+                        Guid.NewGuid(),
+                        startedUtc,
+                        completedUtc,
+                        Properties.Settings.Default.RefractionAdjustment,
+                        activeTppaCovarianceAuthority,
+                        source,
+                        determination.InitialMountAxisAzimuthError.ArcMinutes,
+                        determination.InitialMountAxisAltitudeError.ArcMinutes);
+                },
+                token).ConfigureAwait(false);
+            return new TppaObservedPolarErrorDetermination(
+                captured.Determination,
+                evidence);
+        }
         private async Task<PolarErrorDetermination> MeasureFreshThreePointCompletionVerification(TPAPAVM context,
                                                                                                   Coordinates automatedVerificationStartPointing,
                                                                                                   bool eastDirection,
                                                                                                   IProgress<ApplicationStatus> progress,
-                                                                                                  CancellationToken token) {
+                                                                                                  CancellationToken token,
+                                                                                                  Action<TppaFreshDeterminationCapture> capture = null) {
             var completionVerificationStopwatch = Stopwatch.StartNew();
             var threePointMilliseconds = double.NaN;
             var correctionPointing = telescopeMediator.GetCurrentPosition();
@@ -2884,17 +3055,21 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             }
 
             var correctionReferenceFrame = returnToCorrectionPointing ? returnSolve : solves[2];
-            return await Task.Run(() => new PolarErrorDetermination(correctionReferenceFrame,
-                                                                     positions[0],
-                                                                     positions[1],
-                                                                     positions[2],
-                                                                     Latitude,
-                                                                     Longitude,
-                                                                     Elevation,
-                                                                     refractionParameter,
-                                                                     Properties.Settings.Default.RefractionAdjustment,
-                                                                     decSpread.ArcSeconds),
-                                  token);
+            var determination = await Task.Run(() => new PolarErrorDetermination(correctionReferenceFrame,
+                                                                                  positions[0],
+                                                                                  positions[1],
+                                                                                  positions[2],
+                                                                                  Latitude,
+                                                                                  Longitude,
+                                                                                  Elevation,
+                                                                                  refractionParameter,
+                                                                                  Properties.Settings.Default.RefractionAdjustment,
+                                                                                  decSpread.ArcSeconds),
+                                               token);
+            capture?.Invoke(new TppaFreshDeterminationCapture(
+                determination,
+                Array.AsReadOnly((PlateSolveResult[])solves.Clone())));
+            return determination;
         }
 
         private static void StampSolveObservationTime(PlateSolveResult result, DateTime observationTimeUtc) {
