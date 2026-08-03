@@ -41,6 +41,10 @@ namespace NINA.Plugins.PolarAlignment {
             UpasSupervisorTppaObservationLease lease,
             string captureDigestSha256,
             CancellationToken token);
+
+        Task AbortAsync(
+            UpasSupervisorTppaObservationLease lease,
+            CancellationToken token);
     }
 
     internal sealed class HttpsUpasSupervisorTppaObservationClient
@@ -135,6 +139,45 @@ namespace NINA.Plugins.PolarAlignment {
                 throw new InvalidOperationException("Observation attestation does not match the opened lease or capture.");
             }
             return attestation;
+        }
+
+        public async Task AbortAsync(
+                UpasSupervisorTppaObservationLease lease,
+                CancellationToken token) {
+            if (lease == null) throw new ArgumentNullException(nameof(lease));
+            var payload = new JObject {
+                ["schemaVersion"] = 1,
+                ["clientId"] = ClientId,
+                ["leaseId"] = lease.LeaseId,
+                ["nonce"] = lease.Nonce,
+                ["requestBodySha256"] = new string('0', 64)
+            };
+            payload["requestBodySha256"] =
+                HttpsUpasSupervisorCoarseTppaExecutor.ComputeRequestBodySha256(payload);
+            var bearer = tokenProvider();
+            if (string.IsNullOrWhiteSpace(bearer)) {
+                throw new InvalidOperationException(
+                    "UPAS_SUPERVISOR_CLIENT_TOKEN is not configured.");
+            }
+            using var request = new HttpRequestMessage(
+                HttpMethod.Post,
+                new Uri(endpoint, "v1/coarse/tppa-observations/abort"));
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearer);
+            request.Content = new StringContent(
+                payload.ToString(Formatting.None), Encoding.UTF8, "application/json");
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(token);
+            cts.CancelAfter(requestTimeout);
+            try {
+                using var response = await httpClient.SendAsync(request, cts.Token)
+                    .ConfigureAwait(false);
+                if (response.StatusCode != System.Net.HttpStatusCode.NoContent) {
+                    var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                    throw new InvalidOperationException(
+                        $"UPAS observation abort was rejected ({(int)response.StatusCode}): {body}");
+                }
+            } catch (OperationCanceledException ex) when (!token.IsCancellationRequested) {
+                throw new TimeoutException("UPAS observation abort timed out.", ex);
+            }
         }
 
         private async Task<JObject> SendAsync(Uri uri, JObject payload, CancellationToken token) {

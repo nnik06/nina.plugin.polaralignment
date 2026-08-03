@@ -37,6 +37,26 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public async Task AbortsExactNonceBoundObservation() {
+            var handler = new RecordingHandler();
+            using var http = new HttpClient(handler);
+            var client = new HttpsUpasSupervisorTppaObservationClient(
+                http, "https://supervisor.test/", () => "token");
+            var lease = await client.OpenAsync(
+                CampaignId, TimeSpan.FromSeconds(75), CancellationToken.None);
+
+            await client.AbortAsync(lease, CancellationToken.None);
+
+            handler.Requests.Should().HaveCount(2);
+            handler.Requests[1].Path.Should().Be("/v1/coarse/tppa-observations/abort");
+            handler.Requests[1].Body["leaseId"]!.Value<string>().Should().Be(LeaseId);
+            handler.Requests[1].Body["nonce"]!.Value<string>().Should().Be(Nonce);
+            handler.Requests[1].Body["requestBodySha256"]!.Value<string>()
+                .Should().MatchRegex("^[0-9a-f]{64}$")
+                .And.NotBe(new string('0', 64));
+            handler.Requests.Should().OnlyContain(item => item.Authorization == "Bearer token");
+        }
+        [Test]
         public async Task RejectsAttestationThatDoesNotMatchOpenedLease() {
             var handler = new RecordingHandler(closeMotionCounter: 8);
             using var http = new HttpClient(handler);
@@ -83,7 +103,9 @@ namespace NINA.Plugins.PolarAlignment.Test {
                     request.RequestUri!.AbsolutePath,
                     request.Headers.Authorization?.ToString(),
                     JObject.Parse(text)));
-                if (request.RequestUri.AbsolutePath.EndsWith("/close", StringComparison.Ordinal)) {
+                if (request.RequestUri.AbsolutePath.EndsWith("/abort", StringComparison.Ordinal)) {
+                    return new HttpResponseMessage(HttpStatusCode.NoContent);
+                }                if (request.RequestUri.AbsolutePath.EndsWith("/close", StringComparison.Ordinal)) {
                     return Json(HttpStatusCode.OK, new JObject {
                         ["schemaVersion"] = 1, ["leaseId"] = LeaseId, ["nonce"] = Nonce,
                         ["campaignId"] = CampaignId.ToString("D"), ["bootId"] = BootId,

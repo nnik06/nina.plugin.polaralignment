@@ -56,6 +56,28 @@ namespace NINA.Plugins.PolarAlignment {
             return receipt;
         }
 
+        internal static string BuildObservationCaptureDigest(
+                Guid determinationId,
+                string observationLeaseNonce,
+                IReadOnlyList<TppaCoarseSourceSolveEvidence> sourceSolves) {
+            if (determinationId == Guid.Empty) {
+                throw new ArgumentException(
+                    "Coarse TPPA determination identity is required.",
+                    nameof(determinationId));
+            }
+            RequireLowerHex(observationLeaseNonce, 64, "observation lease nonce");
+            if (sourceSolves?.Count != 3 || sourceSolves.Any(item => item == null)) {
+                throw new ArgumentException(
+                    "Exactly three source solves are required.",
+                    nameof(sourceSolves));
+            }
+            var capture = new JObject {
+                ["determinationId"] = determinationId.ToString("D"),
+                ["observationLeaseNonce"] = observationLeaseNonce,
+                ["sourceSolves"] = new JArray(sourceSolves.Select(BuildSolve))
+            };
+            return HttpsUpasSupervisorCoarseTppaExecutor.ComputeRequestBodySha256(capture);
+        }
         internal static void ValidateIndependent(
                 TppaCoarseDeterminationEvidence first,
                 TppaCoarseDeterminationEvidence second) {
