@@ -31,6 +31,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Runtime.CompilerServices;
 using System.Runtime.Serialization;
 using System.Text;
 using System.Threading;
@@ -96,6 +97,9 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
         ) {
             Timeout = Timeout.InfiniteTimeSpan
         };
+        private ConditionalWeakTable<PlateSolveResult, TppaCapturedSolveEvidence> coarseSolveEvidence = new();
+        private bool captureCoarseSolveEvidence;
+        private Guid activeTppaCampaignId;
         private IList<string> issues = new List<string>();
         private const string ResumeAlignmentTopic = $"{nameof(PolarAlignmentPlugin)}_{nameof(PolarAlignment)}_ResumeAlignment";
         private const string PauseAlignmentTopic = $"{nameof(PolarAlignmentPlugin)}_{nameof(PolarAlignment)}_PauseAlignment";        
@@ -552,7 +556,14 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 && automatedAdjustmentsEnabled
                 && executionPolicy.AllowActuatorMovement;
             if (enforceFastRuntimeBudget) {
-                await RequireFreshPhysicalZeroAdmission(token).ConfigureAwait(false);
+                var physicalZero = await RequireFreshPhysicalZeroAdmission(token).ConfigureAwait(false);
+                if (!Guid.TryParseExact(physicalZero.CampaignId, "D", out activeTppaCampaignId)
+                        || activeTppaCampaignId == Guid.Empty) {
+                    throw new SequenceEntityFailedException(
+                        "Supervisor physical-zero admission did not mint a valid TPPA campaign.");
+                }
+                coarseSolveEvidence = new ConditionalWeakTable<PlateSolveResult, TppaCapturedSolveEvidence>();
+                captureCoarseSolveEvidence = true;
             }
             // The five-minute contract starts only after physical-zero admission.
             // A return-to-zero transaction and stationary reverification are preflight.
@@ -1422,6 +1433,9 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 Notification.ShowError("Three Point Polar Alignment failed - " + ex.Message);
                 throw;
             } finally {
+                captureCoarseSolveEvidence = false;
+                activeTppaCampaignId = Guid.Empty;
+                coarseSolveEvidence = new ConditionalWeakTable<PlateSolveResult, TppaCapturedSolveEvidence>();
                 TryLogFastRunEvent("abandoned", new Dictionary<string, object> {
                     ["outcome"] = "no-terminal-event"
                 }, terminal: true);
@@ -1439,7 +1453,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             }
         }
 
-        private async Task RequireFreshPhysicalZeroAdmission(CancellationToken token) {
+        private async Task<TppaPhysicalZeroPreflightResult> RequireFreshPhysicalZeroAdmission(CancellationToken token) {
             var temperature = RefractionParameters
                 .GetRefractionParameters(weatherDataMediator.GetInfo())
                 .Temperature;
@@ -1481,6 +1495,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     + $"coordination: {result.Admission.Reason}. No TPPA timer or TPPA actuator "
                     + "connection was started.");
             }
+            return result;
         }
 
         private TppaThreePointGeometryQualification BindFreshGeometryQualification(
@@ -2887,6 +2902,8 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 }
 
                 var seq = new CaptureSequence() { Binning = Binning, Gain = Gain, ExposureTime = ExposureTime, Offset = Offset, FilterType = Filter, ImageType = ImageTypes.SNAPSHOT };
+                var mountStateObservedUtc = DateTime.UtcNow;
+                var mountState = telescopeMediator.GetInfo();
                 var captureStartedUtc = DateTime.UtcNow;
                 DateTime? observationTimeUtc = null;
                 IRenderedImage image = null;
@@ -2953,6 +2970,24 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                                          progress,
                                                          token).ConfigureAwait(false);
                         StampSolveObservationTime(result, observationTimeUtc.Value);
+                        if (captureCoarseSolveEvidence && result.Success) {
+                            var evidence = new TppaCapturedSolveEvidence(
+                                Guid.NewGuid(),
+                                TppaSolveEvidenceHash.ImageSha256(image.RawImageData),
+                                TppaSolveEvidenceHash.SolverOutputSha256(result, observationTimeUtc.Value),
+                                captureStartedUtc,
+                                checked((int)Math.Round(seq.ExposureTime * 1000.0, MidpointRounding.AwayFromZero)),
+                                observationTimeUtc.Value,
+                                mountStateObservedUtc,
+                                mountState.Connected,
+                                mountState.TrackingEnabled,
+                                mountState.Slewing,
+                                result.Coordinates.RADegrees,
+                                result.Coordinates.Dec,
+                                mountState.SideOfPier,
+                                solver?.GetType().FullName ?? "unknown");
+                            coarseSolveEvidence.Add(result, evidence);
+                        }
                     } catch (Exception ex) when (token.IsCancellationRequested) {
                         Logger.Info("TPPA_SOLVE_ATTEMPT " + new TppaSolveAttemptProvenance(
                             TppaSolveAttemptProvenance.CurrentSchemaVersion,
@@ -3054,6 +3089,15 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     $"Plate solving failed after {retryPolicy.MaximumAttempts} attempts; TPPA cannot continue safely.");
             }
             return result;
+        }
+
+        private TppaCapturedSolveEvidence RequireCoarseSolveEvidence(PlateSolveResult solve) {
+            if (!captureCoarseSolveEvidence || activeTppaCampaignId == Guid.Empty
+                    || solve == null || !coarseSolveEvidence.TryGetValue(solve, out var evidence)) {
+                throw new InvalidOperationException(
+                    "Successful TPPA solve is missing campaign-local source evidence.");
+            }
+            return evidence;
         }
 
         private double Distance(double raDegrees1, double raDegrees2) {
