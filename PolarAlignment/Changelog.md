@@ -1,3 +1,11 @@
+## Version 2.2.6.99
+
+- Bind covariance commissioning and runtime authority use to one explicit,
+  receipt-backed mechanical epoch rather than minting a different state per run.
+- Reject commissioning evidence whose hardware or mechanical-state identity
+  differs from the frozen manifest.
+- Recompute the active TPPA hardware identity and require the configured
+  mechanical epoch to match before fast-alignment movement can begin.
 ## Version 2.2.6.98
 
 - Bind every preregistered fast-alignment campaign to the exact repository

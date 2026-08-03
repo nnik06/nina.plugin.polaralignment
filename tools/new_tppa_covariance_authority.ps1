@@ -70,7 +70,7 @@ $repositoryHead = Require-LowerHex $manifest.repositoryHead 40 'repositoryHead'
 $actualHead = (& git -C $repositoryFull rev-parse HEAD 2>$null).Trim().ToLowerInvariant()
 if ($LASTEXITCODE -ne 0 -or $actualHead -ne $repositoryHead) { throw 'Repository HEAD does not match the commissioning manifest.' }
 $pluginSha = Require-LowerHex $manifest.pluginAssemblySha256 64 'pluginAssemblySha256'
-$hardware = Require-Text $manifest.hardwareConfigurationId 'hardwareConfigurationId'
+$hardware = Require-LowerHex $manifest.hardwareConfigurationId 64 'hardwareConfigurationId'
 $mechanical = Require-LowerHex $manifest.mechanicalStateId 64 'mechanicalStateId'
 $loadProfile = Require-Text $manifest.loadProfileId 'loadProfileId'
 $catalog = Require-Text $manifest.catalogIdentity 'catalogIdentity'
@@ -107,7 +107,8 @@ foreach ($entry in $entries) {
     if (-not $seenRuns.Add($runId)) { throw "Duplicate runId: $runId" }
     if ((Require-LowerHex $run.pipelineDigest 64 'pipelineDigest') -ne $pluginSha) { throw 'Evidence pipeline does not match the exact plugin DLL.' }
     if ((Require-LowerHex $run.pluginAssembly.sha256 64 'pluginAssembly.sha256') -ne $pluginSha) { throw 'Evidence plugin assembly does not match the exact plugin DLL.' }
-    if ((Require-Text $run.hardwareConfigurationId 'evidence hardwareConfigurationId') -ne $hardware) { throw 'Evidence hardware configuration mismatch.' }
+    if ((Require-LowerHex $run.hardwareConfigurationId 64 'evidence hardwareConfigurationId') -ne $hardware) { throw 'Evidence hardware configuration mismatch.' }
+    if ((Require-LowerHex $run.mechanicalStateId 64 'evidence mechanicalStateId') -ne $mechanical) { throw 'Evidence mechanical state does not match the commissioned physical epoch.' }
     if ($run.refractionAdjustmentEnabled -isnot [bool] -or -not $run.refractionAdjustmentEnabled) { throw 'Every source attempt must enable true-pole refraction adjustment.' }
     if ((Require-Text $run.poleTarget 'poleTarget') -ne 'trueCelestialPole') { throw 'Every source attempt must target the true celestial pole.' }
     $temperature = Require-Finite $run.atmosphereTemperatureCelsius 'atmosphereTemperatureCelsius'

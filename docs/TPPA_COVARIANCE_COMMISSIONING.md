@@ -11,10 +11,17 @@ shared systematic error and grants no absolute-accuracy claim.
 3. Keep UPAS stationary. Use one fixed load profile, hardware configuration,
    solver/catalog, true-pole refraction mode, safe sky arc, and mechanical
    epoch.
-4. Collect at least 20 complete VerificationOnly run-evidence JSON files. Each
+4. Create a mechanical-epoch receipt before NINA starts with
+   tools/new_tppa_mechanical_epoch.ps1. Set the returned
+   TPPA_MECHANICAL_STATE_ID in the user environment and restart NINA. The
+   receipt hash must remain unchanged for the whole no-motion campaign.
+   Any relocation, reseating, load/balance/cable change, impact, or fastener
+   adjustment invalidates the epoch and requires a new receipt and NINA restart.
+5. Collect at least 20 complete VerificationOnly run-evidence JSON files. Each
    file must use evidence schema 6, contain exactly three fresh qualified
-   determinations, and have correction sequence zero.
-5. Seal every exact evidence path and SHA-256 in a commissioning manifest. Do
+   determinations, have correction sequence zero, and carry the same mechanical
+   state ID as the receipt.
+6. Seal every exact evidence path and SHA-256 in a commissioning manifest. Do
    not omit failed preregistered attempts and replace them with later runs.
 
 The manifest uses this frozen schema:
@@ -61,7 +68,10 @@ to deny movement, which is the intended fail-closed result.
 ## Installation boundary
 
 Place the generated artifact at the configured covariance-authority path only
-after its exact bytes and SHA-256 are preserved. Any DLL rebuild, load-profile
+after its exact bytes and SHA-256 are preserved. Keep
+TPPA_MECHANICAL_STATE_ID set to the receipt hash used for commissioning;
+authority loading fails closed when active hardware or the mechanical epoch
+does not match. Any DLL rebuild, load-profile
 change, solver/catalog change, hardware/mechanical epoch change, temperature
 outside the commissioned interval, or source-campaign correction movement
 invalidates it. Repeat commissioning rather than editing the JSON manually.

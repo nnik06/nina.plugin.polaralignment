@@ -14,7 +14,7 @@ Describe 'TPPA commissioned covariance authority generator' {
         & git -C $repo commit -q -m seed
         $head = (& git -C $repo rev-parse HEAD).Trim()
         $plugin = 'a' * 64
-        $hardware = 'hardware-1'
+        $hardware = 'c' * 64
         $evidence = Join-Path $caseRoot 'evidence'
         New-Item -ItemType Directory -Path $evidence | Out-Null
         $entries = @()
@@ -37,6 +37,7 @@ Describe 'TPPA commissioned covariance authority generator' {
             $run = [ordered]@{
                 schemaVersion=6; runId=[Guid]::NewGuid().ToString('D')
                 pipelineDigest=$plugin; hardwareConfigurationId=$hardware
+                mechanicalStateId=('b'*64)
                 refractionAdjustmentEnabled=$true; poleTarget='trueCelestialPole'
                 atmosphereTemperatureCelsius=35.0; solverIdentity='astap-1'
                 pluginAssembly=[ordered]@{sha256=$plugin}; determinations=$determinations
@@ -79,6 +80,16 @@ Describe 'TPPA commissioned covariance authority generator' {
         $message | Should Match 'At least 20'
     }
 
+    It 'rejects source evidence from a different mechanical epoch' {
+        $first = $manifest.evidenceFiles[0].path
+        $run = Get-Content $first -Raw | ConvertFrom-Json
+        $run.mechanicalStateId = 'd' * 64
+        [IO.File]::WriteAllText($first,($run|ConvertTo-Json -Depth 12 -Compress),[Text.UTF8Encoding]::new($false))
+        $manifest.evidenceFiles[0].sha256 = (Get-FileHash $first -Algorithm SHA256).Hash.ToLowerInvariant()
+        [IO.File]::WriteAllText($manifestPath,($manifest|ConvertTo-Json -Depth 12 -Compress),[Text.UTF8Encoding]::new($false))
+        $message = try { & $scriptPath -ManifestPath $manifestPath -RepositoryRoot $repo -OutputPath $output; '' } catch { $_.Exception.Message }
+        $message | Should Match 'mechanical state'
+    }
     It 'rejects a source run without true-pole refraction' {
         $first = $manifest.evidenceFiles[0].path
         $run = Get-Content $first -Raw | ConvertFrom-Json

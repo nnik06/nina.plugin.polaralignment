@@ -44,6 +44,8 @@ namespace NINA.Plugins.PolarAlignment {
                 byte[] exactArtifactBytes,
                 DateTime nowUtc,
                 string loadedPluginAssemblySha256,
+                string currentHardwareConfigurationId,
+                string currentMechanicalStateId,
                 string currentLoadProfileId,
                 double currentTemperatureC) {
             if (exactArtifactBytes == null || exactArtifactBytes.Length == 0) {
@@ -53,6 +55,8 @@ namespace NINA.Plugins.PolarAlignment {
             }
             RequireUtc(nowUtc, nameof(nowUtc));
             RequireSha256(loadedPluginAssemblySha256, nameof(loadedPluginAssemblySha256));
+            RequireSha256(currentHardwareConfigurationId, nameof(currentHardwareConfigurationId));
+            RequireSha256(currentMechanicalStateId, nameof(currentMechanicalStateId));
             RequireText(currentLoadProfileId, nameof(currentLoadProfileId));
             RequireTemperature(currentTemperatureC, nameof(currentTemperatureC));
 
@@ -102,8 +106,16 @@ namespace NINA.Plugins.PolarAlignment {
                 throw new JsonException(
                     "Covariance authority plugin assembly does not match the loaded DLL.");
             }
-            var hardware = RequireText(root, "hardwareConfigurationId");
+            var hardware = RequireLowerHex(root, "hardwareConfigurationId", 64);
+            if (hardware != currentHardwareConfigurationId) {
+                throw new JsonException(
+                    "Covariance authority hardware configuration does not match the active TPPA configuration.");
+            }
             var mechanical = RequireLowerHex(root, "mechanicalStateId", 64);
+            if (mechanical != currentMechanicalStateId) {
+                throw new JsonException(
+                    "Covariance authority mechanical state does not match the active rig epoch.");
+            }
             var loadProfile = RequireText(root, "loadProfileId");
             if (loadProfile != currentLoadProfileId) {
                 throw new JsonException(

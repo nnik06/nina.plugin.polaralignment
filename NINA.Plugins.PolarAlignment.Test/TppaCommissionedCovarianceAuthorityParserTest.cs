@@ -8,13 +8,15 @@ namespace NINA.Plugins.PolarAlignment.Test {
         private static readonly DateTime Now =
             new(2026, 8, 15, 0, 0, 0, DateTimeKind.Utc);
         private static readonly string Plugin = new('b', 64);
+        private static readonly string Hardware = new('a', 64);
+        private static readonly string Mechanical = new('d', 64);
 
         [Test]
         public void ParsesExactCommissionedArtifactAndConvertsCovarianceUnits() {
             var bytes = Bytes(Authority());
 
             var result = TppaCommissionedCovarianceAuthorityParser.Parse(
-                bytes, Now, Plugin, "hae29c-ec-full-rig-v1", 35.0);
+                bytes, Now, Plugin, Hardware, Mechanical, "hae29c-ec-full-rig-v1", 35.0);
 
             result.RepositoryHead.Should().Be(new string('c', 40));
             result.PluginAssemblySha256.Should().Be(Plugin);
@@ -27,13 +29,29 @@ namespace NINA.Plugins.PolarAlignment.Test {
         [Test]
         public void RejectsLoadedDllMismatchBeforeRuntimeUse() {
             var action = () => TppaCommissionedCovarianceAuthorityParser.Parse(
-                Bytes(Authority()), Now, new string('a', 64),
-                "hae29c-ec-full-rig-v1", 35.0);
+                Bytes(Authority()), Now, new string('f', 64),
+                Hardware, Mechanical, "hae29c-ec-full-rig-v1", 35.0);
 
             action.Should().Throw<JsonException>()
                 .WithMessage("*loaded DLL*");
         }
 
+        [TestCase("hardware")]
+        [TestCase("mechanical")]
+        public void RejectsCurrentRigIdentityMismatch(string identity) {
+            var currentHardware = identity == "hardware"
+                ? new string('f', 64)
+                : Hardware;
+            var currentMechanical = identity == "mechanical"
+                ? new string('e', 64)
+                : Mechanical;
+
+            var action = () => TppaCommissionedCovarianceAuthorityParser.Parse(
+                Bytes(Authority()), Now, Plugin, currentHardware,
+                currentMechanical, "hae29c-ec-full-rig-v1", 35.0);
+
+            action.Should().Throw<JsonException>();
+        }
         [TestCase("extra")]
         [TestCase("stale")]
         [TestCase("load")]
@@ -70,7 +88,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
             }
 
             var action = () => TppaCommissionedCovarianceAuthorityParser.Parse(
-                Bytes(value), Now, Plugin, "hae29c-ec-full-rig-v1", 35.0);
+                Bytes(value), Now, Plugin, Hardware, Mechanical, "hae29c-ec-full-rig-v1", 35.0);
 
             action.Should().Throw<JsonException>();
         }
@@ -84,7 +102,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
 
             var action = () => TppaCommissionedCovarianceAuthorityParser.Parse(
                 Encoding.UTF8.GetBytes(json), Now, Plugin,
-                "hae29c-ec-full-rig-v1", 35.0);
+                Hardware, Mechanical, "hae29c-ec-full-rig-v1", 35.0);
 
             action.Should().Throw<JsonException>();
         }
@@ -96,8 +114,8 @@ namespace NINA.Plugins.PolarAlignment.Test {
             ["validUntilUtc"] = "2026-09-01T00:00:00Z",
             ["repositoryHead"] = new string('c', 40),
             ["pluginAssemblySha256"] = Plugin,
-            ["hardwareConfigurationId"] = "hae29c-ec",
-            ["mechanicalStateId"] = new string('d', 64),
+            ["hardwareConfigurationId"] = Hardware,
+            ["mechanicalStateId"] = Mechanical,
             ["loadProfileId"] = "hae29c-ec-full-rig-v1",
             ["solverIdentity"] = "astap-2026.1",
             ["catalogIdentity"] = "d50-v17",

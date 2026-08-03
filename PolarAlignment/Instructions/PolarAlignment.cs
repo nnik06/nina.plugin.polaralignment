@@ -1537,6 +1537,31 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             }
         }
 
+        private (string InstrumentId, string HardwareConfigurationId)
+                CaptureCurrentTppaHardwareIdentity(string pluginAssemblySha256) {
+            var instrumentManifest = FormattableString.Invariant(
+                $"pixelSize={profileService.ActiveProfile.CameraSettings.PixelSize:R}|focalLength={profileService.ActiveProfile.TelescopeSettings.FocalLength:R}|binningX={Binning?.X ?? 1}|binningY={Binning?.Y ?? 1}|gain={Gain}|offset={Offset}|filter={Filter?.Name ?? "none"}|exposure={ExposureTime:R}");
+            var instrumentId = TppaQualificationRunEvidenceProducer.Sha256Utf8(
+                instrumentManifest);
+            var hardwareManifest = FormattableString.Invariant(
+                $"instrument={instrumentId}|targetDistance={TargetDistance}|eastDirection={EastDirection}|refraction={Properties.Settings.Default.RefractionAdjustment}|pluginPipeline={pluginAssemblySha256}");
+            return (
+                instrumentId,
+                TppaQualificationRunEvidenceProducer.Sha256Utf8(hardwareManifest));
+        }
+
+        private static string RequireConfiguredTppaMechanicalStateId() {
+            var value = Environment.GetEnvironmentVariable(
+                "TPPA_MECHANICAL_STATE_ID");
+            if (value?.Length != 64 || value.Any(character =>
+                    !((character >= '0' && character <= '9')
+                        || (character >= 'a' && character <= 'f')))) {
+                throw new InvalidOperationException(
+                    "TPPA_MECHANICAL_STATE_ID must be the lowercase SHA-256 identity of the current fixed rig mechanical epoch.");
+            }
+            return value;
+        }
+
         private TppaCommissionedCovarianceAuthority RequireCommissionedCovarianceAuthority() {
             try {
                 var assemblyEvidence = TppaLoadedAssemblyEvidenceFactory.Capture(
@@ -1560,10 +1585,15 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 var temperature = RefractionParameters
                     .GetRefractionParameters(weatherDataMediator.GetInfo())
                     .Temperature;
+                var hardwareIdentity = CaptureCurrentTppaHardwareIdentity(
+                    assemblyEvidence.Sha256);
+                var mechanicalStateId = RequireConfiguredTppaMechanicalStateId();
                 var result = TppaCommissionedCovarianceAuthorityParser.Parse(
                     File.ReadAllBytes(artifactPath),
                     DateTime.UtcNow,
                     assemblyEvidence.Sha256,
+                    hardwareIdentity.HardwareConfigurationId,
+                    mechanicalStateId,
                     Properties.Settings.Default.UpasSupervisorLoadProfileId,
                     temperature);
                 Logger.Info(
@@ -2489,15 +2519,11 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 var qualificationCoreAssembly = TppaLoadedAssemblyEvidenceFactory.Capture(
                     typeof(TppaAbsoluteEvidenceBinder).Assembly);
                 var pipelineDigest = pluginAssembly.Sha256;
-                var instrumentManifest = FormattableString.Invariant(
-                    $"pixelSize={profileService.ActiveProfile.CameraSettings.PixelSize:R}|focalLength={profileService.ActiveProfile.TelescopeSettings.FocalLength:R}|binningX={Binning?.X ?? 1}|binningY={Binning?.Y ?? 1}|gain={Gain}|offset={Offset}|filter={Filter?.Name ?? "none"}|exposure={ExposureTime:R}");
-                var instrumentId = TppaQualificationRunEvidenceProducer.Sha256Utf8(instrumentManifest);
-                var hardwareManifest = FormattableString.Invariant(
-                    $"instrument={instrumentId}|targetDistance={TargetDistance}|eastDirection={EastDirection}|refraction={Properties.Settings.Default.RefractionAdjustment}|pluginPipeline={pipelineDigest}");
-                var hardwareConfigurationId =
-                    TppaQualificationRunEvidenceProducer.Sha256Utf8(hardwareManifest);
-                var mechanicalStateDigest = TppaQualificationRunEvidenceProducer.Sha256Utf8(
-                    $"hardware={hardwareConfigurationId}|run={runId:D}|correctionSequence=0");
+                var hardwareIdentity = CaptureCurrentTppaHardwareIdentity(pipelineDigest);
+                var instrumentId = hardwareIdentity.InstrumentId;
+                var hardwareConfigurationId = hardwareIdentity.HardwareConfigurationId;
+                var mechanicalStateDigest =
+                    RequireConfiguredTppaMechanicalStateId();
                 var process = Process.GetCurrentProcess();
                 var processStartUtc = process.StartTime.ToUniversalTime();
                 var sessionId = $"{Environment.MachineName}:{process.Id}:{processStartUtc:O}";
