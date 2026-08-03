@@ -1,5 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.Net;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using System.Globalization;
 using System.Linq;
 using System.Net.Http;
@@ -16,6 +20,19 @@ namespace NINA.Plugins.PolarAlignment {
             double currentTemperatureC,
             string currentLoadProfileId,
             CancellationToken token);
+    }
+
+    internal sealed class UpasSupervisorCoarseEvidenceUnavailableException
+            : InvalidOperationException {
+        public UpasSupervisorCoarseEvidenceUnavailableException(
+                IReadOnlyList<string> missingAuthorities)
+            : base("UPAS supervisor coarse-planning evidence is not commissioned: "
+                + string.Join(", ", missingAuthorities
+                    ?? throw new ArgumentNullException(nameof(missingAuthorities)))) {
+            MissingAuthorities = missingAuthorities;
+        }
+
+        public IReadOnlyList<string> MissingAuthorities { get; }
     }
 
     internal sealed class HttpsUpasSupervisorCoarseEvidenceSource
@@ -74,7 +91,6 @@ namespace NINA.Plugins.PolarAlignment {
                 using var response = await httpClient.SendAsync(
                     request, HttpCompletionOption.ResponseHeadersRead,
                     operationCts.Token).ConfigureAwait(false);
-                response.EnsureSuccessStatusCode();
                 if (response.RequestMessage?.RequestUri != requestUri) {
                     throw new InvalidOperationException("UPAS coarse evidence request was redirected.");
                 }
@@ -82,12 +98,14 @@ namespace NINA.Plugins.PolarAlignment {
                         "application/json", StringComparison.OrdinalIgnoreCase)) {
                     throw new InvalidOperationException("UPAS coarse evidence response is not application/json.");
                 }
-                var authenticatedContentSha256 = RequireSingleHeader(response, ContentSha256Header);
-                var authenticatedEvidenceId = RequireSingleHeader(response, EvidenceIdHeader);
                 var body = await response.Content.ReadAsByteArrayAsync(operationCts.Token)
                     .ConfigureAwait(false);
-                var elapsed = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
                 var json = new UTF8Encoding(false, true).GetString(body);
+                ThrowIfReadinessDenial(response, json, nonce);
+                response.EnsureSuccessStatusCode();
+                var authenticatedContentSha256 = RequireSingleHeader(response, ContentSha256Header);
+                var authenticatedEvidenceId = RequireSingleHeader(response, EvidenceIdHeader);
+                var elapsed = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
                 return UpasSupervisorCoarsePlanningEvidenceParser.ParseAuthenticated(
                     json, nonce, elapsed, expectedCallerLeaseId,
                     currentTemperatureC, currentLoadProfileId,
@@ -119,6 +137,64 @@ namespace NINA.Plugins.PolarAlignment {
             RequireLowerHexSha256(nonce, nameof(nonce));
             return new Uri(endpoint,
                 "v1/coarse-planning-evidence?nonce=" + nonce);
+        }
+
+        private static void ThrowIfReadinessDenial(
+                HttpResponseMessage response,
+                string json,
+                string expectedNonce) {
+            if (response.StatusCode != HttpStatusCode.Conflict) {
+                return;
+            }
+
+            try {
+                var root = JObject.Parse(json, new JsonLoadSettings {
+                    DuplicatePropertyNameHandling = DuplicatePropertyNameHandling.Error
+                });
+                RequireExactProperties(root, "detail");
+                var detail = root["detail"] as JObject
+                    ?? throw new JsonException("detail must be an object.");
+                RequireExactProperties(detail,
+                    "schemaVersion", "code", "clientRequestNonce", "ready",
+                    "motionAuthorityIncluded", "missingAuthorities");
+                if (detail["schemaVersion"]?.Type != JTokenType.Integer
+                        || detail["schemaVersion"]?.Value<long>() != 2
+                        || detail["code"]?.Type != JTokenType.String
+                        || detail["code"]?.Value<string>() != "coarse_evidence_not_ready"
+                        || detail["clientRequestNonce"]?.Type != JTokenType.String
+                        || detail["clientRequestNonce"]?.Value<string>() != expectedNonce
+                        || detail["ready"]?.Type != JTokenType.Boolean
+                        || detail["ready"]?.Value<bool>() != false
+                        || detail["motionAuthorityIncluded"]?.Type != JTokenType.Boolean
+                        || detail["motionAuthorityIncluded"]?.Value<bool>() != false
+                        || detail["missingAuthorities"] is not JArray missing
+                        || missing.Count == 0
+                        || missing.Any(item => item.Type != JTokenType.String
+                            || string.IsNullOrWhiteSpace(item.Value<string>()))) {
+                    throw new JsonException("Readiness denial does not match the frozen contract.");
+                }
+                var authorities = missing.Values<string>().ToArray();
+                if (authorities.Distinct(StringComparer.Ordinal).Count()
+                        != authorities.Length) {
+                    throw new JsonException("Readiness denial repeats a missing authority.");
+                }
+                throw new UpasSupervisorCoarseEvidenceUnavailableException(authorities);
+            } catch (UpasSupervisorCoarseEvidenceUnavailableException) {
+                throw;
+            } catch (JsonException ex) {
+                throw new InvalidOperationException(
+                    "UPAS supervisor returned a malformed coarse-evidence readiness denial.",
+                    ex);
+            }
+        }
+
+        private static void RequireExactProperties(JObject value, params string[] expected) {
+            var actual = value.Properties().Select(property => property.Name)
+                .OrderBy(name => name, StringComparer.Ordinal);
+            var required = expected.OrderBy(name => name, StringComparer.Ordinal);
+            if (!actual.SequenceEqual(required, StringComparer.Ordinal)) {
+                throw new JsonException("Readiness denial properties do not match the frozen contract.");
+            }
         }
 
         private static string RequireSingleHeader(HttpResponseMessage response, string name) {

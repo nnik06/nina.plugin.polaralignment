@@ -2,6 +2,7 @@ using FluentAssertions;
 using NINA.Plugins.PolarAlignment;
 using NUnit.Framework;
 using System;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -14,6 +15,8 @@ namespace NINA.Plugins.PolarAlignment.Test {
     public class UpasSupervisorCoarseEvidenceSourceTest {
         private const string Nonce = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
         private const string EvidenceId = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        private const string DenialFixtureSha256 =
+            "7d793fe296e73c2ca3ed87057047f2299745fd842715c4fee10077a88f103470";
 
         [TestCase("http://127.0.0.1:8443/")]
         [TestCase("https://user:secret@127.0.0.1:8443/")]
@@ -87,6 +90,47 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public async Task ReadinessDenialIsSpecificAndNeverMaterializesEvidence() {
+            var handler = new EvidenceHandler(ReadinessDenial()) {
+                StatusCode = HttpStatusCode.Conflict
+            };
+            var source = Source(handler);
+
+            Func<Task> get = async () => await source.GetAsync(
+                null, 35.0, "hae29c-ec-full-rig-v1", CancellationToken.None);
+
+            var failure = await get.Should()
+                .ThrowAsync<UpasSupervisorCoarseEvidenceUnavailableException>();
+            failure.Which.MissingAuthorities.Should().HaveCount(9);
+            failure.Which.MissingAuthorities.Should().Contain(
+                "atomicSignedAzAltPhysicalPosition");
+            failure.Which.MissingAuthorities.Should().Contain(
+                "fullTwoByTwoSkyResponseCalibration");
+            UpasSupervisorCoarsePlanningEvidenceParser.Digest(ReadinessDenial())
+                .Should().Be(DenialFixtureSha256);
+            handler.RequestCount.Should().Be(1);
+        }
+
+        [TestCase("\"ready\":false", "\"ready\":\"false\"")]
+        [TestCase("\"clientRequestNonce\":\"" + Nonce,
+            "\"clientRequestNonce\":\"" + EvidenceId)]
+        [TestCase("\"ready\":false", "\"unexpected\":0,\"ready\":false")]
+        public async Task MalformedReadinessDenialFailsClosed(
+                string original,
+                string replacement) {
+            var handler = new EvidenceHandler(
+                ReadinessDenial().Replace(original, replacement, StringComparison.Ordinal)) {
+                StatusCode = HttpStatusCode.Conflict
+            };
+
+            Func<Task> get = async () => await Source(handler).GetAsync(
+                null, 35.0, "hae29c-ec-full-rig-v1", CancellationToken.None);
+
+            await get.Should().ThrowAsync<InvalidOperationException>()
+                .WithMessage("*malformed*readiness denial*");
+        }
+
+        [Test]
         public void EvidenceSourceCannotReachAMotionSurface() {
             var fields = typeof(HttpsUpasSupervisorCoarseEvidenceSource)
                 .GetFields(System.Reflection.BindingFlags.Instance
@@ -113,6 +157,14 @@ namespace NINA.Plugins.PolarAlignment.Test {
                     "\"serverProcessingMilliseconds\": 0.0",
                     StringComparison.Ordinal);
 
+        private static string ReadinessDenial() =>
+            File.ReadAllText(
+                Path.Combine(
+                    TestContext.CurrentContext.TestDirectory,
+                    "CoarseEvidenceFixtures",
+                    "readiness-denial-v2.json"),
+                new UTF8Encoding(false, true));
+
         private sealed class EvidenceHandler : HttpMessageHandler {
             private readonly string body;
 
@@ -123,6 +175,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
             public HttpMethod? LastMethod { get; private set; }
             public string? LastAuthorization { get; private set; }
             public Uri? FinalUri { get; init; }
+            public HttpStatusCode StatusCode { get; init; } = HttpStatusCode.OK;
             public string? ContentDigestOverride { get; init; }
             public string? EvidenceIdOverride { get; init; }
             public bool OmitEvidenceId { get; init; }
@@ -135,21 +188,23 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 LastUri = request.RequestUri;
                 LastMethod = request.Method;
                 LastAuthorization = request.Headers.Authorization?.ToString();
-                var response = new HttpResponseMessage(HttpStatusCode.OK) {
+                var response = new HttpResponseMessage(StatusCode) {
                     RequestMessage = FinalUri == null
                         ? request
                         : new HttpRequestMessage(HttpMethod.Get, FinalUri),
                     Content = new StringContent(body, Encoding.UTF8, "application/json")
                 };
-                var digest = ContentDigestOverride
-                    ?? UpasSupervisorCoarsePlanningEvidenceParser.Digest(body);
-                response.Headers.TryAddWithoutValidation(
-                    HttpsUpasSupervisorCoarseEvidenceSource.ContentSha256Header,
-                    DuplicateContentDigest ? new[] { digest, digest } : new[] { digest });
-                if (!OmitEvidenceId) {
+                if (StatusCode == HttpStatusCode.OK) {
+                    var digest = ContentDigestOverride
+                        ?? UpasSupervisorCoarsePlanningEvidenceParser.Digest(body);
                     response.Headers.TryAddWithoutValidation(
-                        HttpsUpasSupervisorCoarseEvidenceSource.EvidenceIdHeader,
-                        EvidenceIdOverride ?? EvidenceId);
+                        HttpsUpasSupervisorCoarseEvidenceSource.ContentSha256Header,
+                        DuplicateContentDigest ? new[] { digest, digest } : new[] { digest });
+                    if (!OmitEvidenceId) {
+                        response.Headers.TryAddWithoutValidation(
+                            HttpsUpasSupervisorCoarseEvidenceSource.EvidenceIdHeader,
+                            EvidenceIdOverride ?? EvidenceId);
+                    }
                 }
                 return Task.FromResult(response);
             }
