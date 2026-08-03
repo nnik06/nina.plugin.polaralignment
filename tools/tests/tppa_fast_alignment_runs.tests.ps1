@@ -5,6 +5,7 @@ $pluginAssemblySha256 = '11' * 32
 $covarianceAuthorityId = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
 $covarianceAuthoritySha256 = '22' * 32
 $mechanicalStateId = '44' * 32
+$preregisteredCampaignId = '12345678-1234-4abc-8def-1234567890ab'
 $loadProfileId = 'commissioned-load-profile-v1'
 
 function New-FastRunLog(
@@ -69,6 +70,7 @@ function New-FastRunLog(
                 covarianceAuthorityId = $covarianceAuthorityId; covarianceAuthoritySha256 = $covarianceAuthoritySha256
                 mechanicalStateId = $mechanicalStateId
                 loadProfileId = $loadProfileId; tppaCampaignId = [Guid]::NewGuid().ToString('D')
+                preregisteredCampaignId = $preregisteredCampaignId
             }
             [ordered]@{
                 schemaVersion = 1; runId = $runId; event = 'initial-fresh-determination'
@@ -134,9 +136,11 @@ function New-FastRunLog(
 
 function New-FastCampaignManifest([string]$Path, [string[]]$Logs, [int]$ExpectedAttempts = 20) {
     $creator = Join-Path $PSScriptRoot '..\new_tppa_fast_alignment_campaign.ps1'
-    & $creator -OpticalTrainId 'WO-GT81-IV-0.8-OAG-L-ASI2600MM-gain100-bin1' `
+    $created = & $creator -CampaignId $preregisteredCampaignId -OpticalTrainId 'WO-GT81-IV-0.8-OAG-L-ASI2600MM-gain100-bin1' `
         -RepositoryHead $repositoryHead -PluginAssemblySha256 $pluginAssemblySha256 -CovarianceAuthorityId $covarianceAuthorityId -CovarianceAuthoritySha256 $covarianceAuthoritySha256 -MechanicalStateId $mechanicalStateId -LoadProfileId $loadProfileId -LogPath $Logs -OutputPath $Path -ExpectedAttemptCount $ExpectedAttempts `
-        -CampaignEndUtc ([DateTimeOffset]::UtcNow.AddDays(4)) | Out-Null
+        -CampaignEndUtc ([DateTimeOffset]::UtcNow.AddDays(4))
+    $created.CampaignId | Should Be $preregisteredCampaignId
+    $created.SetForNextNinaLaunch | Should Match 'TPPA_PREREGISTERED_CAMPAIGN_ID'
     $manifest = [IO.File]::ReadAllText($Path) | ConvertFrom-Json
     $manifest.CreatedUtc = '2026-08-03T17:00:00Z'
     $manifest.CampaignStartUtc = '2026-08-03T17:00:00Z'
@@ -282,6 +286,20 @@ Describe 'TPPA fast alignment evidence analyzer contract' {
         $result.PreregisteredCampaignPassRateMet | Should Be $false
         @($result.Runs | Where-Object { $_.Issues -contains 'started event exact-build identity does not match preregistered campaign' }).Count | Should Be 20
     }
+    It 'rejects runtime attempts from a different preregistered campaign' {
+        $log = Join-Path $TestDrive 'campaign-id-mismatch.log'
+        New-FastRunLog $log -UseObjectiveStrata
+        $manifest = Join-Path $TestDrive 'campaign-id-mismatch-campaign.json'
+        $sealed = New-FastCampaignManifest $manifest @($log)
+        $document = [IO.File]::ReadAllText($manifest) | ConvertFrom-Json
+        $document.CampaignId = '87654321-4321-4cba-8fed-ba0987654321'
+        [IO.File]::WriteAllText($manifest, ($document | ConvertTo-Json -Depth 6) + "`r`n", [Text.UTF8Encoding]::new($false))
+        $hash = (Get-FileHash $manifest -Algorithm SHA256).Hash
+        $result = & $scriptPath -LogPath $log -CampaignManifestPath $manifest -ExpectedCampaignManifestSha256 $hash
+        $result.PreregisteredCampaignPassRateMet | Should Be $false
+        @($result.Runs | Where-Object { $_.Issues -contains 'started event exact-build identity does not match preregistered campaign' }).Count | Should Be 20
+    }
+
     It 'rejects a run from a different mechanical epoch than the sealed campaign' {
         $log = Join-Path $TestDrive 'epoch-mismatch.log'
         New-FastRunLog $log -UseObjectiveStrata
@@ -397,6 +415,7 @@ Describe 'TPPA fast alignment evidence analyzer contract' {
                 covarianceAuthorityId = $covarianceAuthorityId; covarianceAuthoritySha256 = $covarianceAuthoritySha256
                 mechanicalStateId = $mechanicalStateId
                 loadProfileId = $loadProfileId; tppaCampaignId = [Guid]::NewGuid().ToString('D')
+                preregisteredCampaignId = $preregisteredCampaignId
             }
             [ordered]@{
                 schemaVersion = 1; runId = $runId; event = 'initial-fresh-determination'

@@ -1,6 +1,7 @@
 #requires -Version 7.5
 [CmdletBinding()]
 param(
+    [Guid]$CampaignId = [Guid]::NewGuid(),
     [Parameter(Mandatory)][ValidateSet(
         'WO-GT81-IV-0.8-OAG-L-ASI2600MM-gain100-bin1',
         'EdgeHD-9.25-0.7-OAG-L-ASI2600MM-gain100-bin1')]
@@ -78,7 +79,7 @@ $initialTotalStrata = for ($index = 0; $index -lt $stratumCounts.Count; $index++
 
 $manifest = [ordered]@{
     SchemaVersion = 4
-    CampaignId = [Guid]::NewGuid().ToString('D')
+    CampaignId = $CampaignId.ToString('D')
     CreatedUtc = $createdUtc.ToUniversalTime().ToString('O')
     CampaignStartUtc = $createdUtc.ToUniversalTime().ToString('O')
     CampaignEndUtc = $CampaignEndUtc.ToUniversalTime().ToString('O')
@@ -113,5 +114,6 @@ try { $stream.Write($bytes, 0, $bytes.Length); $stream.Flush($true) } finally { 
     CampaignId = $manifest.CampaignId
     ExpectedAttemptCount = $ExpectedAttemptCount
     OpticalTrainId = $OpticalTrainId
+    SetForNextNinaLaunch = "[Environment]::SetEnvironmentVariable('TPPA_PREREGISTERED_CAMPAIGN_ID','$($manifest.CampaignId)','User')"
     Instruction = 'Publish this SHA-256 in the append-only session ledger before the first attempt; every sealed campaign must later be reported.'
 }

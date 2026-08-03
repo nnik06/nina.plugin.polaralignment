@@ -213,7 +213,7 @@ if (-not [string]::IsNullOrWhiteSpace($CampaignManifestPath)) {
                 [string]::IsNullOrWhiteSpace($declaredLoadProfileId)) {
             throw 'campaign exact-build identity is malformed or blank'
         }
-        if ([string]::IsNullOrWhiteSpace($campaignId) -or [string]::IsNullOrWhiteSpace($declaredOpticalTrainId)) {
+        if ($campaignId -cnotmatch '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' -or [string]::IsNullOrWhiteSpace($declaredOpticalTrainId)) {
             throw 'campaign identity or declared optical train is blank'
         }
         $campaignCreatedUtc = ConvertTo-ObservedUtc (Get-PropertyValue $campaignManifest 'CreatedUtc')
@@ -434,13 +434,15 @@ foreach ($group in $runGroups) {
             $mechanicalStateId = [string](Get-PropertyValue $started[0].Payload 'mechanicalStateId')
             $loadProfileId = [string](Get-PropertyValue $started[0].Payload 'loadProfileId')
             $tppaCampaignId = [string](Get-PropertyValue $started[0].Payload 'tppaCampaignId')
+            $preregisteredCampaignId = [string](Get-PropertyValue $started[0].Payload 'preregisteredCampaignId')
             if ($repositoryHead -cnotmatch '^[0-9a-f]{40}$' -or
                     $pluginAssemblySha256 -cnotmatch '^[0-9a-f]{64}$' -or
                     $covarianceAuthorityId -cnotmatch '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' -or
                     $covarianceAuthoritySha256 -cnotmatch '^[0-9a-f]{64}$' -or
                     $mechanicalStateId -cnotmatch '^[0-9a-f]{64}$' -or
                     [string]::IsNullOrWhiteSpace($loadProfileId) -or
-                    $tppaCampaignId -cnotmatch '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$') {
+                    $tppaCampaignId -cnotmatch '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' -or
+                    $preregisteredCampaignId -cnotmatch '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$') {
                 $issues.Add('started event exact-build identity is malformed or blank')
             }
             if ($null -ne $campaignManifest -and
@@ -449,6 +451,7 @@ foreach ($group in $runGroups) {
                      $covarianceAuthorityId -cne $declaredCovarianceAuthorityId -or
                      $covarianceAuthoritySha256 -cne $declaredCovarianceAuthoritySha256 -or
                      $mechanicalStateId -cne $declaredMechanicalStateId -or
+                     $preregisteredCampaignId -cne $campaignId -or
                      $loadProfileId -cne $declaredLoadProfileId)) {
                 $issues.Add('started event exact-build identity does not match preregistered campaign')
             }

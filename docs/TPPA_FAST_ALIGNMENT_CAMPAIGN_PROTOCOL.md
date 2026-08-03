@@ -5,40 +5,41 @@ polar-axis accuracy.
 
 1. Create one manifest with `new_tppa_fast_alignment_campaign.ps1` before the
    first attempt. Use dedicated campaign logs and bind the exact repository HEAD, plugin DLL SHA-256, commissioned covariance-authority ID and artifact SHA-256, mechanical-state receipt SHA-256, load profile, and declared optical train. Runtime `started` telemetry must match those values exactly; a rebuilt DLL or swapped authority invalidates the attempt.
-2. Immediately publish the returned SHA-256 in the append-only field-session
+2. Set the returned `TPPA_PREREGISTERED_CAMPAIGN_ID` user environment command and restart NINA before the first attempt. Runtime admission fails before physical-zero movement when this binding is absent or malformed.
+3. Immediately publish the returned SHA-256 in the append-only field-session
    ledger. Pass it to the analyzer as `-ExpectedCampaignManifestSha256`.
-3. Every initiated attempt in the sealed window counts. Admission rejection,
+4. Every initiated attempt in the sealed window counts. Admission rejection,
    cancellation, crash, missing terminal telemetry, a safety-gate violation, or
    failure to obtain two fresh stationary determinations at no more than 3
    arcminutes within 300 seconds is a failure.
-4. Report every sealed manifest, including failed or incomplete campaigns. Do
+5. Report every sealed manifest, including failed or incomplete campaigns. Do
    not replace an unreported failed campaign with a new manifest.
-5. Run separate campaigns for the GT81 and EdgeHD trains. `OpticalTrainId` is a
+6. Run separate campaigns for the GT81 and EdgeHD trains. `OpticalTrainId` is a
    declared setup label, not runtime-verified telemetry.
-6. `PreregisteredCampaignPassRateMet` is the observed point estimate over that
+7. `PreregisteredCampaignPassRateMet` is the observed point estimate over that
    sealed denominator. The report also includes a Wilson 95 percent interval;
    neither the point estimate nor that descriptive interval is a population
    reliability guarantee, and attempts within one night are correlated.
-7. The objective envelope is 0--300 arcminutes. Record every attempted start;
+8. The objective envelope is 0--300 arcminutes. Record every attempted start;
    a controller admission rejection inside that objective envelope is a failed
    attempt, not permission to narrow the campaign after sealing.
-8. Before sealing a campaign, sweep the coarse planner over every stratum using
+9. Before sealing a campaign, sweep the coarse planner over every stratum using
    the lower qualified response bound and the upper witness/calibration
    uncertainty bounds. If any required stratum cannot preserve guarded
    headroom, the 0--300 arcminute objective is not qualified; do not silently
    shrink or relabel that campaign.
-9. Each attempt begins from an independently established rough alignment. Log
+10. Each attempt begins from an independently established rough alignment. Log
    its initial stratum before any movement or outcome is known; repeated runs
    from one unchanged starting state do not create independent attempts.
-10. The signed response calibration must carry a non-empty identity and use
+11. The signed response calibration must carry a non-empty identity and use
    `azEastPositive_altUpPositive` with
    `tppaErrorAfter=tppaErrorBefore+response*physicalDelta`. Missing,
    non-positive, stale, or incompatible calibration denies motion.
-11. The five-minute objective remains unqualified until measured cadence shows
+12. The five-minute objective remains unqualified until measured cadence shows
    that the complete initial measurement, every supervisor transaction,
    inter-move fresh feedback, and terminal independent confirmation fit inside
    300 seconds. A manifest records failures; it never proves timing feasibility.
-12. The manifest seals contiguous starting-error strata over the whole envelope.
+13. The manifest seals contiguous starting-error strata over the whole envelope.
    Each stratum must contain its exact preregistered attempt count and at least
    one success; overall success still requires the sealed 80 percent rate.
 

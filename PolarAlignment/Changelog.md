@@ -1,3 +1,8 @@
+## Version 2.2.6.101
+
+- Require a sealed preregistered campaign ID before physical-zero admission can authorize UPAS movement.
+- Emit and verify that campaign ID separately from the supervisor's per-attempt transaction campaign, preventing runtime evidence from being reassigned to another denominator.
+
 ## Version 2.2.6.100
 
 - Seal the current rig mechanical-epoch receipt in every preregistered fast-alignment campaign and runtime start event.

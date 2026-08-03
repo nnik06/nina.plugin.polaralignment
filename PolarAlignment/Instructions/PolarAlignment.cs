@@ -100,6 +100,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
         private ConditionalWeakTable<PlateSolveResult, TppaCapturedSolveEvidence> coarseSolveEvidence = new();
         private bool captureCoarseSolveEvidence;
         private Guid activeTppaCampaignId;
+        private Guid activePreregisteredCampaignId;
         private TppaCommissionedCovarianceAuthority activeTppaCovarianceAuthority;
         private readonly List<TppaCoarseDeterminationEvidence> activeObservedDeterminations = new();
         private IList<string> issues = new List<string>();
@@ -558,6 +559,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 && automatedAdjustmentsEnabled
                 && executionPolicy.AllowActuatorMovement;
             if (enforceFastRuntimeBudget) {
+                activePreregisteredCampaignId = RequireConfiguredTppaPreregisteredCampaignId();
                 activeTppaCovarianceAuthority =
                     RequireCommissionedCovarianceAuthority();
                 var physicalZero = await RequireFreshPhysicalZeroAdmission(token).ConfigureAwait(false);
@@ -636,7 +638,8 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     ["covarianceAuthoritySha256"] = activeTppaCovarianceAuthority.ArtifactSha256,
                     ["mechanicalStateId"] = activeTppaCovarianceAuthority.MechanicalStateSha256,
                     ["loadProfileId"] = activeTppaCovarianceAuthority.LoadProfileId,
-                    ["tppaCampaignId"] = activeTppaCampaignId.ToString("D")
+                    ["tppaCampaignId"] = activeTppaCampaignId.ToString("D"),
+                    ["preregisteredCampaignId"] = activePreregisteredCampaignId.ToString("D")
                 })) {
                     throw new SequenceEntityFailedException(
                         "Fast-alignment evidence could not be started. No UPAS connection or movement was authorized.");
@@ -1518,6 +1521,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             } finally {
                 captureCoarseSolveEvidence = false;
                 activeTppaCampaignId = Guid.Empty;
+                activePreregisteredCampaignId = Guid.Empty;
                 activeTppaCovarianceAuthority = null;
                 activeObservedDeterminations.Clear();
                 coarseSolveEvidence = new ConditionalWeakTable<PlateSolveResult, TppaCapturedSolveEvidence>();
@@ -1549,6 +1553,18 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             return (
                 instrumentId,
                 TppaQualificationRunEvidenceProducer.Sha256Utf8(hardwareManifest));
+        }
+
+        private static Guid RequireConfiguredTppaPreregisteredCampaignId() {
+            var value = Environment.GetEnvironmentVariable(
+                "TPPA_PREREGISTERED_CAMPAIGN_ID");
+            if (!Guid.TryParseExact(value, "D", out var campaignId)
+                    || campaignId == Guid.Empty
+                    || value != campaignId.ToString("D")) {
+                throw new InvalidOperationException(
+                    "TPPA_PREREGISTERED_CAMPAIGN_ID must be the lowercase D-format ID of the sealed fast-alignment campaign.");
+            }
+            return campaignId;
         }
 
         private static string RequireConfiguredTppaMechanicalStateId() {
