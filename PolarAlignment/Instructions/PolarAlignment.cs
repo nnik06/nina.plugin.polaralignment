@@ -30,6 +30,7 @@ using System.ComponentModel.Composition;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Runtime.Serialization;
 using System.Text;
 using System.Threading;
@@ -90,6 +91,10 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
         private const double MinimumPositiveAlignmentTolerance = 0.5;
         private double alignmentTolerance;
         private bool enforceFiveMinuteRuntimeBudget;
+        private const string QualifiedUpasLoadProfileId = "hae29c-ec-full-rig-v1";
+        private static readonly HttpClient UpasSupervisorHttpClient = new() {
+            Timeout = Timeout.InfiniteTimeSpan
+        };
         private IList<string> issues = new List<string>();
         private const string ResumeAlignmentTopic = $"{nameof(PolarAlignmentPlugin)}_{nameof(PolarAlignment)}_ResumeAlignment";
         private const string PauseAlignmentTopic = $"{nameof(PolarAlignmentPlugin)}_{nameof(PolarAlignment)}_PauseAlignment";        
@@ -538,7 +543,6 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
         /// <param name="token">When a cancel signal is triggered from outside, this token can be used to register to it or check if it is cancelled</param>
         /// <returns></returns>
         public override async Task Execute(IProgress<ApplicationStatus> externalProgress, CancellationToken token) {
-            var alignmentRuntime = Stopwatch.StartNew();
             var executionPolicy = PolarAlignmentExecutionPolicy.Create(VerificationOnly, DriftValidationOnly);
             var automatedAdjustmentsEnabled =
                 PolarAlignmentPlugin.ActiveAlignmentSystemVM?.DoAutomatedAdjustments == true
@@ -546,6 +550,12 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             var enforceFastRuntimeBudget = EnforceFiveMinuteRuntimeBudget
                 && automatedAdjustmentsEnabled
                 && executionPolicy.AllowActuatorMovement;
+            if (enforceFastRuntimeBudget) {
+                await RequireFreshPhysicalZeroAdmission(token).ConfigureAwait(false);
+            }
+            // The five-minute contract starts only after physical-zero admission.
+            // A return-to-zero transaction and stationary reverification are preflight.
+            var alignmentRuntime = Stopwatch.StartNew();
             var fastRunId = enforceFastRuntimeBudget ? Guid.NewGuid() : Guid.Empty;
             var fastTerminalEventLogged = false;
             var fastInitialAdmissionGranted = !enforceFastRuntimeBudget;
@@ -1425,6 +1435,42 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 if (!executionPolicy.RunDriftValidation && Properties.Settings.Default.StopTrackingWhenDone) {
                     SetTrackingSidereal(false);
                 }
+            }
+        }
+
+        private async Task RequireFreshPhysicalZeroAdmission(CancellationToken token) {
+            var temperature = RefractionParameters
+                .GetRefractionParameters(weatherDataMediator.GetInfo())
+                .Temperature;
+            var source = new HttpsUpasSupervisorCoarseEvidenceSource(
+                UpasSupervisorHttpClient,
+                Properties.Settings.Default.UpasSupervisorEndpoint,
+                () => Environment.GetEnvironmentVariable("UPAS_SUPERVISOR_CLIENT_TOKEN"));
+            UpasSupervisorCoarsePlanningEvidence evidence;
+            try {
+                evidence = await source.GetAsync(
+                    expectedCallerLeaseId: null,
+                    currentTemperatureC: temperature,
+                    currentLoadProfileId: QualifiedUpasLoadProfileId,
+                    token).ConfigureAwait(false);
+            } catch (Exception ex) when (ex is not OperationCanceledException) {
+                throw new SequenceEntityFailedException(
+                    "Automated TPPA physical-zero preflight could not obtain fresh authenticated "
+                    + $"UPAS evidence: {ex.Message} No TPPA timer, actuator connection, or movement was started.");
+            }
+
+            var decision = TppaPhysicalZeroAdmissionPolicy.Evaluate(evidence);
+            Logger.Info(
+                $"TPPA_PHYSICAL_ZERO_ADMISSION eligible={decision.IsEligible}; "
+                + $"evidenceId={decision.EvidenceId}; "
+                + $"azimuthAbsoluteBoundDegrees={decision.AzimuthAbsoluteBoundDegrees:F4}; "
+                + $"altitudeAbsoluteBoundDegrees={decision.AltitudeAbsoluteBoundDegrees:F4}; "
+                + $"reason={decision.Reason}.");
+            if (!decision.IsEligible) {
+                throw new SequenceEntityFailedException(
+                    "Automated TPPA requires a witnessed UPAS return to physical zero before starting: "
+                    + $"{decision.Reason}. Complete the supervisor return transaction and obtain a fresh "
+                    + "stationary zero re-verification. No TPPA timer, actuator connection, or movement was started.");
             }
         }
 
