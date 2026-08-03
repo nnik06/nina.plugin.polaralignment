@@ -14,11 +14,18 @@ using Newtonsoft.Json.Linq;
 namespace NINA.Plugins.PolarAlignment {
     internal sealed record TppaCoarseDeterminationEvidence(
         Guid DeterminationId,
-        string ReceiptSha256,
-        DateTime CapturedUtc,
+        DateTime StartedUtc,
+        DateTime CompletedUtc,
         string TargetSkyArcId,
         bool TruePoleRefractionEnabled,
         bool Stationary,
+        string RepositoryHead,
+        string PluginAssemblySha256,
+        string HardwareConfigurationId,
+        string MechanicalStateSha256,
+        string SolverIdentity,
+        string CatalogIdentity,
+        IReadOnlyList<TppaCoarseSourceSolveEvidence> SourceSolves,
         double AzimuthErrorMinutes,
         double AltitudeErrorMinutes,
         double CovarianceAzAzSquareMinutes,
@@ -85,17 +92,7 @@ namespace NINA.Plugins.PolarAlignment {
                 double requiredTravelDegrees,
                 string currentLoadProfileId,
                 CancellationToken token) {
-            ValidateDetermination(first, nameof(first));
-            ValidateDetermination(second, nameof(second));
-            if (first.DeterminationId == second.DeterminationId
-                    || string.Equals(first.ReceiptSha256, second.ReceiptSha256,
-                        StringComparison.Ordinal)) {
-                throw new ArgumentException("Coarse TPPA determinations must be independent.");
-            }
-            if (!string.Equals(first.TargetSkyArcId, second.TargetSkyArcId,
-                    StringComparison.Ordinal)) {
-                throw new ArgumentException("Coarse TPPA determinations must use the same sky arc.");
-            }
+            TppaCoarseDeterminationReceiptBuilder.ValidateIndependent(first, second);
             if (!double.IsFinite(currentTemperatureC)
                     || currentTemperatureC < -100.0 || currentTemperatureC > 100.0) {
                 throw new ArgumentOutOfRangeException(nameof(currentTemperatureC));
@@ -115,8 +112,12 @@ namespace NINA.Plugins.PolarAlignment {
             using var operationCts = CancellationTokenSource.CreateLinkedTokenSource(token);
             operationCts.CancelAfter(operationTimeout);
             var nowUtc = RequireUtc(utcNowProvider(), "request time");
-            var firstDetermination = BuildDetermination(first, nowUtc);
-            var secondDetermination = BuildDetermination(second, nowUtc);
+            var firstDetermination = new JObject {
+                ["receipt"] = TppaCoarseDeterminationReceiptBuilder.Build(first, nowUtc)
+            };
+            var secondDetermination = new JObject {
+                ["receipt"] = TppaCoarseDeterminationReceiptBuilder.Build(second, nowUtc)
+            };
             var idempotencyKey = idempotencyKeyProvider();
             if (string.IsNullOrWhiteSpace(idempotencyKey)) {
                 throw new InvalidOperationException("Coarse TPPA idempotency key is empty.");
@@ -171,35 +172,7 @@ namespace NINA.Plugins.PolarAlignment {
                 SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
         }
 
-        private static JObject BuildDetermination(
-                TppaCoarseDeterminationEvidence value,
-                DateTime requestUtc) {
-            var capturedUtc = RequireUtc(value.CapturedUtc, "determination capture time");
-            var age = (requestUtc - capturedUtc).TotalMilliseconds;
-            if (!double.IsFinite(age) || age < 0.0
-                    || age > MaximumDeterminationAgeMilliseconds) {
-                throw new InvalidOperationException(
-                    "Coarse TPPA determination is future-dated or stale.");
-            }
-            return new JObject {
-                ["determinationId"] = value.DeterminationId.ToString("D"),
-                ["receiptSha256"] = value.ReceiptSha256,
-                ["ageAtRequestMilliseconds"] = ToScaledInteger(age, 1.0, "age"),
-                ["targetSkyArcId"] = value.TargetSkyArcId,
-                ["truePoleRefractionEnabled"] = value.TruePoleRefractionEnabled,
-                ["stationary"] = value.Stationary,
-                ["azimuthErrorMicrodegrees"] = ToScaledInteger(
-                    value.AzimuthErrorMinutes / 60.0, 1_000_000.0, "azimuth error"),
-                ["altitudeErrorMicrodegrees"] = ToScaledInteger(
-                    value.AltitudeErrorMinutes / 60.0, 1_000_000.0, "altitude error"),
-                ["covarianceAzAzSquareMicrodegrees"] = CovarianceInteger(
-                    value.CovarianceAzAzSquareMinutes, "azimuth covariance"),
-                ["covarianceAzAltSquareMicrodegrees"] = CovarianceInteger(
-                    value.CovarianceAzAltSquareMinutes, "cross covariance"),
-                ["covarianceAltAltSquareMicrodegrees"] = CovarianceInteger(
-                    value.CovarianceAltAltSquareMinutes, "altitude covariance")
-            };
-        }
+
 
         private async Task<string> AcquireLeaseAsync(
                 string bearerToken,
@@ -333,31 +306,7 @@ namespace NINA.Plugins.PolarAlignment {
             return value;
         }
 
-        private static void ValidateDetermination(
-                TppaCoarseDeterminationEvidence value,
-                string name) {
-            if (value == null || value.DeterminationId == Guid.Empty) {
-                throw new ArgumentException("Coarse TPPA determination identity is required.", name);
-            }
-            RequireLowerHexSha256(value.ReceiptSha256, name + ".ReceiptSha256");
-            RequireUtc(value.CapturedUtc, name + ".CapturedUtc");
-            if (string.IsNullOrWhiteSpace(value.TargetSkyArcId)
-                    || !value.TruePoleRefractionEnabled || !value.Stationary) {
-                throw new ArgumentException(
-                    "Coarse TPPA determination must be stationary, true-pole, and arc-bound.", name);
-            }
-            var finite = new[] {
-                value.AzimuthErrorMinutes,
-                value.AltitudeErrorMinutes,
-                value.CovarianceAzAzSquareMinutes,
-                value.CovarianceAzAltSquareMinutes,
-                value.CovarianceAltAltSquareMinutes
-            }.All(double.IsFinite);
-            if (!finite || value.CovarianceAzAzSquareMinutes < 0.0
-                    || value.CovarianceAltAltSquareMinutes < 0.0) {
-                throw new ArgumentOutOfRangeException(name);
-            }
-        }
+
 
         private static void RequireExactProperties(JObject value, params string[] expected) {
             var actual = value.Properties().Select(property => property.Name)
