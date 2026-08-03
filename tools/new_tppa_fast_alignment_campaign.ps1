@@ -5,6 +5,11 @@ param(
         'WO-GT81-IV-0.8-OAG-L-ASI2600MM-gain100-bin1',
         'EdgeHD-9.25-0.7-OAG-L-ASI2600MM-gain100-bin1')]
     [string]$OpticalTrainId,
+    [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{40}$')][string]$RepositoryHead,
+    [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{64}$')][string]$PluginAssemblySha256,
+    [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')][string]$CovarianceAuthorityId,
+    [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{64}$')][string]$CovarianceAuthoritySha256,
+    [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$LoadProfileId,
     [Parameter(Mandatory)][string[]]$LogPath,
     [Parameter(Mandatory)][string]$OutputPath,
     [ValidateRange(1, 100)][int]$ExpectedAttemptCount = 20,
@@ -71,12 +76,17 @@ $initialTotalStrata = for ($index = 0; $index -lt $stratumCounts.Count; $index++
 }
 
 $manifest = [ordered]@{
-    SchemaVersion = 2
+    SchemaVersion = 3
     CampaignId = [Guid]::NewGuid().ToString('D')
     CreatedUtc = $createdUtc.ToUniversalTime().ToString('O')
     CampaignStartUtc = $createdUtc.ToUniversalTime().ToString('O')
     CampaignEndUtc = $CampaignEndUtc.ToUniversalTime().ToString('O')
     OpticalTrainId = $OpticalTrainId
+    RepositoryHead = $RepositoryHead
+    PluginAssemblySha256 = $PluginAssemblySha256
+    CovarianceAuthorityId = $CovarianceAuthorityId
+    CovarianceAuthoritySha256 = $CovarianceAuthoritySha256
+    LoadProfileId = $LoadProfileId
     ExpectedAttemptCount = $ExpectedAttemptCount
     LogPaths = $logs
     RequiredPassRate = $RequiredPassRate

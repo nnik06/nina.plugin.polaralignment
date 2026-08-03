@@ -1,3 +1,14 @@
+## Version 2.2.6.98
+
+- Bind every preregistered fast-alignment campaign to the exact repository
+  checkpoint, plugin DLL SHA-256, commissioned covariance authority and artifact
+  SHA-256, and load profile.
+- Emit the same exact-build identity in run-start telemetry and reject malformed,
+  missing, rebuilt, or swapped-authority evidence even when timing and TPPA
+  outcomes otherwise pass.
+- Advance the sealed campaign manifest to schema v3; schema-v2 and older
+  manifests remain historical and cannot qualify the exact-build verdict.
+
 ## Version 2.2.6.97
 
 - Expand the non-actuating preregistered evidence denominator to the full

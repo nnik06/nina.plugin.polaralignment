@@ -4,7 +4,7 @@ This protocol qualifies an operational alignment result, not traceable absolute
 polar-axis accuracy.
 
 1. Create one manifest with `new_tppa_fast_alignment_campaign.ps1` before the
-   first attempt. Use dedicated campaign logs and one declared optical train.
+   first attempt. Use dedicated campaign logs and bind the exact repository HEAD, plugin DLL SHA-256, commissioned covariance-authority ID and artifact SHA-256, load profile, and declared optical train. Runtime `started` telemetry must match those values exactly; a rebuilt DLL or swapped authority invalidates the attempt.
 2. Immediately publish the returned SHA-256 in the append-only field-session
    ledger. Pass it to the analyzer as `-ExpectedCampaignManifestSha256`.
 3. Every initiated attempt in the sealed window counts. Admission rejection,

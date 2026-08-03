@@ -157,6 +157,11 @@ $campaignIssues = [Collections.Generic.List[string]]::new()
 $campaignExpectedAttemptCount = $null
 $campaignId = $null
 $declaredOpticalTrainId = $null
+$declaredRepositoryHead = $null
+$declaredPluginAssemblySha256 = $null
+$declaredCovarianceAuthorityId = $null
+$declaredCovarianceAuthoritySha256 = $null
+$declaredLoadProfileId = $null
 $campaignCreatedUtc = $null
 $campaignStartUtc = $null
 $campaignEndUtc = $null
@@ -174,7 +179,9 @@ if (-not [string]::IsNullOrWhiteSpace($CampaignManifestPath)) {
         $campaignManifest = [IO.File]::ReadAllText($manifestPath) | ConvertFrom-Json -DateKind String
         $allowedManifestFields = @(
             'SchemaVersion', 'CampaignId', 'CreatedUtc', 'CampaignStartUtc',
-            'CampaignEndUtc', 'OpticalTrainId', 'ExpectedAttemptCount',
+            'CampaignEndUtc', 'OpticalTrainId', 'RepositoryHead',
+            'PluginAssemblySha256', 'CovarianceAuthorityId',
+            'CovarianceAuthoritySha256', 'LoadProfileId', 'ExpectedAttemptCount',
             'LogPaths', 'RequiredPassRate', 'MinimumSuccessfulAttempts',
             'MinimumEligibleRuns', 'MinimumNights', 'MaximumRuntimeSeconds',
             'MinimumSettleSeconds', 'MaximumToleranceMinutes',
@@ -186,11 +193,23 @@ if (-not [string]::IsNullOrWhiteSpace($CampaignManifestPath)) {
         if ($unexpected.Count -gt 0 -or $missing.Count -gt 0) {
             throw "campaign manifest fields are not exact; missing=$($missing -join ','); unexpected=$($unexpected -join ',')"
         }
-        if ((ConvertTo-StrictInt (Get-PropertyValue $campaignManifest 'SchemaVersion') 'campaign.SchemaVersion') -ne 2) {
-            throw 'campaign manifest SchemaVersion is not 2; legacy manifests cannot qualify the sealed-policy campaign verdict'
+        if ((ConvertTo-StrictInt (Get-PropertyValue $campaignManifest 'SchemaVersion') 'campaign.SchemaVersion') -ne 3) {
+            throw 'campaign manifest SchemaVersion is not 3; legacy manifests cannot qualify the exact-build campaign verdict'
         }
         $campaignId = [string](Get-PropertyValue $campaignManifest 'CampaignId')
         $declaredOpticalTrainId = [string](Get-PropertyValue $campaignManifest 'OpticalTrainId')
+        $declaredRepositoryHead = [string](Get-PropertyValue $campaignManifest 'RepositoryHead')
+        $declaredPluginAssemblySha256 = [string](Get-PropertyValue $campaignManifest 'PluginAssemblySha256')
+        $declaredCovarianceAuthorityId = [string](Get-PropertyValue $campaignManifest 'CovarianceAuthorityId')
+        $declaredCovarianceAuthoritySha256 = [string](Get-PropertyValue $campaignManifest 'CovarianceAuthoritySha256')
+        $declaredLoadProfileId = [string](Get-PropertyValue $campaignManifest 'LoadProfileId')
+        if ($declaredRepositoryHead -cnotmatch '^[0-9a-f]{40}$' -or
+                $declaredPluginAssemblySha256 -cnotmatch '^[0-9a-f]{64}$' -or
+                $declaredCovarianceAuthorityId -cnotmatch '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' -or
+                $declaredCovarianceAuthoritySha256 -cnotmatch '^[0-9a-f]{64}$' -or
+                [string]::IsNullOrWhiteSpace($declaredLoadProfileId)) {
+            throw 'campaign exact-build identity is malformed or blank'
+        }
         if ([string]::IsNullOrWhiteSpace($campaignId) -or [string]::IsNullOrWhiteSpace($declaredOpticalTrainId)) {
             throw 'campaign identity or declared optical train is blank'
         }
@@ -405,6 +424,28 @@ foreach ($group in $runGroups) {
             }
             $refractionEnabled = ConvertTo-StrictBoolean (Get-PropertyValue $started[0].Payload 'refractionAdjustmentEnabled') 'refractionAdjustmentEnabled'
             if (-not $refractionEnabled) { $issues.Add('true-pole refraction adjustment was disabled') }
+            $repositoryHead = [string](Get-PropertyValue $started[0].Payload 'repositoryHead')
+            $pluginAssemblySha256 = [string](Get-PropertyValue $started[0].Payload 'pluginAssemblySha256')
+            $covarianceAuthorityId = [string](Get-PropertyValue $started[0].Payload 'covarianceAuthorityId')
+            $covarianceAuthoritySha256 = [string](Get-PropertyValue $started[0].Payload 'covarianceAuthoritySha256')
+            $loadProfileId = [string](Get-PropertyValue $started[0].Payload 'loadProfileId')
+            $tppaCampaignId = [string](Get-PropertyValue $started[0].Payload 'tppaCampaignId')
+            if ($repositoryHead -cnotmatch '^[0-9a-f]{40}$' -or
+                    $pluginAssemblySha256 -cnotmatch '^[0-9a-f]{64}$' -or
+                    $covarianceAuthorityId -cnotmatch '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' -or
+                    $covarianceAuthoritySha256 -cnotmatch '^[0-9a-f]{64}$' -or
+                    [string]::IsNullOrWhiteSpace($loadProfileId) -or
+                    $tppaCampaignId -cnotmatch '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$') {
+                $issues.Add('started event exact-build identity is malformed or blank')
+            }
+            if ($null -ne $campaignManifest -and
+                    ($repositoryHead -cne $declaredRepositoryHead -or
+                     $pluginAssemblySha256 -cne $declaredPluginAssemblySha256 -or
+                     $covarianceAuthorityId -cne $declaredCovarianceAuthorityId -or
+                     $covarianceAuthoritySha256 -cne $declaredCovarianceAuthoritySha256 -or
+                     $loadProfileId -cne $declaredLoadProfileId)) {
+                $issues.Add('started event exact-build identity does not match preregistered campaign')
+            }
             $startedUtc = ConvertTo-ObservedUtc (Get-PropertyValue $started[0].Payload 'observedUtc')
         } catch {
             $issues.Add($_.Exception.Message)
@@ -607,6 +648,11 @@ $report = [ordered]@{
     CampaignManifestSha256 = $campaignManifestSha256
     CampaignId = $campaignId
     DeclaredOpticalTrainId = $declaredOpticalTrainId
+    DeclaredRepositoryHead = $declaredRepositoryHead
+    DeclaredPluginAssemblySha256 = $declaredPluginAssemblySha256
+    DeclaredCovarianceAuthorityId = $declaredCovarianceAuthorityId
+    DeclaredCovarianceAuthoritySha256 = $declaredCovarianceAuthoritySha256
+    DeclaredLoadProfileId = $declaredLoadProfileId
     CampaignStartUtc = $campaignStartUtc
     CampaignEndUtc = $campaignEndUtc
     ExcludedOutOfWindowRecordCount = $excludedOutOfWindowRecordCount

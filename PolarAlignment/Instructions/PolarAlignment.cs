@@ -629,7 +629,13 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     ["settleSeconds"] = fastConfiguration.ResolvedSettleSeconds,
                     ["exposureSeconds"] = fastConfiguration.ExposureSeconds,
                     ["alignmentToleranceMinutes"] = AlignmentTolerance,
-                    ["refractionAdjustmentEnabled"] = Properties.Settings.Default.RefractionAdjustment
+                    ["refractionAdjustmentEnabled"] = Properties.Settings.Default.RefractionAdjustment,
+                    ["repositoryHead"] = activeTppaCovarianceAuthority.RepositoryHead,
+                    ["pluginAssemblySha256"] = activeTppaCovarianceAuthority.PluginAssemblySha256,
+                    ["covarianceAuthorityId"] = activeTppaCovarianceAuthority.AuthorityId.ToString("D"),
+                    ["covarianceAuthoritySha256"] = activeTppaCovarianceAuthority.ArtifactSha256,
+                    ["loadProfileId"] = activeTppaCovarianceAuthority.LoadProfileId,
+                    ["tppaCampaignId"] = activeTppaCampaignId.ToString("D")
                 })) {
                     throw new SequenceEntityFailedException(
                         "Fast-alignment evidence could not be started. No UPAS connection or movement was authorized.");
