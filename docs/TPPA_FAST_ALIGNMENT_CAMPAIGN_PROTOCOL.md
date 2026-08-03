@@ -3,60 +3,60 @@
 This protocol qualifies an operational alignment result, not traceable absolute
 polar-axis accuracy.
 
-1. Create one manifest with `new_tppa_fast_alignment_campaign.ps1` before the
-   first attempt. Use dedicated campaign logs and bind the exact repository HEAD, plugin DLL SHA-256, commissioned covariance-authority ID and artifact SHA-256, mechanical-state receipt SHA-256, load profile, and declared optical train. Runtime `started` telemetry must match those values exactly; a rebuilt DLL or swapped authority invalidates the attempt.
-2. Set the returned `TPPA_PREREGISTERED_CAMPAIGN_ID` user environment command and restart NINA before the first attempt. Runtime admission fails before physical-zero movement when this binding is absent or malformed.
-3. Immediately publish the returned SHA-256 in the append-only field-session
-   ledger. Pass it to the analyzer as `-ExpectedCampaignManifestSha256`.
-4. Every initiated attempt in the sealed window counts. Admission rejection,
-   cancellation, crash, missing terminal telemetry, a safety-gate violation, or
-   failure to obtain two fresh stationary determinations at no more than 3
-   arcminutes within 300 seconds is a failure.
-5. Report every sealed manifest, including failed or incomplete campaigns. Do
-   not replace an unreported failed campaign with a new manifest.
-6. Run separate campaigns for the GT81 and EdgeHD trains. `OpticalTrainId` is a
-   declared setup label, not runtime-verified telemetry.
-7. `PreregisteredCampaignPassRateMet` is the observed point estimate over that
-   sealed denominator. The report also includes a Wilson 95 percent interval;
-   neither the point estimate nor that descriptive interval is a population
-   reliability guarantee, and attempts within one night are correlated.
-8. The objective envelope is 0--300 arcminutes. Record every attempted start;
-   a controller admission rejection inside that objective envelope is a failed
-   attempt, not permission to narrow the campaign after sealing.
-9. Before sealing a campaign, sweep the coarse planner over every stratum using
-   the lower qualified response bound and the upper witness/calibration
-   uncertainty bounds. If any required stratum cannot preserve guarded
-   headroom, the 0--300 arcminute objective is not qualified; do not silently
-   shrink or relabel that campaign.
-10. Each attempt begins from an independently established rough alignment. Log
-   its initial stratum before any movement or outcome is known; repeated runs
-   from one unchanged starting state do not create independent attempts.
-11. The signed response calibration must carry a non-empty identity and use
-   `azEastPositive_altUpPositive` with
-   `tppaErrorAfter=tppaErrorBefore+response*physicalDelta`. Missing,
-   non-positive, stale, or incompatible calibration denies motion.
-12. The five-minute objective remains unqualified until measured cadence shows
-   that the complete initial measurement, every supervisor transaction,
-   inter-move fresh feedback, and terminal independent confirmation fit inside
-   300 seconds. A manifest records failures; it never proves timing feasibility.
-13. The manifest seals contiguous starting-error strata over the whole envelope.
-   Each stratum must contain its exact preregistered attempt count and at least
-   one success; overall success still requires the sealed 80 percent rate.
+1. Before sealing a campaign, commission one cadence-authority artifact from at
+   least 20 transitions over at least two nights. It must show zero false-stable
+   exits and no more than 0.5 arcminute vector separation from the 30-second
+   reference. The authority is valid only for its exact plugin DLL, hardware
+   configuration, mechanical epoch, load profile, temperature range, settle,
+   and measured worst-case fresh-determination duration.
+2. Create one schema-5 manifest with `new_tppa_fast_alignment_campaign.ps1`
+   before the first attempt. Bind the exact repository HEAD, plugin DLL SHA-256,
+   covariance authority, cadence authority, qualified settle and fresh duration,
+   mechanical-state receipt, load profile, optical train, log set, time window,
+   attempt denominator, and starting-error strata.
+3. Set the returned `TPPA_PREREGISTERED_CAMPAIGN_ID` user environment command
+   and restart NINA before the first attempt. Runtime admission fails before
+   physical-zero movement when this binding is absent or malformed.
+4. Publish the manifest SHA-256 in the append-only field ledger and pass it to
+   the analyzer as `-ExpectedCampaignManifestSha256`.
+5. Every attempt begins with a fresh supervisor observation of the physical
+   UPAS scales. If both conservative signed bounds lie within +/-0.1 degree,
+   the supervisor mints a fresh zero witness without movement. Otherwise it
+   performs one bounded physical-zero transaction and must re-witness both axes
+   inside +/-0.1 degree. Missing, ambiguous, stale, or reused evidence denies
+   TPPA start. Controller MPos is never accepted as physical zero.
+6. The five-minute clock starts only after physical-zero admission. Runtime
+   settle must exactly match the commissioned cadence, and the runtime reserves
+   the authority's measured worst-case fresh-determination duration before each
+   move and final confirmation. Without a current matching cadence authority,
+   the actuator-capable fast path does not start; ordinary non-fast operation
+   retains the unconditional 30-second settle floor.
+7. The objective envelope is 0--300 arcminutes. Errors up to 24 arcminutes use
+   the fine controller; larger errors use the separately guarded coarse planner
+   before fine handoff. Every plan remains subject to signed response evidence,
+   physical headroom, uncertainty, reversal, regression, budget, and the
+   +/-5.4-degree software travel envelope. Admission never guarantees a move.
+8. Completion requires two independent fresh stationary true-pole TPPA
+   determinations no greater than 3 arcminutes, with no reused continuous
+   estimator evidence. Refraction adjustment must be enabled.
+9. Every initiated attempt in the sealed window counts. Admission rejection,
+   cancellation, crash, missing terminal telemetry, unsafe state, or failure to
+   complete within 300 seconds remains a denominator failure. Do not replace an
+   incomplete campaign with an unreported new manifest.
+10. Run separate campaigns for GT81 and EdgeHD. Each campaign covers contiguous
+    0--30, 30--60, 60--120, 120--180, 180--240, and 240--300 arcminute strata,
+    with its exact preregistered count and at least one success in every stratum.
+11. `PreregisteredCampaignPassRateMet` is a point estimate over the sealed
+    denominator, not a confidence-bounded population guarantee. The default
+    claim requires at least 16 of 20 attempts over at least three nights, with
+    zero false success and zero safety violation.
 
-The 0--300 arcminute campaign is an evidence denominator, not proof that every
-start is presently movable. The current coarse planner remains limited to
-0--240 arcminutes and reserves at least 1 degree of nominal travel on either
-axis. The software hard limit is +/-5.4 degrees, approximately 0.6 degree inside
-the observed mechanical stops near +/-6 degrees. A start in the 240--300
-arcminute stratum that cannot preserve the configured reserve is a campaign
-failure; it is never silently excluded or converted into motion authority.
+The software hard limit is +/-5.4 degrees, about 0.6 degree inside the observed
+mechanical stops near +/-6 degrees. Hall sensing may later improve actuator
+position, rollback, backlash measurement, and limit confidence, but it does not
+measure celestial polar error and cannot replace either fresh TPPA result.
 
-The current fixed-gain controller is qualified only over its separately stated
-0--24 arcminute admission envelope. The 0--300 arcminute campaign envelope is
-an objective/evidence boundary, not an actuator boundary. Starts above 24
-arcminutes must remain motion-denied until a separately tested coarse-to-fine
-controller and external supervisor headroom contract are commissioned; changing
-the manifest alone never authorizes wider UPAS motion.
-
-Imaging acceptance remains a same-session guided 900-second bracket whose
-corner star shapes show that alignment is not the limiting term.
+Passing the alignment campaign establishes the automated mount-alignment
+capability. Imaging acceptance remains a same-session guided 900-second
+narrowband bracket whose corner-star behavior shows that alignment is not the
+limiting term for each optical train.

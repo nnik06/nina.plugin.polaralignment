@@ -22,7 +22,7 @@ namespace NINA.Plugins.PolarAlignment {
             }
 
             if (initialTotalMinutes
-                    <= TppaFastAlignmentExecutionBudget.MaximumQualifiedInitialTotalMinutes) {
+                    <= TppaFastAlignmentExecutionBudget.FineControllerInitialTotalMinutes) {
                 return new(
                     TppaInitialCorrectionStage.Fine,
                     initialTotalMinutes,

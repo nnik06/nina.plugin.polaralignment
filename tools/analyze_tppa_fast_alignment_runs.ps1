@@ -161,6 +161,10 @@ $declaredRepositoryHead = $null
 $declaredPluginAssemblySha256 = $null
 $declaredCovarianceAuthorityId = $null
 $declaredCovarianceAuthoritySha256 = $null
+$declaredCadenceAuthorityId = $null
+$declaredCadenceAuthoritySha256 = $null
+$declaredQualifiedSettleSeconds = $null
+$declaredQualifiedFreshDeterminationSeconds = $null
 $declaredMechanicalStateId = $null
 $declaredLoadProfileId = $null
 $campaignCreatedUtc = $null
@@ -182,7 +186,10 @@ if (-not [string]::IsNullOrWhiteSpace($CampaignManifestPath)) {
             'SchemaVersion', 'CampaignId', 'CreatedUtc', 'CampaignStartUtc',
             'CampaignEndUtc', 'OpticalTrainId', 'RepositoryHead',
             'PluginAssemblySha256', 'CovarianceAuthorityId',
-            'CovarianceAuthoritySha256', 'MechanicalStateId', 'LoadProfileId', 'ExpectedAttemptCount',
+            'CovarianceAuthoritySha256', 'CadenceAuthorityId',
+            'CadenceAuthoritySha256', 'QualifiedSettleSeconds',
+            'QualifiedFreshDeterminationSeconds',
+            'MechanicalStateId', 'LoadProfileId', 'ExpectedAttemptCount',
             'LogPaths', 'RequiredPassRate', 'MinimumSuccessfulAttempts',
             'MinimumEligibleRuns', 'MinimumNights', 'MaximumRuntimeSeconds',
             'MinimumSettleSeconds', 'MaximumToleranceMinutes',
@@ -194,8 +201,8 @@ if (-not [string]::IsNullOrWhiteSpace($CampaignManifestPath)) {
         if ($unexpected.Count -gt 0 -or $missing.Count -gt 0) {
             throw "campaign manifest fields are not exact; missing=$($missing -join ','); unexpected=$($unexpected -join ',')"
         }
-        if ((ConvertTo-StrictInt (Get-PropertyValue $campaignManifest 'SchemaVersion') 'campaign.SchemaVersion') -ne 4) {
-            throw 'campaign manifest SchemaVersion is not 4; legacy manifests cannot qualify the exact-build-and-epoch campaign verdict'
+        if ((ConvertTo-StrictInt (Get-PropertyValue $campaignManifest 'SchemaVersion') 'campaign.SchemaVersion') -ne 5) {
+            throw 'campaign manifest SchemaVersion is not 5; legacy manifests cannot qualify the exact-build, epoch, and cadence-authority verdict'
         }
         $campaignId = [string](Get-PropertyValue $campaignManifest 'CampaignId')
         $declaredOpticalTrainId = [string](Get-PropertyValue $campaignManifest 'OpticalTrainId')
@@ -203,12 +210,22 @@ if (-not [string]::IsNullOrWhiteSpace($CampaignManifestPath)) {
         $declaredPluginAssemblySha256 = [string](Get-PropertyValue $campaignManifest 'PluginAssemblySha256')
         $declaredCovarianceAuthorityId = [string](Get-PropertyValue $campaignManifest 'CovarianceAuthorityId')
         $declaredCovarianceAuthoritySha256 = [string](Get-PropertyValue $campaignManifest 'CovarianceAuthoritySha256')
+        $declaredCadenceAuthorityId = [string](Get-PropertyValue $campaignManifest 'CadenceAuthorityId')
+        $declaredCadenceAuthoritySha256 = [string](Get-PropertyValue $campaignManifest 'CadenceAuthoritySha256')
+        $declaredQualifiedSettleSeconds = ConvertTo-FiniteDouble (Get-PropertyValue $campaignManifest 'QualifiedSettleSeconds') 'campaign.QualifiedSettleSeconds'
+        $declaredQualifiedFreshDeterminationSeconds = ConvertTo-FiniteDouble (Get-PropertyValue $campaignManifest 'QualifiedFreshDeterminationSeconds') 'campaign.QualifiedFreshDeterminationSeconds'
         $declaredMechanicalStateId = [string](Get-PropertyValue $campaignManifest 'MechanicalStateId')
         $declaredLoadProfileId = [string](Get-PropertyValue $campaignManifest 'LoadProfileId')
         if ($declaredRepositoryHead -cnotmatch '^[0-9a-f]{40}$' -or
                 $declaredPluginAssemblySha256 -cnotmatch '^[0-9a-f]{64}$' -or
                 $declaredCovarianceAuthorityId -cnotmatch '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' -or
                 $declaredCovarianceAuthoritySha256 -cnotmatch '^[0-9a-f]{64}$' -or
+                $declaredCadenceAuthorityId -cnotmatch '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' -or
+                $declaredCadenceAuthoritySha256 -cnotmatch '^[0-9a-f]{64}$' -or
+                $declaredQualifiedSettleSeconds -lt 5.0 -or
+                $declaredQualifiedSettleSeconds -ge 30.0 -or
+                $declaredQualifiedFreshDeterminationSeconds -lt 5.0 -or
+                $declaredQualifiedFreshDeterminationSeconds -gt 75.0 -or
                 $declaredMechanicalStateId -cnotmatch '^[0-9a-f]{64}$' -or
                 [string]::IsNullOrWhiteSpace($declaredLoadProfileId)) {
             throw 'campaign exact-build identity is malformed or blank'
@@ -247,7 +264,6 @@ if (-not [string]::IsNullOrWhiteSpace($CampaignManifestPath)) {
             @('MinimumEligibleRuns', [double]$MinimumEligibleRuns),
             @('MinimumNights', [double]$MinimumNights),
             @('MaximumRuntimeSeconds', [double]$MaximumRuntimeSeconds),
-            @('MinimumSettleSeconds', [double]$MinimumSettleSeconds),
             @('MaximumToleranceMinutes', [double]$MaximumToleranceMinutes),
             @('MinimumMoveCount', [double]$MinimumMoveCount),
             @('MaximumMoveCount', [double]$MaximumMoveCount),
@@ -258,6 +274,10 @@ if (-not [string]::IsNullOrWhiteSpace($CampaignManifestPath)) {
             if ([Math]::Abs($actual - [double]$check[1]) -gt 1e-9) {
                 throw "campaign $($check[0])=$actual does not match analyzer policy $($check[1])"
             }
+        }
+        $manifestMinimumSettle = ConvertTo-FiniteDouble (Get-PropertyValue $campaignManifest 'MinimumSettleSeconds') 'campaign.MinimumSettleSeconds'
+        if ([Math]::Abs($manifestMinimumSettle - $declaredQualifiedSettleSeconds) -gt 1e-9) {
+            throw 'campaign MinimumSettleSeconds does not match its commissioned cadence authority'
         }
         $rawStrata = @((Get-PropertyValue $campaignManifest 'InitialTotalStrata'))
         if ($rawStrata.Count -eq 0) { throw 'campaign InitialTotalStrata is empty' }
@@ -418,8 +438,13 @@ foreach ($group in $runGroups) {
             $tolerance = ConvertTo-FiniteDouble (Get-PropertyValue $started[0].Payload 'alignmentToleranceMinutes') 'alignmentToleranceMinutes'
             $settleSeconds = ConvertTo-FiniteDouble (Get-PropertyValue $started[0].Payload 'settleSeconds') 'settleSeconds'
             $exposureSeconds = ConvertTo-FiniteDouble (Get-PropertyValue $started[0].Payload 'exposureSeconds') 'exposureSeconds'
-            if ($settleSeconds -lt $MinimumSettleSeconds) {
-                $issues.Add("settle $settleSeconds s is below qualified minimum $MinimumSettleSeconds s")
+            $effectiveMinimumSettleSeconds = if ($null -ne $campaignManifest -and $null -ne $declaredQualifiedSettleSeconds) {
+                $declaredQualifiedSettleSeconds
+            } else {
+                $MinimumSettleSeconds
+            }
+            if ($settleSeconds -lt $effectiveMinimumSettleSeconds) {
+                $issues.Add("settle $settleSeconds s is below qualified minimum $effectiveMinimumSettleSeconds s")
             }
             if ($exposureSeconds -le 0.0) { $issues.Add('exposureSeconds must be positive') }
             if ($tolerance -le 0.0 -or $tolerance -gt $MaximumToleranceMinutes) {
@@ -431,6 +456,10 @@ foreach ($group in $runGroups) {
             $pluginAssemblySha256 = [string](Get-PropertyValue $started[0].Payload 'pluginAssemblySha256')
             $covarianceAuthorityId = [string](Get-PropertyValue $started[0].Payload 'covarianceAuthorityId')
             $covarianceAuthoritySha256 = [string](Get-PropertyValue $started[0].Payload 'covarianceAuthoritySha256')
+            $cadenceAuthorityId = [string](Get-PropertyValue $started[0].Payload 'cadenceAuthorityId')
+            $cadenceAuthoritySha256 = [string](Get-PropertyValue $started[0].Payload 'cadenceAuthoritySha256')
+            $qualifiedSettleSeconds = ConvertTo-FiniteDouble (Get-PropertyValue $started[0].Payload 'qualifiedSettleSeconds') 'qualifiedSettleSeconds'
+            $qualifiedFreshDeterminationSeconds = ConvertTo-FiniteDouble (Get-PropertyValue $started[0].Payload 'qualifiedFreshDeterminationSeconds') 'qualifiedFreshDeterminationSeconds'
             $mechanicalStateId = [string](Get-PropertyValue $started[0].Payload 'mechanicalStateId')
             $loadProfileId = [string](Get-PropertyValue $started[0].Payload 'loadProfileId')
             $tppaCampaignId = [string](Get-PropertyValue $started[0].Payload 'tppaCampaignId')
@@ -439,6 +468,12 @@ foreach ($group in $runGroups) {
                     $pluginAssemblySha256 -cnotmatch '^[0-9a-f]{64}$' -or
                     $covarianceAuthorityId -cnotmatch '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' -or
                     $covarianceAuthoritySha256 -cnotmatch '^[0-9a-f]{64}$' -or
+                    $cadenceAuthorityId -cnotmatch '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' -or
+                    $cadenceAuthoritySha256 -cnotmatch '^[0-9a-f]{64}$' -or
+                    $qualifiedSettleSeconds -lt 5.0 -or
+                    $qualifiedSettleSeconds -ge 30.0 -or
+                    $qualifiedFreshDeterminationSeconds -lt 5.0 -or
+                    $qualifiedFreshDeterminationSeconds -gt 75.0 -or
                     $mechanicalStateId -cnotmatch '^[0-9a-f]{64}$' -or
                     [string]::IsNullOrWhiteSpace($loadProfileId) -or
                     $tppaCampaignId -cnotmatch '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' -or
@@ -450,6 +485,10 @@ foreach ($group in $runGroups) {
                      $pluginAssemblySha256 -cne $declaredPluginAssemblySha256 -or
                      $covarianceAuthorityId -cne $declaredCovarianceAuthorityId -or
                      $covarianceAuthoritySha256 -cne $declaredCovarianceAuthoritySha256 -or
+                     $cadenceAuthorityId -cne $declaredCadenceAuthorityId -or
+                     $cadenceAuthoritySha256 -cne $declaredCadenceAuthoritySha256 -or
+                     [Math]::Abs($qualifiedSettleSeconds - $declaredQualifiedSettleSeconds) -gt 1e-9 -or
+                     [Math]::Abs($qualifiedFreshDeterminationSeconds - $declaredQualifiedFreshDeterminationSeconds) -gt 1e-9 -or
                      $mechanicalStateId -cne $declaredMechanicalStateId -or
                      $preregisteredCampaignId -cne $campaignId -or
                      $loadProfileId -cne $declaredLoadProfileId)) {
@@ -634,7 +673,7 @@ $report = [ordered]@{
     RequiredPassRate = $RequiredPassRate
     MinimumNights = $MinimumNights
     MaximumRuntimeSeconds = $MaximumRuntimeSeconds
-    MinimumSettleSeconds = $MinimumSettleSeconds
+    MinimumSettleSeconds = if ($null -ne $declaredQualifiedSettleSeconds) { $declaredQualifiedSettleSeconds } else { $MinimumSettleSeconds }
     MaximumToleranceMinutes = $MaximumToleranceMinutes
     InitialEligibilityRangeMinutes = @($MinimumInitialTotalMinutes, $MaximumInitialTotalMinutes)
     MinimumMoveCount = $MinimumMoveCount

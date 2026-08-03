@@ -4,6 +4,10 @@ $repositoryHead = '0123456789abcdef0123456789abcdef01234567'
 $pluginAssemblySha256 = '11' * 32
 $covarianceAuthorityId = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
 $covarianceAuthoritySha256 = '22' * 32
+$cadenceAuthorityId = 'bbbbbbbb-cccc-4ddd-8eee-ffffffffffff'
+$cadenceAuthoritySha256 = '33' * 32
+$qualifiedSettleSeconds = 15.0
+$qualifiedFreshDeterminationSeconds = 45.0
 $mechanicalStateId = '44' * 32
 $preregisteredCampaignId = '12345678-1234-4abc-8def-1234567890ab'
 $loadProfileId = 'commissioned-load-profile-v1'
@@ -68,6 +72,9 @@ function New-FastRunLog(
                 refractionAdjustmentEnabled = $refraction
                 repositoryHead = $repositoryHead; pluginAssemblySha256 = $pluginAssemblySha256
                 covarianceAuthorityId = $covarianceAuthorityId; covarianceAuthoritySha256 = $covarianceAuthoritySha256
+                cadenceAuthorityId = $cadenceAuthorityId; cadenceAuthoritySha256 = $cadenceAuthoritySha256
+                qualifiedSettleSeconds = $qualifiedSettleSeconds
+                qualifiedFreshDeterminationSeconds = $qualifiedFreshDeterminationSeconds
                 mechanicalStateId = $mechanicalStateId
                 loadProfileId = $loadProfileId; tppaCampaignId = [Guid]::NewGuid().ToString('D')
                 preregisteredCampaignId = $preregisteredCampaignId
@@ -135,9 +142,15 @@ function New-FastRunLog(
 }
 
 function New-FastCampaignManifest([string]$Path, [string[]]$Logs, [int]$ExpectedAttempts = 20) {
+    foreach ($logPath in $Logs) {
+        $text = [IO.File]::ReadAllText($logPath)
+        $rewritten = [regex]::Replace($text, '"settleSeconds":30(?:\.0)?', '"settleSeconds":15.0')
+        if ($rewritten -eq $text) { throw "sealed fixture contains no unconditional settle telemetry: $logPath" }
+        [IO.File]::WriteAllText($logPath, $rewritten, [Text.UTF8Encoding]::new($false))
+    }
     $creator = Join-Path $PSScriptRoot '..\new_tppa_fast_alignment_campaign.ps1'
     $created = & $creator -CampaignId $preregisteredCampaignId -OpticalTrainId 'WO-GT81-IV-0.8-OAG-L-ASI2600MM-gain100-bin1' `
-        -RepositoryHead $repositoryHead -PluginAssemblySha256 $pluginAssemblySha256 -CovarianceAuthorityId $covarianceAuthorityId -CovarianceAuthoritySha256 $covarianceAuthoritySha256 -MechanicalStateId $mechanicalStateId -LoadProfileId $loadProfileId -LogPath $Logs -OutputPath $Path -ExpectedAttemptCount $ExpectedAttempts `
+        -RepositoryHead $repositoryHead -PluginAssemblySha256 $pluginAssemblySha256 -CovarianceAuthorityId $covarianceAuthorityId -CovarianceAuthoritySha256 $covarianceAuthoritySha256 -CadenceAuthorityId $cadenceAuthorityId -CadenceAuthoritySha256 $cadenceAuthoritySha256 -QualifiedSettleSeconds $qualifiedSettleSeconds -QualifiedFreshDeterminationSeconds $qualifiedFreshDeterminationSeconds -MechanicalStateId $mechanicalStateId -LoadProfileId $loadProfileId -LogPath $Logs -OutputPath $Path -ExpectedAttemptCount $ExpectedAttempts `
         -CampaignEndUtc ([DateTimeOffset]::UtcNow.AddDays(4))
     $created.CampaignId | Should Be $preregisteredCampaignId
     $created.SetForNextNinaLaunch | Should Match 'TPPA_PREREGISTERED_CAMPAIGN_ID'
@@ -260,10 +273,6 @@ Describe 'TPPA fast alignment evidence analyzer contract' {
         $manifest = Join-Path $TestDrive 'eligibility-policy-campaign.json'
         $sealed = New-FastCampaignManifest $manifest @($log)
 
-        $settle = & $scriptPath -LogPath $log -CampaignManifestPath $manifest `
-            -ExpectedCampaignManifestSha256 $sealed.Sha256 -MinimumSettleSeconds 10
-        ($settle.CampaignIssues -join ' ') | Should Match 'MinimumSettleSeconds=.*does not match analyzer policy'
-
         $minimumMoves = & $scriptPath -LogPath $log -CampaignManifestPath $manifest `
             -ExpectedCampaignManifestSha256 $sealed.Sha256 -MinimumMoveCount 0
         ($minimumMoves.CampaignIssues -join ' ') | Should Match 'MinimumMoveCount=.*does not match analyzer policy'
@@ -281,6 +290,19 @@ Describe 'TPPA fast alignment evidence analyzer contract' {
         $document = [IO.File]::ReadAllText($manifest) | ConvertFrom-Json
         $document.PluginAssemblySha256 = '33' * 32
         [IO.File]::WriteAllText($manifest, ($document | ConvertTo-Json -Depth 6) + [Environment]::NewLine, [Text.UTF8Encoding]::new($false))
+        $hash = (Get-FileHash $manifest -Algorithm SHA256).Hash
+        $result = & $scriptPath -LogPath $log -CampaignManifestPath $manifest -ExpectedCampaignManifestSha256 $hash
+        $result.PreregisteredCampaignPassRateMet | Should Be $false
+        @($result.Runs | Where-Object { $_.Issues -contains 'started event exact-build identity does not match preregistered campaign' }).Count | Should Be 20
+    }
+    It 'rejects a cadence authority different from the sealed campaign' {
+        $log = Join-Path $TestDrive 'cadence-mismatch.log'
+        New-FastRunLog $log -UseObjectiveStrata
+        $manifest = Join-Path $TestDrive 'cadence-mismatch-campaign.json'
+        $sealed = New-FastCampaignManifest $manifest @($log)
+        $document = [IO.File]::ReadAllText($manifest) | ConvertFrom-Json
+        $document.CadenceAuthoritySha256 = '99' * 32
+        [IO.File]::WriteAllText($manifest, ($document | ConvertTo-Json -Depth 6) + "`r`n", [Text.UTF8Encoding]::new($false))
         $hash = (Get-FileHash $manifest -Algorithm SHA256).Hash
         $result = & $scriptPath -LogPath $log -CampaignManifestPath $manifest -ExpectedCampaignManifestSha256 $hash
         $result.PreregisteredCampaignPassRateMet | Should Be $false
@@ -320,11 +342,11 @@ Describe 'TPPA fast alignment evidence analyzer contract' {
         $manifest = Join-Path $TestDrive 'legacy-schema-campaign.json'
         $sealed = New-FastCampaignManifest $manifest @($log)
         $document = [IO.File]::ReadAllText($manifest) | ConvertFrom-Json
-        $document.SchemaVersion = 3
+        $document.SchemaVersion = 4
         [IO.File]::WriteAllText($manifest, ($document | ConvertTo-Json -Depth 6) + "`r`n", [Text.UTF8Encoding]::new($false))
         $hash = (Get-FileHash $manifest -Algorithm SHA256).Hash
         $result = & $scriptPath -LogPath $log -CampaignManifestPath $manifest -ExpectedCampaignManifestSha256 $hash
-        ($result.CampaignIssues -join ' ') | Should Match 'SchemaVersion is not 4; legacy manifests cannot qualify'
+        ($result.CampaignIssues -join ' ') | Should Match 'SchemaVersion is not 5; legacy manifests cannot qualify'
     }
 
     It 'rejects a campaign manifest whose external hash anchor does not match' {
@@ -413,6 +435,9 @@ Describe 'TPPA fast alignment evidence analyzer contract' {
                 alignmentToleranceMinutes = 3.0; refractionAdjustmentEnabled = $true
                 repositoryHead = $repositoryHead; pluginAssemblySha256 = $pluginAssemblySha256
                 covarianceAuthorityId = $covarianceAuthorityId; covarianceAuthoritySha256 = $covarianceAuthoritySha256
+                cadenceAuthorityId = $cadenceAuthorityId; cadenceAuthoritySha256 = $cadenceAuthoritySha256
+                qualifiedSettleSeconds = $qualifiedSettleSeconds
+                qualifiedFreshDeterminationSeconds = $qualifiedFreshDeterminationSeconds
                 mechanicalStateId = $mechanicalStateId
                 loadProfileId = $loadProfileId; tppaCampaignId = [Guid]::NewGuid().ToString('D')
                 preregisteredCampaignId = $preregisteredCampaignId

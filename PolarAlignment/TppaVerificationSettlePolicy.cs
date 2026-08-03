@@ -26,14 +26,21 @@ namespace NINA.Plugins.PolarAlignment {
 
         public static IReadOnlyList<string> GetActuatorQualificationIssues(
             double profileSettleSeconds,
-            double sequenceOverrideSeconds) {
+            double sequenceOverrideSeconds,
+            double minimumQualifiedSettleSeconds = MinimumQualifiedSettleSeconds) {
             var issues = new List<string>();
+            if (!double.IsFinite(minimumQualifiedSettleSeconds)
+                    || minimumQualifiedSettleSeconds < 5.0
+                    || minimumQualifiedSettleSeconds > MinimumQualifiedSettleSeconds) {
+                issues.Add("The commissioned minimum settle authority is invalid.");
+                return issues;
+            }
             var effectiveSettleSeconds = Resolve(
                 profileSettleSeconds,
                 sequenceOverrideSeconds);
-            if (!(effectiveSettleSeconds >= MinimumQualifiedSettleSeconds)) {
+            if (!(effectiveSettleSeconds >= minimumQualifiedSettleSeconds)) {
                 issues.Add(
-                    $"Automated adjustments require an effective point settle time of at least {MinimumQualifiedSettleSeconds:F0} seconds until a shorter cadence is field-qualified.");
+                    $"Automated adjustments require an effective point settle time of at least {minimumQualifiedSettleSeconds:F0} seconds under the active cadence authority.");
             }
 
             return issues;

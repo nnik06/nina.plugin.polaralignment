@@ -32,18 +32,18 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [TestCase(0.0)]
-        [TestCase(12.0)]
-        [TestCase(22.0)]
         [TestCase(24.0)]
+        [TestCase(120.0)]
+        [TestCase(299.999)]
+        [TestCase(300.0)]
         public void AcceptsInitialTotalsInsideQualifiedWindow(double totalMinutes) {
             var result = TppaFastAlignmentExecutionBudget.EvaluateInitialTotal(totalMinutes);
 
             result.CanStart.Should().BeTrue(result.Reason);
         }
 
-        [TestCase(24.001)]
-        [TestCase(60.0)]
-        [TestCase(120.0)]
+        [TestCase(300.001)]
+        [TestCase(600.0)]
         public void RejectsInitialTotalsOutsideQualifiedWindow(double totalMinutes) {
             var result = TppaFastAlignmentExecutionBudget.EvaluateInitialTotal(totalMinutes);
 
@@ -195,6 +195,31 @@ namespace NINA.Plugins.PolarAlignment.Test {
             result.Reason.Should().Contain("Auto pause");
         }
 
+        [Test]
+        public void CommissionedCadenceCanQualifyShorterSettleAndReserve() {
+            var configuration = TppaFastAlignmentExecutionBudget.EvaluateConfiguration(
+                15, 3, false, qualifiedSettleSeconds: 15);
+            var movement = TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
+                TimeSpan.FromSeconds(100),
+                observedFreshDeterminationSeconds: 35,
+                completedMoves: 0,
+                qualifiedFreshDeterminationReserveSeconds: 45);
+
+            configuration.IsEligible.Should().BeTrue(configuration.Reason);
+            movement.CanStart.Should().BeTrue(movement.Reason);
+            movement.RequiredReserveSeconds.Should().Be(105);
+        }
+
+        [TestCase(4.999)]
+        [TestCase(30.001)]
+        [TestCase(double.NaN)]
+        public void RejectsInvalidCommissionedSettle(double qualifiedSettleSeconds) {
+            var result = TppaFastAlignmentExecutionBudget.EvaluateConfiguration(
+                15, 3, false, qualifiedSettleSeconds);
+
+            result.IsEligible.Should().BeFalse();
+            result.Reason.Should().Contain("authority");
+        }
         [Test]
         public void RejectsExpiredBudgetEvenWithoutReserve() {
             var result = TppaFastAlignmentExecutionBudget.Evaluate(

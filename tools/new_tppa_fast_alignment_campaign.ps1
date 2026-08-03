@@ -10,6 +10,10 @@ param(
     [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{64}$')][string]$PluginAssemblySha256,
     [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')][string]$CovarianceAuthorityId,
     [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{64}$')][string]$CovarianceAuthoritySha256,
+    [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')][string]$CadenceAuthorityId,
+    [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{64}$')][string]$CadenceAuthoritySha256,
+    [Parameter(Mandatory)][ValidateRange(5.0, 29.999)][double]$QualifiedSettleSeconds,
+    [Parameter(Mandatory)][ValidateRange(5.0, 75.0)][double]$QualifiedFreshDeterminationSeconds,
     [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{64}$')][string]$MechanicalStateId,
     [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$LoadProfileId,
     [Parameter(Mandatory)][string[]]$LogPath,
@@ -20,7 +24,6 @@ param(
     [ValidateRange(1, 100)][int]$MinimumEligibleRuns = 20,
     [ValidateRange(1, 30)][int]$MinimumNights = 3,
     [ValidateRange(1.0, 1800.0)][double]$MaximumRuntimeSeconds = 300.0,
-    [ValidateRange(0.0, 120.0)][double]$MinimumSettleSeconds = 30.0,
     [ValidateRange(0.1, 60.0)][double]$MaximumToleranceMinutes = 3.0,
     [ValidateRange(0, 2)][int]$MinimumMoveCount = 1,
     [ValidateRange(1, 2)][int]$MaximumMoveCount = 2,
@@ -78,7 +81,7 @@ $initialTotalStrata = for ($index = 0; $index -lt $stratumCounts.Count; $index++
 }
 
 $manifest = [ordered]@{
-    SchemaVersion = 4
+    SchemaVersion = 5
     CampaignId = $CampaignId.ToString('D')
     CreatedUtc = $createdUtc.ToUniversalTime().ToString('O')
     CampaignStartUtc = $createdUtc.ToUniversalTime().ToString('O')
@@ -88,6 +91,10 @@ $manifest = [ordered]@{
     PluginAssemblySha256 = $PluginAssemblySha256
     CovarianceAuthorityId = $CovarianceAuthorityId
     CovarianceAuthoritySha256 = $CovarianceAuthoritySha256
+    CadenceAuthorityId = $CadenceAuthorityId
+    CadenceAuthoritySha256 = $CadenceAuthoritySha256
+    QualifiedSettleSeconds = $QualifiedSettleSeconds
+    QualifiedFreshDeterminationSeconds = $QualifiedFreshDeterminationSeconds
     MechanicalStateId = $MechanicalStateId
     LoadProfileId = $LoadProfileId
     ExpectedAttemptCount = $ExpectedAttemptCount
@@ -97,7 +104,7 @@ $manifest = [ordered]@{
     MinimumEligibleRuns = $MinimumEligibleRuns
     MinimumNights = $MinimumNights
     MaximumRuntimeSeconds = $MaximumRuntimeSeconds
-    MinimumSettleSeconds = $MinimumSettleSeconds
+    MinimumSettleSeconds = $QualifiedSettleSeconds
     MaximumToleranceMinutes = $MaximumToleranceMinutes
     MinimumMoveCount = $MinimumMoveCount
     MaximumMoveCount = $MaximumMoveCount

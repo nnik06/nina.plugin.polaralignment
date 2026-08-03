@@ -102,6 +102,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
         private Guid activeTppaCampaignId;
         private Guid activePreregisteredCampaignId;
         private TppaCommissionedCovarianceAuthority activeTppaCovarianceAuthority;
+        private TppaCommissionedCadenceAuthority activeTppaCadenceAuthority;
         private readonly List<TppaCoarseDeterminationEvidence> activeObservedDeterminations = new();
         private IList<string> issues = new List<string>();
         private const string ResumeAlignmentTopic = $"{nameof(PolarAlignmentPlugin)}_{nameof(PolarAlignment)}_ResumeAlignment";
@@ -562,6 +563,8 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 activePreregisteredCampaignId = RequireConfiguredTppaPreregisteredCampaignId();
                 activeTppaCovarianceAuthority =
                     RequireCommissionedCovarianceAuthority();
+                activeTppaCadenceAuthority =
+                    RequireCommissionedCadenceAuthority(activeTppaCovarianceAuthority);
                 var physicalZero = await RequireFreshPhysicalZeroAdmission(token).ConfigureAwait(false);
                 if (!Guid.TryParseExact(physicalZero.CampaignId, "D", out activeTppaCampaignId)
                         || activeTppaCampaignId == Guid.Empty) {
@@ -574,6 +577,9 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             }
             // The five-minute contract starts only after physical-zero admission.
             // A return-to-zero transaction and stationary reverification are preflight.
+            var qualifiedFreshDeterminationReserveSeconds = enforceFastRuntimeBudget
+                ? activeTppaCadenceAuthority.MaximumFreshDeterminationSeconds
+                : TppaFastAlignmentExecutionBudget.FreshDeterminationReserveSeconds;
             var alignmentRuntime = Stopwatch.StartNew();
             var fastRunId = enforceFastRuntimeBudget ? Guid.NewGuid() : Guid.Empty;
             var fastTerminalEventLogged = false;
@@ -611,7 +617,8 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 var fastConfiguration = TppaFastAlignmentExecutionBudget.EvaluateConfiguration(
                     resolvedSettleSeconds,
                     ExposureTime,
-                    Properties.Settings.Default.AutoPause);
+                    Properties.Settings.Default.AutoPause,
+                    activeTppaCadenceAuthority.QualifiedSettleSeconds);
                 Logger.Info(
                     $"TPPA_FAST_RUNTIME_CONFIGURATION eligible={fastConfiguration.IsEligible}; " +
                     $"settleSeconds={fastConfiguration.ResolvedSettleSeconds:F3}; " +
@@ -636,6 +643,10 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     ["pluginAssemblySha256"] = activeTppaCovarianceAuthority.PluginAssemblySha256,
                     ["covarianceAuthorityId"] = activeTppaCovarianceAuthority.AuthorityId.ToString("D"),
                     ["covarianceAuthoritySha256"] = activeTppaCovarianceAuthority.ArtifactSha256,
+                    ["cadenceAuthorityId"] = activeTppaCadenceAuthority.AuthorityId.ToString("D"),
+                    ["cadenceAuthoritySha256"] = activeTppaCadenceAuthority.ArtifactSha256,
+                    ["qualifiedSettleSeconds"] = activeTppaCadenceAuthority.QualifiedSettleSeconds,
+                    ["qualifiedFreshDeterminationSeconds"] = activeTppaCadenceAuthority.MaximumFreshDeterminationSeconds,
                     ["mechanicalStateId"] = activeTppaCovarianceAuthority.MechanicalStateSha256,
                     ["loadProfileId"] = activeTppaCovarianceAuthority.LoadProfileId,
                     ["tppaCampaignId"] = activeTppaCampaignId.ToString("D"),
@@ -681,7 +692,10 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 var settleAuthorityIssue =
                     TppaVerificationSettlePolicy.GetActuatorQualificationIssues(
                         profileService.ActiveProfile.TelescopeSettings.SettleTime,
-                        VerificationPointSettleTimeSeconds)
+                        VerificationPointSettleTimeSeconds,
+                        enforceFastRuntimeBudget
+                            ? activeTppaCadenceAuthority.QualifiedSettleSeconds
+                            : TppaVerificationSettlePolicy.MinimumQualifiedSettleSeconds)
                         .FirstOrDefault();
                 if (settleAuthorityIssue != null) {
                     throw new SequenceEntityFailedException(
@@ -1077,7 +1091,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                             && Math.Abs(TPAPAVM.PolarErrorDetermination.InitialMountAxisTotalError.ArcMinutes) <= AlignmentTolerance) {
                             EnsureFastRuntimeBudget(
                                 "independent fresh completion confirmation",
-                                TppaFastAlignmentExecutionBudget.FreshDeterminationReserveSeconds);
+                                qualifiedFreshDeterminationReserveSeconds);
                             Logger.Info("Fresh UPAS measurement is below tolerance. Requiring one consecutive independent fresh three-point confirmation without moving.");
                             var completionCandidate = TPAPAVM.PolarErrorDetermination;
                             progress?.Report(new ApplicationStatus() { Status = "Confirming fresh three-point UPAS result" });
@@ -1138,7 +1152,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                             if (confirmedTotalErrorMinutes <= AlignmentTolerance && !completionAgreement.IsRepeatable) {
                                 EnsureFastRuntimeBudget(
                                     "independent fresh completion tie-breaker",
-                                    TppaFastAlignmentExecutionBudget.FreshDeterminationReserveSeconds);
+                                    qualifiedFreshDeterminationReserveSeconds);
                                 Logger.Warning("Two below-tolerance fresh measurements disagreed. Running one stationary fresh three-point tie-breaker before failing closed.");
                                 progress?.Report(new ApplicationStatus() { Status = "Running fresh three-point completion tie-breaker" });
                                 var tieBreakerDetermination = await MeasureFreshThreePointForActiveCampaign(TPAPAVM,
@@ -1231,7 +1245,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                 if (completionDecision == AutomatedAlignmentCompletionDecision.VerifyFreshThreePoint) {
                                     EnsureFastRuntimeBudget(
                                         "independent fresh completion verification",
-                                        TppaFastAlignmentExecutionBudget.FreshDeterminationReserveSeconds);
+                                        qualifiedFreshDeterminationReserveSeconds);
                                     Logger.Info("Two stationary correction-frame solves are below tolerance. Starting an independent fresh three-point completion verification before finishing.");
                                     progress?.Report(new ApplicationStatus() { Status = "Running fresh three-point completion verification" });
 
@@ -1311,7 +1325,8 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                     var moveDecision = TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
                                         alignmentRuntime.Elapsed,
                                         maximumObservedFreshDeterminationSeconds,
-                                        freshFeedbackMoveCount);
+                                        freshFeedbackMoveCount,
+                                        qualifiedFreshDeterminationReserveSeconds);
                                     Logger.Info(
                                         $"TPPA_FAST_RUNTIME_BUDGET operation=bounded UPAS move {freshFeedbackMoveCount + 1}, independent fresh response, and terminal verify-only determination; " +
                                         $"elapsedSeconds={moveDecision.ElapsedSeconds:F1}; remainingSeconds={moveDecision.RemainingSeconds:F1}; " +
@@ -1349,7 +1364,8 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                     var postObservationBudget = TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
                                         alignmentRuntime.Elapsed,
                                         maximumObservedFreshDeterminationSeconds,
-                                        freshFeedbackMoveCount);
+                                        freshFeedbackMoveCount,
+                                        qualifiedFreshDeterminationReserveSeconds);
                                     Logger.Info(
                                         $"TPPA_FAST_RUNTIME_BUDGET operation=post-observation supervisor movement; " +
                                         $"elapsedSeconds={postObservationBudget.ElapsedSeconds:F1}; " +
@@ -1523,6 +1539,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 activeTppaCampaignId = Guid.Empty;
                 activePreregisteredCampaignId = Guid.Empty;
                 activeTppaCovarianceAuthority = null;
+                activeTppaCadenceAuthority = null;
                 activeObservedDeterminations.Clear();
                 coarseSolveEvidence = new ConditionalWeakTable<PlateSolveResult, TppaCapturedSolveEvidence>();
                 TryLogFastRunEvent("abandoned", new Dictionary<string, object> {
@@ -1625,6 +1642,57 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 throw new SequenceEntityFailedException(
                     "Automated TPPA commissioned covariance preflight failed: "
                     + $"{ex.Message} No TPPA timer or UPAS movement was started.");
+            }
+        }
+        private TppaCommissionedCadenceAuthority RequireCommissionedCadenceAuthority(
+                TppaCommissionedCovarianceAuthority covarianceAuthority) {
+            try {
+                if (covarianceAuthority == null) {
+                    throw new ArgumentNullException(nameof(covarianceAuthority));
+                }
+                var assemblyEvidence = TppaLoadedAssemblyEvidenceFactory.Capture(
+                    typeof(PolarAlignment).Assembly);
+                var assemblyDirectory = Path.GetDirectoryName(assemblyEvidence.Location)
+                    ?? throw new InvalidOperationException(
+                        "Loaded TPPA assembly has no parent directory.");
+                var configuredPath = Environment.GetEnvironmentVariable(
+                    "TPPA_CADENCE_AUTHORITY_PATH");
+                var artifactPath = string.IsNullOrWhiteSpace(configuredPath)
+                    ? Path.Combine(
+                        assemblyDirectory,
+                        "tppa-commissioned-cadence-authority.json")
+                    : Path.GetFullPath(
+                        Environment.ExpandEnvironmentVariables(configuredPath));
+                if (!File.Exists(artifactPath)) {
+                    throw new FileNotFoundException(
+                        "Commissioned TPPA cadence authority was not found.",
+                        artifactPath);
+                }
+                var temperature = RefractionParameters
+                    .GetRefractionParameters(weatherDataMediator.GetInfo())
+                    .Temperature;
+                var result = TppaCommissionedCadenceAuthorityParser.Parse(
+                    File.ReadAllBytes(artifactPath),
+                    DateTime.UtcNow,
+                    assemblyEvidence.Sha256,
+                    covarianceAuthority.HardwareConfigurationId,
+                    covarianceAuthority.MechanicalStateSha256,
+                    covarianceAuthority.LoadProfileId,
+                    temperature);
+                Logger.Info(
+                    $"TPPA_CADENCE_AUTHORITY authorityId={result.AuthorityId:D}; " +
+                    $"artifactSha256={result.ArtifactSha256}; repositoryHead={result.RepositoryHead}; " +
+                    $"pluginAssemblySha256={result.PluginAssemblySha256}; " +
+                    $"loadProfileId={result.LoadProfileId}; temperatureC={temperature:F2}; " +
+                    $"qualifiedSettleSeconds={result.QualifiedSettleSeconds:F3}; " +
+                    $"maximumFreshDeterminationSeconds={result.MaximumFreshDeterminationSeconds:F3}; " +
+                    $"sourceTransitions={result.SourceTransitionCount}; sourceNights={result.SourceNightCount}; " +
+                    $"maximumVectorSeparationMinutes={result.MaximumVectorSeparationMinutes:F3}.");
+                return result;
+            } catch (Exception ex) {
+                throw new SequenceEntityFailedException(
+                    "Automated TPPA commissioned cadence preflight failed: " +
+                    $"{ex.Message} No TPPA timer or UPAS movement was started.");
             }
         }
         private async Task<TppaPhysicalZeroPreflightResult> RequireFreshPhysicalZeroAdmission(CancellationToken token) {

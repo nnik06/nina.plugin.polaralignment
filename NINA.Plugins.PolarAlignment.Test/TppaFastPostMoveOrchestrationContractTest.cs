@@ -30,7 +30,8 @@ namespace NINA.Plugins.PolarAlignment.Test {
             var source = File.ReadAllText(Path.Combine(RepositoryRoot(), "PolarAlignment", "Instructions", "PolarAlignment.cs"));
 
             source.Should().Contain("maximumObservedFreshDeterminationSeconds,");
-            source.Should().Contain("freshFeedbackMoveCount);");
+            source.Should().Contain("freshFeedbackMoveCount,");
+            source.Should().Contain("qualifiedFreshDeterminationReserveSeconds);");
             source.Should().Contain("terminal verify-only determination");
             source.Should().Contain("responseDecision.CouldAuthorizeAnotherMove");
             source.Should().Contain("freshFeedbackMoveCount >= TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMoves");

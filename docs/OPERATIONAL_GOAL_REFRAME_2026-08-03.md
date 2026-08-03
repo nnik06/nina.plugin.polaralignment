@@ -21,7 +21,7 @@ acceptance-campaign witness and cannot be included in the production clock.
 Eligible production starts are bounded by the sealed 0--300 arcminute
 objective envelope, qualified plate solves, true-pole refraction mode, valid
 site coordinates, safe telescope geometry, commissioned covariance authority,
-and verified UPAS physical headroom. Physical-zero admission and any guarded
+a current exact-build commissioned cadence authority, and verified UPAS physical headroom. Physical-zero admission and any guarded
 return to zero happen before the five-minute timer. The full envelope is an
 objective and evidence denominator, not a promise that every start is currently
 movable. A start denied by coarse planning or travel headroom is retained as a
@@ -131,6 +131,7 @@ latency are measured.
 - Permit another correction only when its move, fresh response measurement,
   and the non-spendable final confirmation reserve fit inside 300 seconds.
 - Keep gain 0.65 initially and cap correction count from measured timing.
+- Admit 0--300 arcminutes at runtime, route 0--24 arcminutes to the fine controller, and route larger starts through the guarded coarse planner. This is implemented eligibility, not field qualification of the full envelope.
 - Stop without further movement on regression, insufficient improvement,
   reversal excess, geometry failure, travel-envelope failure, or budget
   exhaustion. Do not auto-revert.

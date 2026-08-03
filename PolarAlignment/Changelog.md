@@ -1,3 +1,17 @@
+## Version 2.2.6.102
+
+- Extend guarded automated-correction admission to the full 0--300 arcminute
+  UPAS objective while retaining 24 arcminutes as the fine-controller handoff.
+- Require a current commissioned cadence authority, bound to the exact plugin
+  DLL, hardware configuration, mechanical epoch, load profile, temperature
+  range, and source campaign, before a sub-30-second settle can enter the
+  five-minute actuator path. The unconditional fallback remains 30 seconds.
+- Bind the exact cadence-authority ID, artifact hash, qualified settle, and
+  maximum fresh-determination duration into runtime telemetry and sealed
+  campaign schema 5; reject mismatched or legacy campaign evidence.
+- Keep physical-zero admission ahead of the five-minute timer: the supervisor
+  must freshly witness both axes within +/-0.1 degree or perform and re-witness
+  a bounded return to physical zero before TPPA acquisition begins.
 ## Version 2.2.6.101
 
 - Require a sealed preregistered campaign ID before physical-zero admission can authorize UPAS movement.
