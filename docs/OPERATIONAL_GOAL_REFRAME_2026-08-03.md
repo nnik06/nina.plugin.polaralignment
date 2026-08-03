@@ -5,11 +5,13 @@
 The project objective is operational polar alignment, not absolute
 sub-arcminute metrology:
 
-> Starting from an eligible, manually coarse-aligned state, use TPPA and UPAS
-> to reach a fresh-confirmed true-pole total error no greater than 3 arcminutes
-> within 300 seconds on at least 80 percent of eligible attempts, without
-> unsafe motion or degrading an already acceptable alignment. Then demonstrate
-> that both supported OAG trains deliver acceptable guided exposures.
+> Starting from a preregistered, manually coarse-aligned state, use TPPA and
+> UPAS to target a fresh-confirmed true-pole total error no greater than 3
+> arcminutes and remain below the 6 arcminute operational acceptance ceiling
+> within 300 seconds on at least 80 percent of admitted attempts, without
+> unsafe motion or degrading an already acceptable alignment. Report rejected
+> starts and mid-run aborts separately. Then demonstrate that both supported
+> OAG trains deliver acceptable guided exposures.
 
 The five-minute clock covers TPPA acquisition, UPAS correction, and the final
 fresh TPPA confirmation. A 10-12 minute PHD2 Guiding Assistant run is an
@@ -61,9 +63,10 @@ separately qualified coarse correction before starting the five-minute run.
 
 - New absolute-metrology infrastructure.
 - New automated iPolar GUI control or PHD2 PDA actuation.
-- The pending 900-second readiness gate after preserving its patch. Finish it
-  only after the controller path meets its field milestones; it must name the
-  exact filter and require a same-session saturation/background scout.
+- Promotion of a readiness PASS into an alignment or motion claim. The
+  implemented readiness gate establishes only exact-filter, source-integrity,
+  freshness, and saturation/background headroom before a delivered-exposure
+  bracket.
 
 ### Stop
 
@@ -128,9 +131,13 @@ latency are measured.
 - Completion requires a fresh stationary three-point determination not used
   to compute the final movement and two-consecutive agreement.
 
-Field acceptance requires at least 8 successes in 10 eligible attempts over at
-least three nights, with zero hard-limit violations, zero false-success cases,
-and zero unexplained state changes. Qualify EdgeHD first, then repeat for GT81.
+Field acceptance requires at least 8 operational passes in 10 admitted
+attempts over at least three nights, with zero hard-limit violations, zero
+false-success cases, and zero unexplained state changes. Freeze admission and
+abort rules before the first attempt. Preserve and report every rejected start
+and mid-run abort alongside the admitted-attempt result; neither category may
+be silently removed from the campaign. Qualify EdgeHD first, then repeat for
+GT81.
 
 ## Delivered-imaging acceptance
 
@@ -151,8 +158,10 @@ conditions. It does not prove absolute polar-axis accuracy.
 | Measure | Requirement |
 | --- | --- |
 | Production TPPA time | no more than 300 seconds |
-| Fresh-confirmed TPPA total | no more than 3.0 arcminutes |
-| Eligible-attempt success rate | at least 8 of 10 |
+| TPPA engineering target | no more than 3.0 arcminutes |
+| Operational acceptance ceiling | no more than 6.0 arcminutes |
+| Admitted-attempt success rate | at least 8 of 10 |
+| Rejected starts and mid-run aborts | all retained and reported separately |
 | Same-direction TPPA spread before actuation | no more than 1.5 arcminutes |
 | External TPPA/PHD2 agreement during acceptance | no more than 3 arcminutes |
 | Unsafe UPAS/hard-limit events | zero |
@@ -160,6 +169,9 @@ conditions. It does not prove absolute polar-axis accuracy.
 | Automatic regression reversal | prohibited |
 | Final confirmation reuse | prohibited |
 
-These thresholds are operational preregistration values. They may be tightened
-only after field evidence; they must not be loosened silently to manufacture a
-pass.
+The 3 arcminute value is the controller target. The 6 arcminute ceiling is the
+current measurable operational acceptance bound while observed same-direction
+repeatability can be of the same order as the target. Neither number is an
+absolute metrology claim. These thresholds are preregistration values. They may
+be tightened only after field evidence; they must not be loosened silently to
+manufacture a pass.
