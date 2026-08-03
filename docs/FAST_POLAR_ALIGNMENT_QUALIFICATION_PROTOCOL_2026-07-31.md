@@ -1,5 +1,13 @@
 # Fast Polar Alignment Qualification Protocol
 
+> **Historical protocol, superseded.** This document preserves the 2026-07-31
+> sub-arcminute/iPolar qualification design for provenance. It is not the
+> current operational acceptance authority. Use
+> `docs/TPPA_FAST_ALIGNMENT_CAMPAIGN_PROTOCOL.md` and
+> `tools/analyze_tppa_fast_alignment_runs.ps1` for the active 0--300 arcminute,
+> 3 arcminute, 300-second campaign.
+
+
 The strict machine-readable binding and CLI contract is
 `docs/ABSOLUTE_TPPA_EVIDENCE_CONTRACT.md`. Operational timing or internal
 repeatability alone must never be reported as absolute qualification.

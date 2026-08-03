@@ -11,6 +11,11 @@ param(
     [double]$MaximumReportedTotalMinutes = 1.0
 )
 
+# Legacy verification-only diagnostic. This script evaluates the historical
+# nine-solve/sub-arcminute evidence format and MUST NOT be used to qualify the
+# active actuator campaign. The authoritative campaign analyzer is
+# tools/analyze_tppa_fast_alignment_runs.ps1.
+
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 

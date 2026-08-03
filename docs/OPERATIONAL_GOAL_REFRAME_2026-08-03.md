@@ -5,27 +5,27 @@
 The project objective is operational polar alignment, not absolute
 sub-arcminute metrology:
 
-> Starting from a preregistered, manually coarse-aligned state, use TPPA and
-> UPAS to target a fresh-confirmed true-pole total error no greater than 3
-> arcminutes and remain below the 6 arcminute operational acceptance ceiling
-> within 300 seconds on at least 80 percent of admitted attempts, without
-> unsafe motion or degrading an already acceptable alignment. Report rejected
-> starts and mid-run aborts separately. Then demonstrate that both supported
-> OAG trains deliver acceptable guided exposures.
+> Starting from a preregistered TPPA-reported total error in the 0--300
+> arcminute objective envelope, use TPPA and UPAS to obtain two independent
+> fresh stationary true-pole determinations no greater than 3 arcminutes within
+> 300 seconds on at least 80 percent of every sealed attempt denominator,
+> without a safety violation. Admission rejection, cancellation, crash,
+> missing terminal telemetry, or failure to meet the completion rule counts as
+> a failed attempt. Then demonstrate that both supported OAG trains deliver
+> acceptable guided 900-second narrowband exposures.
 
 The five-minute clock covers TPPA acquisition, UPAS correction, and the final
 fresh TPPA confirmation. A 10-12 minute PHD2 Guiding Assistant run is an
 acceptance-campaign witness and cannot be included in the production clock.
 
-Eligible production starts must be bounded. Until field evidence expands the
-range, use 0-24 arcminutes total starting error, qualified plate solves,
-true-pole refraction mode, valid site coordinates, safe telescope geometry,
-and verified UPAS physical headroom. Larger errors require coarse manual or
-separately qualified coarse correction before starting the five-minute run.
-The 24 arcminute cap is a preregistered field-test boundary motivated by the
-idealized response of two moves at the current 0.65 gain. It is not a
-convergence guarantee: measured gain can differ by axis, direction, and
-mechanical state. Expanding the window requires a
+Eligible production starts are bounded by the sealed 0--300 arcminute
+objective envelope, qualified plate solves, true-pole refraction mode, valid
+site coordinates, safe telescope geometry, commissioned covariance authority,
+and verified UPAS physical headroom. Physical-zero admission and any guarded
+return to zero happen before the five-minute timer. The full envelope is an
+objective and evidence denominator, not a promise that every start is currently
+movable. A start denied by coarse planning or travel headroom is retained as a
+failed campaign attempt. Qualification of the whole window requires a
 separately simulated and field-qualified gain schedule; it must not be implied
 by accepting more starts in the evidence analyzer.
 
@@ -165,19 +165,17 @@ conditions. It does not prove absolute polar-axis accuracy.
 | --- | --- |
 | Production TPPA time | no more than 300 seconds |
 | TPPA engineering target | no more than 3.0 arcminutes |
-| Operational acceptance ceiling | no more than 6.0 arcminutes |
-| Admitted-attempt success rate | at least 8 of 10 |
-| Rejected starts and mid-run aborts | all retained and reported separately |
+| Operational completion ceiling | two fresh stationary determinations, each no more than 3.0 arcminutes |
+| Sealed-attempt success rate | at least 80 percent; default campaign 16 of 20 |
+| Rejected starts and mid-run aborts | retained in the same denominator as failures |
 | Same-direction TPPA spread before actuation | no more than 1.5 arcminutes |
-| External TPPA/PHD2 agreement during acceptance | no more than 3 arcminutes |
 | Unsafe UPAS/hard-limit events | zero |
-| False success with external result above 5 arcminutes | zero |
+| False completion above 3 arcminutes or from reused evidence | zero |
 | Automatic regression reversal | prohibited |
 | Final confirmation reuse | prohibited |
 
-The 3 arcminute value is the controller target. The 6 arcminute ceiling is the
-current measurable operational acceptance bound while observed same-direction
-repeatability can be of the same order as the target. Neither number is an
-absolute metrology claim. These thresholds are preregistration values. They may
+The 3 arcminute value is both the controller target and campaign completion
+ceiling. It is an operational imaging tolerance, not an absolute metrology
+claim. These thresholds are preregistration values. They may
 be tightened only after field evidence; they must not be loosened silently to
 manufacture a pass.
