@@ -55,6 +55,14 @@ must fit a compiled coherence window.
 A separately versioned, authenticated response has exact property sets and
 contains:
 
+Authentication is transport-bound: TPPA accepts the body only from the same
+successful HTTPS request that used the configured client bearer, with redirects
+disabled. The transport adapter supplies the SHA-256 of the exact received UTF-8
+body and the supervisor evidence identity; the aggregate parser requires both
+to match before exposing any nested planning value. These bindings are evidence
+integrity and provenance, not motion authority. A caller-provided boolean or an
+unanchored self-hash is not an authenticated response.
+
 - `schemaVersion`: integer `2` exactly;
 - the request-binding and freshness fields above;
 - `coordinateConvention`: exactly
@@ -110,6 +118,13 @@ contains:
 
 The evidence and plan contain no motion authority. A future transaction must
 atomically revalidate and reserve before movement.
+
+An accepted snapshot is materialized as one inert aggregate containing the
+envelope, signed axes, response calibration, and runtime budgets. A deterministic
+planning receipt binds the response-body SHA-256, evidence/session/boot/nonce,
+calibration identity and artifact, TPPA error vector and covariance, requested
+physical vector, uncertainty-expanded paths, and projected residual bounds. Its
+`motionAuthorityIncluded` value is always false.
 
 All numbers must be finite. NaN, infinity, negative zero, negative variance,
 non-symmetric covariance, and non-positive-semidefinite covariance are denied.
