@@ -22,6 +22,8 @@ namespace NINA.Plugins.PolarAlignment {
     internal static class TppaCoarseCorrectionPlanner {
         public const double MaximumObjectiveErrorMinutes = 240.0;
         public const double FineControllerHandoffMinutes = 24.0;
+        public static readonly double MaximumAxisErrorForGuaranteedTotalHandoffMinutes =
+            FineControllerHandoffMinutes / Math.Sqrt(2.0);
         public const double PhysicalHardLimitDegrees = 5.4;
         public const double MinimumReservedTravelDegrees = 1.0;
         public const double CoarseCorrectionFraction = 0.90;
@@ -58,9 +60,9 @@ namespace NINA.Plugins.PolarAlignment {
                     > PhysicalHardLimitDegrees - MinimumReservedTravelDegrees) {
                 return Denied("witnessed UPAS position does not preserve the required one-degree travel reserve");
             }
-            if (magnitudeMinutes <= FineControllerHandoffMinutes) {
+            if (magnitudeMinutes <= MaximumAxisErrorForGuaranteedTotalHandoffMinutes) {
                 return new(true, false, 0.0, 0.0, magnitudeMinutes, magnitudeMinutes, magnitudeMinutes,
-                    $"axis error is already inside the {FineControllerHandoffMinutes:F0}' fine-controller envelope");
+                    $"axis error is inside the conservative per-axis bound that guarantees a {FineControllerHandoffMinutes:F0}' total-vector handoff");
             }
 
             var errorDegrees = errorMinutes / 60.0;

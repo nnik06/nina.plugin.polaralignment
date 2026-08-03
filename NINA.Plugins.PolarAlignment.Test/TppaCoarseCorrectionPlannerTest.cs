@@ -39,13 +39,26 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
-        public void ErrorInsideFineEnvelopeDoesNotRequestCoarseMotion() {
-            var result = Plan(24.0, witnessedPosition: 0.0);
+        public void ErrorInsideGuaranteedPerAxisHandoffDoesNotRequestCoarseMotion() {
+            var bound = TppaCoarseCorrectionPlanner.MaximumAxisErrorForGuaranteedTotalHandoffMinutes;
+            var result = Plan(bound, witnessedPosition: 0.0);
 
             result.IsAuthorized.Should().BeTrue();
             result.RequiresMove.Should().BeFalse();
-            result.ProjectedResidualLowerMinutes.Should().Be(24.0);
-            result.ProjectedResidualUpperMinutes.Should().Be(24.0);
+            result.ProjectedResidualLowerMinutes.Should().Be(bound);
+            result.ProjectedResidualUpperMinutes.Should().Be(bound);
+            Math.Sqrt(2.0 * bound * bound).Should().BeApproximately(
+                TppaCoarseCorrectionPlanner.FineControllerHandoffMinutes, 1e-9);
+        }
+
+        [Test]
+        public void TwentyArcminuteAxisStillRequestsMotionBecauseTwoSuchAxesExceedTotalHandoff() {
+            var result = Plan(20.0, witnessedPosition: 0.0);
+
+            result.IsAuthorized.Should().BeTrue();
+            result.RequiresMove.Should().BeTrue();
+            Math.Sqrt(20.0 * 20.0 + 20.0 * 20.0).Should().BeGreaterThan(
+                TppaCoarseCorrectionPlanner.FineControllerHandoffMinutes);
         }
 
         [Test]

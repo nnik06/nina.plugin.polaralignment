@@ -1,5 +1,7 @@
 ## Version 2.2.6.97
 
+- Use a conservative `24'/sqrt(2)` per-axis no-move threshold so two accepted
+  axes cannot silently exceed the `24'` total-vector fine-controller handoff.
 - Report conservative lower and upper post-move residual bounds from response
   and fixed-command uncertainty; the nominal residual alone does not authorize
   a fine-controller handoff.
