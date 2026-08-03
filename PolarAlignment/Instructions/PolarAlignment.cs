@@ -100,6 +100,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
         private ConditionalWeakTable<PlateSolveResult, TppaCapturedSolveEvidence> coarseSolveEvidence = new();
         private bool captureCoarseSolveEvidence;
         private Guid activeTppaCampaignId;
+        private TppaCommissionedCovarianceAuthority activeTppaCovarianceAuthority;
         private IList<string> issues = new List<string>();
         private const string ResumeAlignmentTopic = $"{nameof(PolarAlignmentPlugin)}_{nameof(PolarAlignment)}_ResumeAlignment";
         private const string PauseAlignmentTopic = $"{nameof(PolarAlignmentPlugin)}_{nameof(PolarAlignment)}_PauseAlignment";        
@@ -556,6 +557,8 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 && automatedAdjustmentsEnabled
                 && executionPolicy.AllowActuatorMovement;
             if (enforceFastRuntimeBudget) {
+                activeTppaCovarianceAuthority =
+                    RequireCommissionedCovarianceAuthority();
                 var physicalZero = await RequireFreshPhysicalZeroAdmission(token).ConfigureAwait(false);
                 if (!Guid.TryParseExact(physicalZero.CampaignId, "D", out activeTppaCampaignId)
                         || activeTppaCampaignId == Guid.Empty) {
@@ -1435,6 +1438,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             } finally {
                 captureCoarseSolveEvidence = false;
                 activeTppaCampaignId = Guid.Empty;
+                activeTppaCovarianceAuthority = null;
                 coarseSolveEvidence = new ConditionalWeakTable<PlateSolveResult, TppaCapturedSolveEvidence>();
                 TryLogFastRunEvent("abandoned", new Dictionary<string, object> {
                     ["outcome"] = "no-terminal-event"
@@ -1453,6 +1457,49 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             }
         }
 
+        private TppaCommissionedCovarianceAuthority RequireCommissionedCovarianceAuthority() {
+            try {
+                var assemblyEvidence = TppaLoadedAssemblyEvidenceFactory.Capture(
+                    typeof(PolarAlignment).Assembly);
+                var assemblyDirectory = Path.GetDirectoryName(assemblyEvidence.Location)
+                    ?? throw new InvalidOperationException(
+                        "Loaded TPPA assembly has no parent directory.");
+                var configuredPath = Environment.GetEnvironmentVariable(
+                    "TPPA_COVARIANCE_AUTHORITY_PATH");
+                var artifactPath = string.IsNullOrWhiteSpace(configuredPath)
+                    ? Path.Combine(
+                        assemblyDirectory,
+                        "tppa-commissioned-covariance-authority.json")
+                    : Path.GetFullPath(
+                        Environment.ExpandEnvironmentVariables(configuredPath));
+                if (!File.Exists(artifactPath)) {
+                    throw new FileNotFoundException(
+                        "Commissioned TPPA covariance authority was not found.",
+                        artifactPath);
+                }
+                var temperature = RefractionParameters
+                    .GetRefractionParameters(weatherDataMediator.GetInfo())
+                    .Temperature;
+                var result = TppaCommissionedCovarianceAuthorityParser.Parse(
+                    File.ReadAllBytes(artifactPath),
+                    DateTime.UtcNow,
+                    assemblyEvidence.Sha256,
+                    Properties.Settings.Default.UpasSupervisorLoadProfileId,
+                    temperature);
+                Logger.Info(
+                    $"TPPA_COVARIANCE_AUTHORITY authorityId={result.AuthorityId:D}; " +
+                    $"artifactSha256={result.ArtifactSha256}; repositoryHead={result.RepositoryHead}; " +
+                    $"pluginAssemblySha256={result.PluginAssemblySha256}; " +
+                    $"loadProfileId={result.LoadProfileId}; targetSkyArcId={result.TargetSkyArcId}; " +
+                    $"temperatureC={temperature:F2}; sourceAttempts={result.SourceAttemptCount}; " +
+                    $"sourcePasses={result.SourcePassCount}; confidence={result.ConfidenceLevel:F4}.");
+                return result;
+            } catch (Exception ex) {
+                throw new SequenceEntityFailedException(
+                    "Automated TPPA commissioned covariance preflight failed: "
+                    + $"{ex.Message} No TPPA timer or UPAS movement was started.");
+            }
+        }
         private async Task<TppaPhysicalZeroPreflightResult> RequireFreshPhysicalZeroAdmission(CancellationToken token) {
             var temperature = RefractionParameters
                 .GetRefractionParameters(weatherDataMediator.GetInfo())
