@@ -84,11 +84,32 @@ contains:
   - fixed command uncertainty and directional reversal/deadband bounds;
   - applicable position, direction, temperature, load, and validity ranges;
   - capture UTC, boot identity, age at response, and relative lifetime;
-- `remainingTravelBudgetDegrees` per axis and cumulatively. These values are
-  advisory for planning and do not reserve travel;
-- active lease and transaction identity as opaque caller-scoped values only;
-  and
-- lock state and physical-motion capabilities.
+- `remainingTravelBudgetDegrees`, with the exact nested shape:
+
+  ```json
+  {
+    "signConvention": "adjusterIncreasing",
+    "az": { "positiveDegrees": 0.0, "negativeDegrees": 0.0 },
+    "alt": { "positiveDegrees": 0.0, "negativeDegrees": 0.0 },
+    "cumulativeSessionDegrees": 0.0
+  }
+  ```
+
+  All five budgets are finite non-negative degree magnitudes. Direction is
+  represented only by the selected key. The directional cost is the absolute
+  requested physical delta plus fixed command uncertainty and applicable
+  deadband/pre-seat overhead. The cumulative cost is the sum of both axis
+  costs. Exact `cost <= budget` admits. These values are advisory and do not
+  reserve travel;
+- `activeLeaseId`, `activeTransactionId`, and `lockedReason`. IDs are explicit
+  JSON null or lowercase canonical non-nil UUIDs. Any mismatch, transaction,
+  or non-null lock rejects; and
+- `capabilities`, with exact booleans `planningEvidence`,
+  `physicalMotionAvailable`, `atomicBudgetReservationAvailable`, and
+  `motionAuthorityIncluded`. The first three must be true and the last false.
+
+The evidence and plan contain no motion authority. A future transaction must
+atomically revalidate and reserve before movement.
 
 All numbers must be finite. NaN, infinity, negative zero, negative variance,
 non-symmetric covariance, and non-positive-semidefinite covariance are denied.

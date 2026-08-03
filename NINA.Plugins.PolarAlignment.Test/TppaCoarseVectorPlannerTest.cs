@@ -131,6 +131,72 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public void ExactDirectionalAndCumulativeBudgetEqualityAdmits() {
+            var baseline = Plan(Error(60.0, 0.0), Axes(), Calibration());
+            var cost = Math.Abs(baseline.RequestedAzimuthDeltaDegrees)
+                + baseline.AzimuthAdditiveBoundDegrees;
+            var exact = Runtime(
+                azPositive: 10.0,
+                azNegative: cost,
+                altPositive: 0.0,
+                altNegative: 0.0,
+                cumulative: cost);
+
+            var result = Plan(Error(60.0, 0.0), Axes(), Calibration(), exact);
+
+            result.IsAuthorized.Should().BeTrue();
+        }
+
+        [Test]
+        public void DirectionalAndCumulativeBudgetExhaustionDeny() {
+            var directional = Runtime(azNegative: 0.1);
+            var cumulative = Runtime(cumulative: 0.1);
+
+            var directionalResult = Plan(
+                Error(60.0, 0.0), Axes(), Calibration(), directional);
+            var cumulativeResult = Plan(
+                Error(60.0, 0.0), Axes(), Calibration(), cumulative);
+
+            directionalResult.IsAuthorized.Should().BeFalse();
+            directionalResult.Reason.Should().Contain("directional");
+            cumulativeResult.IsAuthorized.Should().BeFalse();
+            cumulativeResult.Reason.Should().Contain("cumulative");
+        }
+
+        [Test]
+        public void ConstructedRuntimeCapabilityBypassIsDenied() {
+            var baseline = Runtime();
+            foreach (var invalid in new[] {
+                baseline with { PlanningEvidence = false },
+                baseline with { PhysicalMotionAvailable = false },
+                baseline with { AtomicBudgetReservationAvailable = false },
+                baseline with { MotionAuthorityIncluded = true }
+            }) {
+                var result = Plan(Error(60.0, 0.0), Axes(), Calibration(), invalid);
+                result.IsAuthorized.Should().BeFalse();
+                result.Reason.Should().Contain("capabilities");
+            }
+        }
+
+        [Test]
+        public void ConstructedInvalidRuntimeBudgetThrowsBeforePlanning() {
+            var negative = Runtime() with {
+                Azimuth = new UpasDirectionalTravelBudget(-0.1, 10.0)
+            };
+            var nonFinite = Runtime() with {
+                CumulativeSessionDegrees = double.PositiveInfinity
+            };
+
+            Action planNegative = () => Plan(
+                Error(60.0, 0.0), Axes(), Calibration(), negative);
+            Action planNonFinite = () => Plan(
+                Error(60.0, 0.0), Axes(), Calibration(), nonFinite);
+
+            planNegative.Should().Throw<ArgumentOutOfRangeException>();
+            planNonFinite.Should().Throw<ArgumentOutOfRangeException>();
+        }
+
+        [Test]
         public void InvalidInputCovarianceThrowsBeforePlanning() {
             var invalidError = new TppaCoarseErrorEvidence(60.0, 0.0, 1.0, 2.0, 1.0);
             var invalidAxes = new UpasSupervisorAxesEvidence(
@@ -156,8 +222,10 @@ namespace NINA.Plugins.PolarAlignment.Test {
         private static TppaCoarseVectorPlan Plan(
                 TppaCoarseErrorEvidence error,
                 UpasSupervisorAxesEvidence axes,
-                UpasSupervisorCoarseResponseCalibration calibration) =>
-            TppaCoarseVectorPlanner.Plan(error, axes, calibration);
+                UpasSupervisorCoarseResponseCalibration calibration,
+                UpasSupervisorCoarseRuntimeConstraints runtime = null) =>
+            TppaCoarseVectorPlanner.Plan(
+                error, axes, calibration, runtime ?? Runtime());
 
         private static TppaCoarseErrorEvidence Error(
                 double azimuth,
@@ -211,5 +279,20 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 20.0, 60.0, "hae29c-ec-full-rig-v1", 100.0, 5000.0,
                 Guid.Parse("a7901d62-e1e8-4cce-bd6a-e3e986d8cd8a"));
         }
+
+        private static UpasSupervisorCoarseRuntimeConstraints Runtime(
+                double azPositive = 10.0,
+                double azNegative = 10.0,
+                double altPositive = 10.0,
+                double altNegative = 10.0,
+                double cumulative = 20.0) =>
+            new(
+                new UpasDirectionalTravelBudget(azPositive, azNegative),
+                new UpasDirectionalTravelBudget(altPositive, altNegative),
+                cumulative, null,
+                PhysicalMotionAvailable: true,
+                AtomicBudgetReservationAvailable: true,
+                PlanningEvidence: true,
+                MotionAuthorityIncluded: false);
     }
 }

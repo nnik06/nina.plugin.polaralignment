@@ -47,7 +47,8 @@ namespace NINA.Plugins.PolarAlignment {
         public static TppaCoarseVectorPlan Plan(
                 TppaCoarseErrorEvidence error,
                 UpasSupervisorAxesEvidence axes,
-                UpasSupervisorCoarseResponseCalibration calibration) {
+                UpasSupervisorCoarseResponseCalibration calibration,
+                UpasSupervisorCoarseRuntimeConstraints runtime) {
             if (error == null) {
                 throw new ArgumentNullException(nameof(error));
             }
@@ -57,8 +58,19 @@ namespace NINA.Plugins.PolarAlignment {
             if (calibration == null) {
                 throw new ArgumentNullException(nameof(calibration));
             }
+            if (runtime == null) {
+                throw new ArgumentNullException(nameof(runtime));
+            }
             ValidateError(error);
             ValidateAxes(axes);
+            ValidateRuntime(runtime);
+            if (!runtime.PlanningEvidence
+                    || !runtime.PhysicalMotionAvailable
+                    || !runtime.AtomicBudgetReservationAvailable
+                    || runtime.MotionAuthorityIncluded) {
+                return Denied(
+                    "runtime capabilities cannot support non-actuating coarse planning");
+            }
 
             if (error.TotalMinutes > MaximumObjectiveTotalErrorMinutes) {
                 return Denied(
@@ -108,12 +120,16 @@ namespace NINA.Plugins.PolarAlignment {
                 Math.Sqrt(Math.Max(0.0, commandCovariance[1, 1]))
             };
             var additive = new[] {
-                calibration.FixedAzimuthCommandUncertaintyDegrees
-                    + ApplicableDeadband(
+                requested[0] == 0.0
+                    ? 0.0
+                    : calibration.FixedAzimuthCommandUncertaintyDegrees
+                        + ApplicableDeadband(
                         requested[0], axes.Azimuth.EngagementState,
                         calibration.AzimuthDeadbandDegrees),
-                calibration.FixedAltitudeCommandUncertaintyDegrees
-                    + ApplicableDeadband(
+                requested[1] == 0.0
+                    ? 0.0
+                    : calibration.FixedAltitudeCommandUncertaintyDegrees
+                        + ApplicableDeadband(
                         requested[1], axes.Altitude.EngagementState,
                         calibration.AltitudeDeadbandDegrees)
             };
@@ -126,6 +142,17 @@ namespace NINA.Plugins.PolarAlignment {
                 axes.Altitude.PositionDegrees,
                 Math.Sqrt(axes.CovarianceAltAltSquareDegrees),
                 requested[1], additive[1]);
+            var azimuthTravelCost = Math.Abs(requested[0]) + additive[0];
+            var altitudeTravelCost = Math.Abs(requested[1]) + additive[1];
+            if (!DirectionalBudgetCovers(runtime.Azimuth, requested[0], azimuthTravelCost)
+                    || !DirectionalBudgetCovers(runtime.Altitude, requested[1], altitudeTravelCost)) {
+                return Denied("directional supervisor travel budget does not cover the expanded plan",
+                    requested, commandSigma, additive, azPath, altPath);
+            }
+            if (azimuthTravelCost + altitudeTravelCost > runtime.CumulativeSessionDegrees) {
+                return Denied("cumulative supervisor travel budget does not cover the expanded plan",
+                    requested, commandSigma, additive, azPath, altPath);
+            }
             var operationalLimit = UpasCoarsePlanningSafetyPolicy.PhysicalHardLimitDegrees
                 - UpasCoarsePlanningSafetyPolicy.MinimumReservedTravelDegrees;
             var hardLimit = UpasCoarsePlanningSafetyPolicy.PhysicalHardLimitDegrees;
@@ -234,6 +261,19 @@ namespace NINA.Plugins.PolarAlignment {
                 return bounds.WorstDegrees;
             }
             return requestedDelta > 0.0 ? bounds.PositiveDegrees : bounds.NegativeDegrees;
+        }
+
+        private static bool DirectionalBudgetCovers(
+                UpasDirectionalTravelBudget budget,
+                double requestedDelta,
+                double travelCost) {
+            if (requestedDelta > 0.0) {
+                return travelCost <= budget.PositiveDegrees;
+            }
+            if (requestedDelta < 0.0) {
+                return travelCost <= budget.NegativeDegrees;
+            }
+            return travelCost == 0.0;
         }
 
         private static UpasMillidegreeInterval ExpandedPath(
@@ -374,6 +414,21 @@ namespace NINA.Plugins.PolarAlignment {
             };
             if (!IsPositiveSemidefinite2(covariance)) {
                 throw new ArgumentOutOfRangeException(nameof(axes), "Axis covariance must be PSD.");
+            }
+        }
+
+        private static void ValidateRuntime(UpasSupervisorCoarseRuntimeConstraints runtime) {
+            RequireNonNegativeFinite(runtime.Azimuth.PositiveDegrees, nameof(runtime));
+            RequireNonNegativeFinite(runtime.Azimuth.NegativeDegrees, nameof(runtime));
+            RequireNonNegativeFinite(runtime.Altitude.PositiveDegrees, nameof(runtime));
+            RequireNonNegativeFinite(runtime.Altitude.NegativeDegrees, nameof(runtime));
+            RequireNonNegativeFinite(runtime.CumulativeSessionDegrees, nameof(runtime));
+        }
+
+        private static void RequireNonNegativeFinite(double value, string name) {
+            RequireFinite(value, name);
+            if (value < 0.0) {
+                throw new ArgumentOutOfRangeException(name);
             }
         }
 
