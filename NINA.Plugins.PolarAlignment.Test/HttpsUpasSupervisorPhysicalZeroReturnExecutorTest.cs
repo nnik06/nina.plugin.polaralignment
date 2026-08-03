@@ -46,6 +46,8 @@ namespace NINA.Plugins.PolarAlignment.Test {
 
             result.IsCompleted.Should().BeTrue();
             result.TransactionId.Should().Be(TransactionId);
+            result.CampaignId.Should().Be("50000000-0000-4000-8000-000000000001");
+            result.CampaignExpiresMonotonicNs.Should().Be(300_000_001_000);
             handler.Requests.Should().HaveCount(3);
             handler.Requests[0].Method.Should().Be(HttpMethod.Post);
             handler.Requests[0].Uri.AbsolutePath.Should().Be("/v1/leases");
@@ -125,7 +127,12 @@ namespace NINA.Plugins.PolarAlignment.Test {
                         ["state"] = terminalState,
                         ["replayed"] = false,
                         ["planKind"] = "physicalZeroPreflight",
-                        ["returnWasRequired"] = true
+                        ["returnWasRequired"] = true,
+                        ["tppaCampaign"] = new JObject {
+                            ["campaignId"] = "50000000-0000-4000-8000-000000000001",
+                            ["openedMonotonicNs"] = 1000,
+                            ["expiresMonotonicNs"] = 300_000_001_000
+                        }
                     };
                 return new HttpResponseMessage(HttpStatusCode.OK) {
                     RequestMessage = request,

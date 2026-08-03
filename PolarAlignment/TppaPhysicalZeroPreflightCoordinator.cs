@@ -15,11 +15,15 @@ namespace NINA.Plugins.PolarAlignment {
     internal sealed record UpasSupervisorPhysicalZeroReturnResult(
         bool IsCompleted,
         string TransactionId,
-        string Reason);
+        string Reason,
+        string CampaignId,
+        long CampaignExpiresMonotonicNs);
 
     internal sealed record TppaPhysicalZeroPreflightResult(
         bool ReturnWasRequired,
         string TransactionId,
+        string CampaignId,
+        long CampaignExpiresMonotonicNs,
         TppaPhysicalZeroAdmissionDecision Admission);
 
     internal sealed class TppaPhysicalZeroPreflightCoordinator {
@@ -46,13 +50,12 @@ namespace NINA.Plugins.PolarAlignment {
                 currentLoadProfileId,
                 token).ConfigureAwait(false);
             var initialAdmission = TppaPhysicalZeroAdmissionPolicy.Evaluate(before);
-            if (initialAdmission.IsEligible) {
-                return new(false, null, initialAdmission);
-            }
-
-            var requiredTravelDegrees = initialAdmission.AzimuthAbsoluteBoundDegrees
-                + initialAdmission.AltitudeAbsoluteBoundDegrees
-                + 2.0 * TppaPhysicalZeroAdmissionPolicy.ZeroToleranceDegrees;
+            var returnWasRequired = !initialAdmission.IsEligible;
+            var requiredTravelDegrees = returnWasRequired
+                ? initialAdmission.AzimuthAbsoluteBoundDegrees
+                    + initialAdmission.AltitudeAbsoluteBoundDegrees
+                    + 2.0 * TppaPhysicalZeroAdmissionPolicy.ZeroToleranceDegrees
+                : 2.0 * TppaPhysicalZeroAdmissionPolicy.ZeroToleranceDegrees;
             var returned = await returnExecutor.ReturnAsync(
                 initialAdmission.EvidenceId,
                 currentTemperatureC,
@@ -60,7 +63,9 @@ namespace NINA.Plugins.PolarAlignment {
                 currentLoadProfileId,
                 token).ConfigureAwait(false);
             if (returned == null || !returned.IsCompleted
-                    || string.IsNullOrWhiteSpace(returned.TransactionId)) {
+                    || string.IsNullOrWhiteSpace(returned.TransactionId)
+                    || string.IsNullOrWhiteSpace(returned.CampaignId)
+                    || returned.CampaignExpiresMonotonicNs <= 0) {
                 throw new InvalidOperationException(
                     "UPAS supervisor did not complete a witnessed physical-zero return: "
                     + (returned?.Reason ?? "no transaction result"));
@@ -84,7 +89,8 @@ namespace NINA.Plugins.PolarAlignment {
                     "UPAS supervisor completed its return transaction, but fresh physical evidence "
                     + "still rejects TPPA admission: " + finalAdmission.Reason);
             }
-            return new(true, returned.TransactionId, finalAdmission);
+            return new(returnWasRequired, returned.TransactionId, returned.CampaignId,
+                returned.CampaignExpiresMonotonicNs, finalAdmission);
         }
     }
 }

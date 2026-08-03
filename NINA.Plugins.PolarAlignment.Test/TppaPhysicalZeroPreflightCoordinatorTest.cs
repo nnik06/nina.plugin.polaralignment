@@ -4,7 +4,9 @@ namespace NINA.Plugins.PolarAlignment.Test {
     public class TppaPhysicalZeroPreflightCoordinatorTest {
         [Test]
         public async Task AlreadyZeroDoesNotRequestMotion() {
-            var evidence = new QueueEvidenceSource(Parse(0.02, -0.02, "b"));
+            var evidence = new QueueEvidenceSource(
+                Parse(0.02, -0.02, "b"),
+                Parse(0.01, -0.01, "c"));
             var executor = new RecordingReturnExecutor();
 
             var result = await new TppaPhysicalZeroPreflightCoordinator(evidence, executor)
@@ -12,8 +14,9 @@ namespace NINA.Plugins.PolarAlignment.Test {
 
             result.ReturnWasRequired.Should().BeFalse();
             result.Admission.IsEligible.Should().BeTrue();
-            executor.Calls.Should().Be(0);
-            evidence.Calls.Should().Be(1);
+            executor.Calls.Should().Be(1);
+            evidence.Calls.Should().Be(2);
+            result.CampaignId.Should().Be("campaign-1");
         }
 
         [Test]
@@ -126,7 +129,9 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 return Task.FromResult(new UpasSupervisorPhysicalZeroReturnResult(
                     completed,
                     completed ? "zero-transaction" : null,
-                    completed ? "completed" : "denied"));
+                    completed ? "completed" : "denied",
+                    completed ? "campaign-1" : null,
+                    completed ? 300_000_000_000 : 0));
             }
         }
     }

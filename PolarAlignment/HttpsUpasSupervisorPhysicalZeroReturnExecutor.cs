@@ -181,7 +181,7 @@ namespace NINA.Plugins.PolarAlignment {
         private static UpasSupervisorPhysicalZeroReturnResult ParseTerminalResponse(JObject root) {
             RequireExactProperties(root,
                 "schemaVersion", "transactionId", "state", "replayed",
-                "planKind", "returnWasRequired");
+                "planKind", "returnWasRequired", "tppaCampaign");
             var valid = root["schemaVersion"]?.Type == JTokenType.Integer
                 && root["schemaVersion"]?.Value<int>() == 1
                 && root["transactionId"]?.Type == JTokenType.String
@@ -191,13 +191,28 @@ namespace NINA.Plugins.PolarAlignment {
                 && root["replayed"]?.Type == JTokenType.Boolean
                 && root["planKind"]?.Type == JTokenType.String
                 && root["planKind"]?.Value<string>() == "physicalZeroPreflight"
-                && root["returnWasRequired"]?.Type == JTokenType.Boolean;
+                && root["returnWasRequired"]?.Type == JTokenType.Boolean
+                && root["tppaCampaign"]?.Type == JTokenType.Object;
             if (!valid) {
                 throw new InvalidOperationException(
                     "UPAS supervisor physical-zero response is not a valid completed transaction.");
             }
+            var campaign = (JObject)root["tppaCampaign"];
+            RequireExactProperties(campaign,
+                "campaignId", "openedMonotonicNs", "expiresMonotonicNs");
+            if (campaign["campaignId"]?.Type != JTokenType.String
+                    || !Guid.TryParse(campaign["campaignId"]?.Value<string>(), out _)
+                    || campaign["openedMonotonicNs"]?.Type != JTokenType.Integer
+                    || campaign["expiresMonotonicNs"]?.Type != JTokenType.Integer
+                    || campaign["expiresMonotonicNs"].Value<long>()
+                        <= campaign["openedMonotonicNs"].Value<long>()) {
+                throw new InvalidOperationException(
+                    "UPAS supervisor returned an invalid TPPA campaign.");
+            }
             return new UpasSupervisorPhysicalZeroReturnResult(
-                true, root["transactionId"].Value<string>(), "completed");
+                true, root["transactionId"].Value<string>(), "completed",
+                campaign["campaignId"].Value<string>(),
+                campaign["expiresMonotonicNs"].Value<long>());
         }
 
         private async Task TryReleaseLeaseAsync(string leaseId, string bearerToken) {
