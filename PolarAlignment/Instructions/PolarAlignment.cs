@@ -1863,6 +1863,9 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 throw new InvalidOperationException("Verification-only mode requires a connected telescope so both measurements can use the same automated arc and A can be restored.");
             }
 
+            var effectiveVerificationPointSettleSeconds = TppaVerificationSettlePolicy.Resolve(
+                profileService.ActiveProfile.TelescopeSettings.SettleTime,
+                VerificationPointSettleTimeSeconds);
             var qualificationIssues = TppaVerificationSettlePolicy.GetQualificationIssues(
                 TargetDistance,
                 profileService.ActiveProfile.TelescopeSettings.SettleTime,
@@ -1899,13 +1902,10 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         await domeMediator.WaitForDomeSynchronization(operationToken);
                     }
 
-                    var initialSettleTimeSeconds = TppaVerificationSettlePolicy.Resolve(
-                        profileService.ActiveProfile.TelescopeSettings.SettleTime,
-                        VerificationPointSettleTimeSeconds);
                     Logger.Info(
-                        $"TPPA verification-only initial point settle time: {initialSettleTimeSeconds:F3} seconds.");
+                        $"TPPA verification-only initial point settle time: {effectiveVerificationPointSettleSeconds:F3} seconds.");
                     await CoreUtil.Wait(
-                        TimeSpan.FromSeconds(initialSettleTimeSeconds),
+                        TimeSpan.FromSeconds(effectiveVerificationPointSettleSeconds),
                         operationToken,
                         progress,
                         "Settling at verification-only point 1");
@@ -1978,13 +1978,10 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                             if (domeMediator.GetInfo().Connected) {
                                 await domeMediator.WaitForDomeSynchronization(arcToken);
                             }
-                            var returnSettleTimeSeconds = TppaVerificationSettlePolicy.Resolve(
-                                profileService.ActiveProfile.TelescopeSettings.SettleTime,
-                                VerificationPointSettleTimeSeconds);
                             Logger.Info(
-                                $"TPPA verification-only return-to-A settle time: {returnSettleTimeSeconds:F3} seconds.");
+                                $"TPPA verification-only return-to-A settle time: {effectiveVerificationPointSettleSeconds:F3} seconds.");
                             await CoreUtil.Wait(
-                                TimeSpan.FromSeconds(returnSettleTimeSeconds),
+                                TimeSpan.FromSeconds(effectiveVerificationPointSettleSeconds),
                                 arcToken,
                                 progress,
                                 "Settling at verification-only return to A");
@@ -2180,19 +2177,26 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 Notification.ShowWarning(verificationSummary, TimeSpan.FromMinutes(1));
             }
             var verificationRunSummary = TppaVerificationRunSummary.Create(
-                correlatedGuid,
-                verificationStartedUtc,
-                DateTime.UtcNow,
-                verificationAgreement.IsRepeatable,
-                reciprocalAgreement.IsRepeatable,
-                OverdeterminedShadowModelCheck ? 11 : 9,
-                Properties.Settings.Default.RefractionAdjustment,
-                OverdeterminedShadowModelCheck,
-                initialTotalMinutes,
-                reciprocalTotalMinutes,
-                verificationTotalMinutes,
-                verificationAgreement.VectorDeltaMinutes,
-                reciprocalAgreement.VectorDeltaMinutes);
+                runId: correlatedGuid,
+                startedUtc: verificationStartedUtc,
+                completedUtc: DateTime.UtcNow,
+                repeatabilityPassed: verificationAgreement.IsRepeatable,
+                reciprocityPassed: reciprocalAgreement.IsRepeatable,
+                expectedSampleCount: OverdeterminedShadowModelCheck ? 11 : 9,
+                refractionAdjustmentEnabled: Properties.Settings.Default.RefractionAdjustment,
+                overdeterminedShadowModelCheck: OverdeterminedShadowModelCheck,
+                effectivePointSettleSeconds: effectiveVerificationPointSettleSeconds,
+                initialAzimuthMinutes: initialAzimuthMinutes,
+                initialAltitudeMinutes: initialAltitudeMinutes,
+                initialTotalMinutes: initialTotalMinutes,
+                reciprocalAzimuthMinutes: reciprocalAzimuthMinutes,
+                reciprocalAltitudeMinutes: reciprocalAltitudeMinutes,
+                reciprocalTotalMinutes: reciprocalTotalMinutes,
+                repeatedForwardAzimuthMinutes: verificationAzimuthMinutes,
+                repeatedForwardAltitudeMinutes: verificationAltitudeMinutes,
+                repeatedForwardTotalMinutes: verificationTotalMinutes,
+                repeatabilityVectorSeparationMinutes: verificationAgreement.VectorDeltaMinutes,
+                reciprocityVectorSeparationMinutes: reciprocalAgreement.VectorDeltaMinutes);
             Logger.Info("TPPA_VERIFICATION_RUN_SUMMARY " + verificationRunSummary.ToJson());
             PersistQualificationRunEvidence(
                 correlatedGuid,

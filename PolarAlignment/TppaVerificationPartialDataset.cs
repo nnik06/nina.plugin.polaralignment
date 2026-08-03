@@ -62,13 +62,21 @@ namespace NINA.Plugins.PolarAlignment {
         int ExpectedSampleCount,
         bool RefractionAdjustmentEnabled,
         bool OverdeterminedShadowModelCheck,
+        double EffectivePointSettleSeconds,
+        bool ComponentTotalsConsistent,
+        double InitialAzimuthMinutes,
+        double InitialAltitudeMinutes,
         double InitialTotalMinutes,
+        double ReciprocalAzimuthMinutes,
+        double ReciprocalAltitudeMinutes,
         double ReciprocalTotalMinutes,
+        double RepeatedForwardAzimuthMinutes,
+        double RepeatedForwardAltitudeMinutes,
         double RepeatedForwardTotalMinutes,
         double RepeatabilityVectorSeparationMinutes,
         double ReciprocityVectorSeparationMinutes) {
 
-        public const int CurrentSchemaVersion = 1;
+        public const int CurrentSchemaVersion = 2;
         public bool GrantsMotionAuthority => false;
         public bool GrantsAbsoluteAccuracyClaim => false;
 
@@ -81,14 +89,28 @@ namespace NINA.Plugins.PolarAlignment {
                 int expectedSampleCount,
                 bool refractionAdjustmentEnabled,
                 bool overdeterminedShadowModelCheck,
+                double effectivePointSettleSeconds,
+                double initialAzimuthMinutes,
+                double initialAltitudeMinutes,
                 double initialTotalMinutes,
+                double reciprocalAzimuthMinutes,
+                double reciprocalAltitudeMinutes,
                 double reciprocalTotalMinutes,
+                double repeatedForwardAzimuthMinutes,
+                double repeatedForwardAltitudeMinutes,
                 double repeatedForwardTotalMinutes,
                 double repeatabilityVectorSeparationMinutes,
                 double reciprocityVectorSeparationMinutes) {
             var values = new[] {
+                effectivePointSettleSeconds,
+                initialAzimuthMinutes,
+                initialAltitudeMinutes,
                 initialTotalMinutes,
+                reciprocalAzimuthMinutes,
+                reciprocalAltitudeMinutes,
                 reciprocalTotalMinutes,
+                repeatedForwardAzimuthMinutes,
+                repeatedForwardAltitudeMinutes,
                 repeatedForwardTotalMinutes,
                 repeatabilityVectorSeparationMinutes,
                 reciprocityVectorSeparationMinutes
@@ -105,6 +127,12 @@ namespace NINA.Plugins.PolarAlignment {
             if (expectedSampleCount < 1 || values.Any(value => !double.IsFinite(value))) {
                 throw new ArgumentException("Verification run summary is incomplete or non-finite.");
             }
+            if (effectivePointSettleSeconds < 0.0) {
+                throw new ArgumentOutOfRangeException(nameof(effectivePointSettleSeconds));
+            }
+            var componentTotalsConsistent = VectorTotalIsConsistent(initialAzimuthMinutes, initialAltitudeMinutes, initialTotalMinutes)
+                && VectorTotalIsConsistent(reciprocalAzimuthMinutes, reciprocalAltitudeMinutes, reciprocalTotalMinutes)
+                && VectorTotalIsConsistent(repeatedForwardAzimuthMinutes, repeatedForwardAltitudeMinutes, repeatedForwardTotalMinutes);
 
             return new(
                 CurrentSchemaVersion,
@@ -118,11 +146,25 @@ namespace NINA.Plugins.PolarAlignment {
                 expectedSampleCount,
                 refractionAdjustmentEnabled,
                 overdeterminedShadowModelCheck,
+                effectivePointSettleSeconds,
+                componentTotalsConsistent,
+                initialAzimuthMinutes,
+                initialAltitudeMinutes,
                 initialTotalMinutes,
+                reciprocalAzimuthMinutes,
+                reciprocalAltitudeMinutes,
                 reciprocalTotalMinutes,
+                repeatedForwardAzimuthMinutes,
+                repeatedForwardAltitudeMinutes,
                 repeatedForwardTotalMinutes,
                 repeatabilityVectorSeparationMinutes,
                 reciprocityVectorSeparationMinutes);
+        }
+
+        private static bool VectorTotalIsConsistent(double azimuthMinutes, double altitudeMinutes, double totalMinutes) {
+            const double toleranceMinutes = 0.01;
+            var expected = Math.Sqrt(azimuthMinutes * azimuthMinutes + altitudeMinutes * altitudeMinutes);
+            return Math.Abs(expected - totalMinutes) <= toleranceMinutes;
         }
 
         public string ToJson() => TppaVerificationReceiptJson.Serialize(this);

@@ -77,28 +77,32 @@ Describe 'TPPA settle qualification campaign' {
         $text.ToLowerInvariant().Contains('upas') | Should Be $false
     }
 
-    It 'qualifies ten bidirectional runs over two Dubai nights' {
+    It 'qualifies twenty bidirectional runs over two Dubai nights' {
         $paths = @()
-        for ($index = 1; $index -le 10; $index++) {
+        for ($index = 1; $index -le 20; $index++) {
             $path = Join-Path $TestDrive "valid-$index.json"
             $direction = if (($index % 2) -eq 0) { 'IncreasingRA' } else { 'DecreasingRA' }
-            New-SettleReceipt $path $index $direction -NightOffset ([Math]::Floor(($index - 1) / 5))
+            New-SettleReceipt $path $index $direction -NightOffset ([Math]::Floor(($index - 1) / 10))
             $paths += $path
         }
         $result = & $analyzer -ReceiptPath $paths
-        $result.Qualified | Should Be $true
-        $result.ValidRunCount | Should Be 10
+        $result.SchemaVersion | Should Be 2
+        $result.Event | Should Be 'tppa-settle-cadence-nomination'
+        $result.CandidateCadenceQualified | Should Be $true
+        $result.ValidRunCount | Should Be 20
         $result.DubaiNightCount | Should Be 2
-        $result.RecommendedSettleSeconds | Should Be 12
-        $result.ScopeNote.Contains('does not prove polar-alignment accuracy') | Should Be $true
+        $result.RecommendedProbeSettleSeconds | Should Be 12
+        $result.ProductionSettleQualified | Should Be $false
+        $result.NextRequiredGate | Should Match '20 controlled transitions'
+        $result.ScopeNote.Contains('does not qualify the production TPPA settle constant') | Should Be $true
     }
 
     It 'rejects duplicate run identifiers as non-independent evidence' {
         $paths = @()
-        for ($index = 1; $index -le 10; $index++) {
+        for ($index = 1; $index -le 20; $index++) {
             $path = Join-Path $TestDrive "duplicate-$index.json"
             $direction = if (($index % 2) -eq 0) { 'IncreasingRA' } else { 'DecreasingRA' }
-            New-SettleReceipt $path $index $direction -NightOffset ([Math]::Floor(($index - 1) / 5))
+            New-SettleReceipt $path $index $direction -NightOffset ([Math]::Floor(($index - 1) / 10))
             $paths += $path
         }
         $duplicate = Get-Content -LiteralPath $paths[0] -Raw | ConvertFrom-Json
@@ -106,86 +110,86 @@ Describe 'TPPA settle qualification campaign' {
         $second.RunId = $duplicate.RunId
         $second | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $paths[1] -Encoding utf8
         $result = & $analyzer -ReceiptPath $paths
-        $result.Qualified | Should Be $false
+        $result.CandidateCadenceQualified | Should Be $false
         ($result.Issues -join ' ') | Should Match 'Duplicate RunId'
     }
 
     It 'fails when only one slew direction is represented' {
         $paths = @()
-        for ($index = 1; $index -le 10; $index++) {
+        for ($index = 1; $index -le 20; $index++) {
             $path = Join-Path $TestDrive "one-way-$index.json"
-            New-SettleReceipt $path $index 'IncreasingRA' -NightOffset ([Math]::Floor(($index - 1) / 5))
+            New-SettleReceipt $path $index 'IncreasingRA' -NightOffset ([Math]::Floor(($index - 1) / 10))
             $paths += $path
         }
         $result = & $analyzer -ReceiptPath $paths
-        $result.Qualified | Should Be $false
+        $result.CandidateCadenceQualified | Should Be $false
         ($result.Issues -join ' ') | Should Match 'Only 0 DecreasingRA'
     }
 
     It 'fails on mixed rig configurations' {
         $paths = @()
-        for ($index = 1; $index -le 10; $index++) {
+        for ($index = 1; $index -le 20; $index++) {
             $path = Join-Path $TestDrive "mixed-$index.json"
             $direction = if (($index % 2) -eq 0) { 'IncreasingRA' } else { 'DecreasingRA' }
-            New-SettleReceipt $path $index $direction -NightOffset ([Math]::Floor(($index - 1) / 5)) -MixedRig:($index -eq 10)
+            New-SettleReceipt $path $index $direction -NightOffset ([Math]::Floor(($index - 1) / 10)) -MixedRig:($index -eq 10)
             $paths += $path
         }
         $result = & $analyzer -ReceiptPath $paths
-        $result.Qualified | Should Be $false
+        $result.CandidateCadenceQualified | Should Be $false
         ($result.Issues -join ' ') | Should Match 'exactly one rig configuration'
     }
 
     It 'fails closed on a balcony-envelope violation' {
         $paths = @()
-        for ($index = 1; $index -le 10; $index++) {
+        for ($index = 1; $index -le 20; $index++) {
             $path = Join-Path $TestDrive "unsafe-$index.json"
             $direction = if (($index % 2) -eq 0) { 'IncreasingRA' } else { 'DecreasingRA' }
-            New-SettleReceipt $path $index $direction -NightOffset ([Math]::Floor(($index - 1) / 5)) -UnsafeSample:($index -eq 3)
+            New-SettleReceipt $path $index $direction -NightOffset ([Math]::Floor(($index - 1) / 10)) -UnsafeSample:($index -eq 3)
             $paths += $path
         }
         $result = & $analyzer -ReceiptPath $paths
-        $result.Qualified | Should Be $false
+        $result.CandidateCadenceQualified | Should Be $false
         @($result.Runs | Where-Object { ($_.Issues -join ' ') -match 'outside the balcony' }).Count | Should Be 1
     }
 
     It 'rejects a string masquerading as a tracking boolean' {
         $paths = @()
-        for ($index = 1; $index -le 10; $index++) {
+        for ($index = 1; $index -le 20; $index++) {
             $path = Join-Path $TestDrive "string-bool-$index.json"
             $direction = if (($index % 2) -eq 0) { 'IncreasingRA' } else { 'DecreasingRA' }
-            New-SettleReceipt $path $index $direction -NightOffset ([Math]::Floor(($index - 1) / 5)) -StringTracking:($index -eq 3)
+            New-SettleReceipt $path $index $direction -NightOffset ([Math]::Floor(($index - 1) / 10)) -StringTracking:($index -eq 3)
             $paths += $path
         }
         $result = & $analyzer -ReceiptPath $paths
-        $result.Qualified | Should Be $false
+        $result.CandidateCadenceQualified | Should Be $false
         @($result.Runs | Where-Object { ($_.Issues -join ' ') -match 'not a JSON boolean' }).Count | Should Be 1
     }
 
     It 'rejects a sparse solve series that cannot resolve settling cadence' {
         $paths = @()
-        for ($index = 1; $index -le 10; $index++) {
+        for ($index = 1; $index -le 20; $index++) {
             $path = Join-Path $TestDrive "sparse-$index.json"
             $direction = if (($index % 2) -eq 0) { 'IncreasingRA' } else { 'DecreasingRA' }
-            New-SettleReceipt $path $index $direction -NightOffset ([Math]::Floor(($index - 1) / 5)) -SparseSamples:($index -eq 3)
+            New-SettleReceipt $path $index $direction -NightOffset ([Math]::Floor(($index - 1) / 10)) -SparseSamples:($index -eq 3)
             $paths += $path
         }
         $result = & $analyzer -ReceiptPath $paths
-        $result.Qualified | Should Be $false
+        $result.CandidateCadenceQualified | Should Be $false
         @($result.Runs | Where-Object { ($_.Issues -join ' ') -match 'Sample gap' }).Count | Should Be 1
     }
 
     It 'rejects a campaign whose conservative recommendation exceeds thirty seconds' {
         $paths = @()
-        for ($index = 1; $index -le 10; $index++) {
+        for ($index = 1; $index -le 20; $index++) {
             $path = Join-Path $TestDrive "slow-$index.json"
             $direction = if (($index % 2) -eq 0) { 'IncreasingRA' } else { 'DecreasingRA' }
-            New-SettleReceipt $path $index $direction -NightOffset ([Math]::Floor(($index - 1) / 5)) -UnstableUntilSeconds 14.0
+            New-SettleReceipt $path $index $direction -NightOffset ([Math]::Floor(($index - 1) / 10)) -UnstableUntilSeconds 14.0
             $paths += $path
         }
         $result = & $analyzer -ReceiptPath $paths
-        $result.Qualified | Should Be $false
+        $result.CandidateCadenceQualified | Should Be $false
         $result.CandidateSettleSeconds | Should BeGreaterThan 30
-        $result.RecommendedSettleSeconds | Should Be $null
+        $result.RecommendedProbeSettleSeconds | Should Be $null
         ($result.Issues -join ' ') | Should Match 'exceeds qualified ceiling'
     }
 }

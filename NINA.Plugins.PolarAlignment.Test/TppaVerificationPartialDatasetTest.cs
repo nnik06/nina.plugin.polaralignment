@@ -102,19 +102,43 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 expectedSampleCount: 9,
                 refractionAdjustmentEnabled: true,
                 overdeterminedShadowModelCheck: false,
-                initialTotalMinutes: 0.7,
-                reciprocalTotalMinutes: 0.8,
-                repeatedForwardTotalMinutes: 0.6,
+                effectivePointSettleSeconds: 30.0,
+                initialAzimuthMinutes: 0.3,
+                initialAltitudeMinutes: -0.6,
+                initialTotalMinutes: Math.Sqrt(0.45),
+                reciprocalAzimuthMinutes: 0.4,
+                reciprocalAltitudeMinutes: -0.7,
+                reciprocalTotalMinutes: Math.Sqrt(0.65),
+                repeatedForwardAzimuthMinutes: 0.2,
+                repeatedForwardAltitudeMinutes: -0.5,
+                repeatedForwardTotalMinutes: Math.Sqrt(0.29),
                 repeatabilityVectorSeparationMinutes: 0.2,
                 reciprocityVectorSeparationMinutes: 0.3);
 
+            summary.ComponentTotalsConsistent.Should().BeTrue();
             summary.DiagnosticPassed.Should().BeTrue();
             summary.ElapsedSeconds.Should().Be(287.5);
             summary.GrantsMotionAuthority.Should().BeFalse();
             summary.GrantsAbsoluteAccuracyClaim.Should().BeFalse();
             var json = JObject.Parse(summary.ToJson());
+            json["schemaVersion"]!.Value<int>().Should().Be(2);
+            json["effectivePointSettleSeconds"]!.Value<double>().Should().Be(30.0);
+            json["initialAzimuthMinutes"]!.Value<double>().Should().Be(0.3);
+            json["repeatedForwardAltitudeMinutes"]!.Value<double>().Should().Be(-0.5);
             Guid.Parse(json["runId"]!.Value<string>()!).Should().Be(runId);
             json["grantsAbsoluteAccuracyClaim"]!.Value<bool>().Should().BeFalse();
+        }
+
+        [Test]
+        public void RunSummaryPreservesButFlagsComponentsThatDoNotReproduceTotal() {
+            var utc = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc);
+            var summary = TppaVerificationRunSummary.Create(
+                Guid.NewGuid(), utc, utc.AddSeconds(120), true, true, 9, true, false,
+                30, 3, 4, 6, 3, 4, 5, 3, 4, 5, 0, 0);
+
+            summary.ComponentTotalsConsistent.Should().BeFalse();
+            JObject.Parse(summary.ToJson())["componentTotalsConsistent"]!.Value<bool>()
+                .Should().BeFalse();
         }
 
         [Test]
@@ -123,9 +147,11 @@ namespace NINA.Plugins.PolarAlignment.Test {
             var utc = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc);
 
             Action nonUtc = () => TppaVerificationRunSummary.Create(
-                runId, DateTime.Now, utc, true, true, 9, true, false, 1, 1, 1, 0, 0);
+                runId, DateTime.Now, utc, true, true, 9, true, false,
+                30, 1, 1, Math.Sqrt(2), 1, 1, Math.Sqrt(2), 1, 1, Math.Sqrt(2), 0, 0);
             Action backwards = () => TppaVerificationRunSummary.Create(
-                runId, utc, utc.AddSeconds(-1), true, true, 9, true, false, 1, 1, 1, 0, 0);
+                runId, utc, utc.AddSeconds(-1), true, true, 9, true, false,
+                30, 1, 1, Math.Sqrt(2), 1, 1, Math.Sqrt(2), 1, 1, Math.Sqrt(2), 0, 0);
 
             nonUtc.Should().Throw<ArgumentException>();
             backwards.Should().Throw<ArgumentException>();

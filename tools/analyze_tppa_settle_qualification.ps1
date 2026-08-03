@@ -19,13 +19,13 @@ param(
     [ValidateRange(10.0, 60.0)]
     [double]$MaximumQualifiedSettleSeconds = 30.0,
     [ValidateRange(2, 100)]
-    [int]$MinimumRuns = 10,
+    [int]$MinimumRuns = 20,
     [ValidateRange(1, 20)]
     [int]$MinimumDubaiNights = 2,
     [ValidateRange(1, 20)]
-    [int]$MinimumRunsPerDirection = 3,
+    [int]$MinimumRunsPerDirection = 8,
     [ValidateRange(1, 20)]
-    [int]$MinimumRunsPerDubaiNight = 4,
+    [int]$MinimumRunsPerDubaiNight = 8,
     [ValidateRange(20.0, 180.0)]
     [double]$MinimumObservationSpanSeconds = 50.0,
     [ValidateRange(3.0, 30.0)]
@@ -326,7 +326,8 @@ if ($null -ne $candidateSettle -and $candidateSettle -gt $MaximumQualifiedSettle
 $qualified = $campaignIssues.Count -eq 0
 
 [pscustomobject][ordered]@{
-    SchemaVersion = 1
+    SchemaVersion = 2
+    Event = 'tppa-settle-cadence-nomination'
     GeneratedUtc = [DateTimeOffset]::UtcNow.ToString('O')
     MinimumRuns = $MinimumRuns
     MinimumDubaiNights = $MinimumDubaiNights
@@ -347,9 +348,11 @@ $qualified = $campaignIssues.Count -eq 0
     DubaiNightCount = $nights.Count
     SlewDirections = $directions
     CandidateSettleSeconds = $candidateSettle
-    RecommendedSettleSeconds = if ($qualified) { $candidateSettle } else { $null }
-    Qualified = $qualified
-    ScopeNote = 'This campaign qualifies post-slew plate-solve settling for one named rig configuration. It does not prove polar-alignment accuracy or authorize UPAS motion.'
+    RecommendedProbeSettleSeconds = if ($qualified) { $candidateSettle } else { $null }
+    CandidateCadenceQualified = $qualified
+    ProductionSettleQualified = $false
+    ScopeNote = 'This campaign only nominates a post-slew cadence candidate for one named rig configuration. It does not qualify the production TPPA settle constant, prove polar-alignment accuracy, or authorize UPAS motion.'
+    NextRequiredGate = 'Compare candidate-settle and 30-second fresh TPPA determination vectors over at least 20 controlled transitions; every accepted vector separation must be at most 0.5 arcminute.'
     Issues = $campaignIssues.ToArray()
     Runs = $runResults.ToArray()
 }
