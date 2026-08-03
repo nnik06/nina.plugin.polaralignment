@@ -1,0 +1,10 @@
+{
+  "bodyLengthBytes": 3948,
+  "bodySha256": "d90ba0f935859d954b3b5f5f57fa4842f6641e4c83b747334b0049575a8854d5",
+  "contentSha256": "d90ba0f935859d954b3b5f5f57fa4842f6641e4c83b747334b0049575a8854d5",
+  "evidenceId": "bc965cda8c4513d5c3f63613ae1046f91d335bcdae6d0b80bc4bf481f867dd01",
+  "nonce": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "requestStartedMonotonicNs": 100000000,
+  "responseMonotonicNs": 125000000,
+  "schemaVersion": 1
+}

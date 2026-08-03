@@ -17,6 +17,10 @@ namespace NINA.Plugins.PolarAlignment.Test {
         private const string EvidenceId = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
         private const string DenialFixtureSha256 =
             "7d793fe296e73c2ca3ed87057047f2299745fd842715c4fee10077a88f103470";
+        private const string SuccessFixtureSha256 =
+            "d90ba0f935859d954b3b5f5f57fa4842f6641e4c83b747334b0049575a8854d5";
+        private const string SuccessEvidenceId =
+            "bc965cda8c4513d5c3f63613ae1046f91d335bcdae6d0b80bc4bf481f867dd01";
 
         [TestCase("http://127.0.0.1:8443/")]
         [TestCase("https://user:secret@127.0.0.1:8443/")]
@@ -87,6 +91,31 @@ namespace NINA.Plugins.PolarAlignment.Test {
                     null, 35.0, "hae29c-ec-full-rig-v1", CancellationToken.None);
                 await get.Should().ThrowAsync<InvalidOperationException>();
             }
+        }
+
+        [Test]
+        public async Task SharedSupervisorSuccessFixtureIsAcceptedByteExactly() {
+            var body = File.ReadAllText(
+                Path.Combine(
+                    TestContext.CurrentContext.TestDirectory,
+                    "CoarseEvidenceFixtures",
+                    "success-v2.json"),
+                new UTF8Encoding(false, true));
+            UpasSupervisorCoarsePlanningEvidenceParser.Digest(body)
+                .Should().Be(SuccessFixtureSha256);
+            var handler = new EvidenceHandler(body) {
+                ContentDigestOverride = SuccessFixtureSha256,
+                EvidenceIdOverride = SuccessEvidenceId,
+                DelayMilliseconds = 30
+            };
+
+            var result = await Source(handler).GetAsync(
+                null, 35.0, "hae29c-ec-full-rig-v1", CancellationToken.None);
+
+            result.Envelope.EvidenceId.Should().Be(SuccessEvidenceId);
+            result.ResponseContentSha256.Should().Be(SuccessFixtureSha256);
+            result.Envelope.ServerProcessingMilliseconds.Should().Be(25.0);
+            result.Runtime.MotionAuthorityIncluded.Should().BeFalse();
         }
 
         [Test]
@@ -180,8 +209,9 @@ namespace NINA.Plugins.PolarAlignment.Test {
             public string? EvidenceIdOverride { get; init; }
             public bool OmitEvidenceId { get; init; }
             public bool DuplicateContentDigest { get; init; }
+            public int DelayMilliseconds { get; init; }
 
-            protected override Task<HttpResponseMessage> SendAsync(
+            protected override async Task<HttpResponseMessage> SendAsync(
                     HttpRequestMessage request,
                     CancellationToken cancellationToken) {
                 RequestCount++;
@@ -206,7 +236,10 @@ namespace NINA.Plugins.PolarAlignment.Test {
                             EvidenceIdOverride ?? EvidenceId);
                     }
                 }
-                return Task.FromResult(response);
+                if (DelayMilliseconds > 0) {
+                    await Task.Delay(DelayMilliseconds, cancellationToken);
+                }
+                return response;
             }
         }
     }

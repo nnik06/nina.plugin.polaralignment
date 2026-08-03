@@ -65,6 +65,12 @@
     <Content Include="CoarseEvidenceFixtures\readiness-denial-v2.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
+    <Content Include="CoarseEvidenceFixtures\success-v2.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="CoarseEvidenceFixtures\success-v2-meta.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
     <Content Include="OracleFixtures\continuous_polar_error_estimator_oracle_sweep.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
