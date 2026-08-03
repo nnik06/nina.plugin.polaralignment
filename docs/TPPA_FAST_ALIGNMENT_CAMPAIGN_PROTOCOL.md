@@ -3,18 +3,20 @@
 This protocol qualifies an operational alignment result, not traceable absolute
 polar-axis accuracy.
 
-1. Before sealing a campaign, commission one schema-2 cadence authority through
+1. Before sealing a campaign, commission one schema-3 cadence authority through
    four mandatory, report-only arms using the exact runtime manifest, plugin
    DLL, hardware configuration, mechanical epoch, load profile, and temperature
    range:
    - A: at least 20 cadence-nomination transitions over at least two nights,
      with zero false-stable exits.
    - B: at least 20 candidate-versus-30-second-reference vector pairs over at
-     least two nights, with direction-order coverage, maximum separation no
-     greater than 0.5 arcminute, and no single-night dominance above 70 percent.
+     least two nights, with direction-order coverage, observed maximum
+     separation no greater than 0.5 arcminute, and no single-night dominance above 70 percent.
    - C: at least 10 same-cadence null pairs over at least two nights. This arm is
-     mandatory: null p95 must be positive and no greater than 0.25 arcminute,
-     while candidate p95 must be no greater than 1.5 times null p95.
+     mandatory: the observed null maximum must be positive and no greater than
+     0.25 arcminute, while the candidate observed maximum must be no greater
+     than 1.5 times the null maximum. These are finite-campaign engineering
+     bounds, not population-quantile claims.
    - D: at least 59 successful no-motion determinations over at least two nights
      and both slew directions using the exact
      fresh-three-point-plus-return-field path, true-pole refraction, no cadence
@@ -63,7 +65,9 @@ polar-axis accuracy.
    incomplete campaign with an unreported new manifest.
 10. Run separate campaigns for GT81 and EdgeHD. Each campaign covers contiguous
     0--30, 30--60, 60--120, 120--180, 180--240, and 240--300 arcminute strata,
-    with its exact preregistered count and at least one success in every stratum.
+    with its exact preregistered count. Three-attempt strata require at least one
+   success and four-attempt strata require at least two; the global campaign
+   still requires at least 16 of 20 successes.
 11. `PreregisteredCampaignPassRateMet` is a point estimate over the sealed
     denominator, not a confidence-bounded population guarantee. The default
     claim requires at least 16 of 20 attempts over at least three nights, with

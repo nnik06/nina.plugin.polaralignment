@@ -12,7 +12,7 @@ param(
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
-$policy = 'tppa-cadence-v2|transitions>=20|nullPairs>=10|timings>=59|nights>=2|maxVector<=0.5|nullP95<=0.25|candidateToNullP95<=1.5|timingMax+5<=timingUpperTolerance<=75|excluded=0|directionOrderCoverage=true|nightDominance<=0.70|falseStableExits=0'
+$policy = 'tppa-cadence-v3|transitions>=20|nullPairs>=10|timings>=59|nights>=2|maxVector<=0.5|nullMaximum<=0.25|candidateToNullMaximum<=1.5|timingMax+5<=timingUpperTolerance<=75|excluded=0|directionOrderCoverage=true|nightDominance<=0.70|falseStableExits=0'
 
 function Read-Report([string]$Path) {
     $full = [IO.Path]::GetFullPath($Path)
@@ -72,8 +72,7 @@ Require ((LowerHex $vector.Value.RigConfigurationId 'vector.RigConfigurationId')
 Require ([Math]::Abs((Number $vector.Value.CandidateSettleSeconds 'vector.CandidateSettleSeconds')-$candidateSettle) -le 0.01) 'Vector candidate settle differs from nomination'
 Require ($vector.Value.CandidateNominationReceiptSha256.ToLowerInvariant() -eq $nomination.Sha256) 'Vector report does not hash-link the exact nomination report'
 $candidateMaximum=Number $vector.Value.ObservedMaximumPairSeparationMinutes 'vector.ObservedMaximumPairSeparationMinutes'
-$candidateP95=Number $vector.Value.ObservedP95PairSeparationMinutes 'vector.ObservedP95PairSeparationMinutes'
-Require ($candidateMaximum -le 0.5 -and $candidateP95 -le 0.5) 'Vector separation exceeds 0.5 arcminute'
+Require ($candidateMaximum -le 0.5) 'Vector separation exceeds 0.5 arcminute'
 Require ((Number $vector.Value.MaximumObservedNightFraction 'vector.MaximumObservedNightFraction') -le 0.70) 'Vector campaign is dominated by one night'
 
 Require ((Int $nullArm.Value.SchemaVersion 'null.SchemaVersion') -eq 2 -and $nullArm.Value.Event -eq 'tppa-settle-null-dataset') 'Null report schema/event is invalid'
@@ -82,13 +81,13 @@ Require (-not (Bool $nullArm.Value.ProductionSettleQualified 'null.ProductionSet
 Require ((Int $nullArm.Value.ValidNullPairCount 'null.ValidNullPairCount') -ge 10) 'Null report has fewer than 10 pairs'
 Require ((Int $nullArm.Value.DubaiNightCount 'null.DubaiNightCount') -ge 2) 'Null report has fewer than two nights'
 Require ((LowerHex $nullArm.Value.RigConfigurationId 'null.RigConfigurationId') -eq $rig) 'Null rig identity differs from nomination'
-$nullP95=[Math]::Max(
-    (Number $nullArm.Value.ObservedP95NullLegSeparationMinutes 'null.ObservedP95NullLegSeparationMinutes'),
-    (Number $nullArm.Value.ObservedP95NullMidpointSeparationMinutes 'null.ObservedP95NullMidpointSeparationMinutes'))
-Require ($nullP95 -gt 0 -and $nullP95 -le 0.25) 'Null p95 is zero/uninformative or exceeds 0.25 arcminute'
+$nullMaximum=[Math]::Max(
+    (Number $nullArm.Value.ObservedMaximumNullLegSeparationMinutes 'null.ObservedMaximumNullLegSeparationMinutes'),
+    (Number $nullArm.Value.ObservedMaximumNullMidpointSeparationMinutes 'null.ObservedMaximumNullMidpointSeparationMinutes'))
+Require ($nullMaximum -gt 0 -and $nullMaximum -le 0.25) 'Null maximum is zero/uninformative or exceeds 0.25 arcminute'
 Require ((Number $nullArm.Value.MaximumObservedNightFraction 'null.MaximumObservedNightFraction') -le 0.70) 'Null campaign is dominated by one night'
-$ratio=$candidateP95/$nullP95
-Require ($ratio -le 1.5) 'Candidate p95 is more than 1.5 times the null p95'
+$ratio=$candidateMaximum/$nullMaximum
+Require ($ratio -le 1.5) 'Candidate maximum is more than 1.5 times the null maximum'
 
 Require ((Int $timing.Value.SchemaVersion 'timing.SchemaVersion') -eq 1 -and $timing.Value.Event -eq 'tppa-fresh-determination-timing-campaign') 'Timing report schema/event is invalid'
 Require (Bool $timing.Value.TimingCampaignQualified 'timing.TimingCampaignQualified') 'Timing campaign did not qualify'
@@ -126,7 +125,7 @@ $nightFloor=[Math]::Min(
     [Math]::Min((Int $nomination.Value.DubaiNightCount 'nomination.DubaiNightCount'),(Int $vector.Value.DubaiNightCount 'vector.DubaiNightCount')),
     [Math]::Min((Int $nullArm.Value.DubaiNightCount 'null.DubaiNightCount'),(Int $timing.Value.DubaiNightCount 'timing.DubaiNightCount')))
 $authority=[ordered]@{
-    schemaVersion=2
+    schemaVersion=3
     authorityId=[Guid]::NewGuid().ToString('D')
     commissionedUtc=$now.ToString('O')
     validUntilUtc=$now.AddDays($ValidityDays).ToString('O')
@@ -149,9 +148,9 @@ $authority=[ordered]@{
     sourceTimingDeterminationCount=(Int $timing.Value.ValidDeterminationCount 'timing.ValidDeterminationCount')
     sourceNightCount=$nightFloor
     maximumVectorSeparationMinutes=$candidateMaximum
-    nullP95SeparationMinutes=$nullP95
-    candidateP95SeparationMinutes=$candidateP95
-    candidateToNullP95Ratio=$ratio
+    nullMaximumSeparationMinutes=$nullMaximum
+    candidateMaximumSeparationMinutes=$candidateMaximum
+    candidateToNullMaximumRatio=$ratio
     timingObservedMaximumSeconds=$timingMaximum
     timingUpperToleranceSeconds=$timingUpper
     timingExcludedSampleCount=0

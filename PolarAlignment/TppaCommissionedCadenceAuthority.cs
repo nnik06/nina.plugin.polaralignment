@@ -32,9 +32,9 @@ namespace NINA.Plugins.PolarAlignment {
         int SourceTimingDeterminationCount,
         int SourceNightCount,
         double MaximumVectorSeparationMinutes,
-        double NullP95SeparationMinutes,
-        double CandidateP95SeparationMinutes,
-        double CandidateToNullP95Ratio,
+        double NullMaximumSeparationMinutes,
+        double CandidateMaximumSeparationMinutes,
+        double CandidateToNullMaximumRatio,
         double TimingObservedMaximumSeconds,
         double TimingUpperToleranceSeconds,
         int TimingExcludedSampleCount,
@@ -53,16 +53,16 @@ namespace NINA.Plugins.PolarAlignment {
             "sourceNullPairCampaignSha256", "sourceTimingCampaignSha256",
             "sourceTransitionCount", "sourceNullPairCount",
             "sourceTimingDeterminationCount", "sourceNightCount",
-            "maximumVectorSeparationMinutes", "nullP95SeparationMinutes",
-            "candidateP95SeparationMinutes", "candidateToNullP95Ratio",
+            "maximumVectorSeparationMinutes", "nullMaximumSeparationMinutes",
+            "candidateMaximumSeparationMinutes", "candidateToNullMaximumRatio",
             "timingObservedMaximumSeconds", "timingUpperToleranceSeconds",
             "timingExcludedSampleCount", "directionOrderCoveragePassed",
             "noSingleNightDominance", "zeroFalseStableExits"
         };
 
         internal const string CommissioningPolicy =
-            "tppa-cadence-v2|transitions>=20|nullPairs>=10|timings>=59|nights>=2|" +
-            "maxVector<=0.5|nullP95<=0.25|candidateToNullP95<=1.5|" +
+            "tppa-cadence-v3|transitions>=20|nullPairs>=10|timings>=59|nights>=2|" +
+            "maxVector<=0.5|nullMaximum<=0.25|candidateToNullMaximum<=1.5|" +
             "timingMax+5<=timingUpperTolerance<=75|excluded=0|" +
             "directionOrderCoverage=true|nightDominance<=0.70|falseStableExits=0";
 
@@ -107,7 +107,7 @@ namespace NINA.Plugins.PolarAlignment {
             }
 
             RequireExactProperties(root, ExactProperties);
-            if (RequireInteger(root, "schemaVersion") != 2) {
+            if (RequireInteger(root, "schemaVersion") != 3) {
                 throw new JsonException("Unsupported cadence authority schema.");
             }
             var authorityIdText = RequireText(root, "authorityId");
@@ -176,17 +176,17 @@ namespace NINA.Plugins.PolarAlignment {
             var timingCount = checked((int)RequireInteger(root, "sourceTimingDeterminationCount"));
             var nights = checked((int)RequireInteger(root, "sourceNightCount"));
             var maximumSeparation = RequireFinite(root, "maximumVectorSeparationMinutes");
-            var nullP95 = RequireFinite(root, "nullP95SeparationMinutes");
-            var candidateP95 = RequireFinite(root, "candidateP95SeparationMinutes");
-            var candidateToNullP95 = RequireFinite(root, "candidateToNullP95Ratio");
+            var nullMaximum = RequireFinite(root, "nullMaximumSeparationMinutes");
+            var candidateMaximum = RequireFinite(root, "candidateMaximumSeparationMinutes");
+            var candidateToNullMaximum = RequireFinite(root, "candidateToNullMaximumRatio");
             var timingMaximum = RequireFinite(root, "timingObservedMaximumSeconds");
             var timingUpperTolerance = RequireFinite(root, "timingUpperToleranceSeconds");
             var timingExcluded = checked((int)RequireInteger(root, "timingExcludedSampleCount"));
             if (transitions < 20 || nullPairCount < 10 || timingCount < 59 || nights < 2
                     || maximumSeparation < 0.0 || maximumSeparation > 0.5
-                    || nullP95 <= 0.0 || nullP95 > 0.25
-                    || candidateP95 < 0.0 || candidateP95 > 0.5
-                    || candidateToNullP95 < 0.0 || candidateToNullP95 > 1.5
+                    || nullMaximum <= 0.0 || nullMaximum > 0.25
+                    || candidateMaximum < 0.0 || candidateMaximum > 0.5
+                    || candidateToNullMaximum < 0.0 || candidateToNullMaximum > 1.5
                     || timingMaximum <= settle || timingMaximum > freshDuration
                     || timingUpperTolerance < timingMaximum + TppaFastAlignmentExecutionBudget.ObservedCadenceSlackSeconds
                     || timingUpperTolerance > freshDuration
@@ -207,7 +207,7 @@ namespace NINA.Plugins.PolarAlignment {
                 runtimeManifestSha, policySha, hardware, mechanical, loadProfile,
                 minimumTemperature, maximumTemperature, settle, freshDuration, nomination,
                 vectorPairs, nullPairs, timing, transitions, nullPairCount, timingCount,
-                nights, maximumSeparation, nullP95, candidateP95, candidateToNullP95,
+                nights, maximumSeparation, nullMaximum, candidateMaximum, candidateToNullMaximum,
                 timingMaximum, timingUpperTolerance, timingExcluded, true, true, true);
         }
 

@@ -1,3 +1,11 @@
+## Version 2.2.6.104
+
+- Replace the small-sample cadence p95 comparison with an explicit observed-
+  maximum comparison, and freeze the changed semantics in cadence-authority
+  schema 3 and a new commissioning-policy digest.
+- Require each four-attempt starting-error stratum to contribute at least two
+  successes, preventing a globally passing campaign from hiding three failures
+  in one edge of the 0--300 arcminute envelope.
 ## Version 2.2.6.103
 
 - Require schema-2 cadence authority to bind the exact runtime manifest, policy,

@@ -191,6 +191,7 @@ Describe 'TPPA fast alignment evidence analyzer contract' {
         $result.CampaignPopulationComplete | Should Be $true
         $result.CampaignStrataComplete | Should Be $true
         $result.CampaignStrata.Count | Should Be 6
+        @($result.CampaignStrata.MinimumSuccessfulAttempts) | Should Be @(2, 1, 1, 1, 1, 2)
         $result.PopulationAttemptCount | Should Be 20
         $result.PopulationPassRate | Should Be 0.9
         $result.PopulationPassRateWilson95Lower | Should BeGreaterThan 0.69

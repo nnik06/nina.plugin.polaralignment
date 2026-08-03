@@ -76,7 +76,7 @@ $initialTotalStrata = for ($index = 0; $index -lt $stratumCounts.Count; $index++
         MinimumMinutesInclusive = $stratumBounds[$index]
         MaximumMinutesExclusive = $stratumBounds[$index + 1]
         RequiredAttempts = $stratumCounts[$index]
-        MinimumSuccessfulAttempts = 1
+        MinimumSuccessfulAttempts = [Math]::Max(1, $stratumCounts[$index] - 2)
     }
 }
 

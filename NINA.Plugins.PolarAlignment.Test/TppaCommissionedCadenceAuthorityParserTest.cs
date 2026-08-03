@@ -108,9 +108,9 @@ namespace NINA.Plugins.PolarAlignment.Test {
             action.Should().Throw<JsonException>();
         }
 
-        [TestCase("nullP95SeparationMinutes", 0.251)]
-        [TestCase("candidateP95SeparationMinutes", 0.501)]
-        [TestCase("candidateToNullP95Ratio", 1.501)]
+        [TestCase("nullMaximumSeparationMinutes", 0.251)]
+        [TestCase("candidateMaximumSeparationMinutes", 0.501)]
+        [TestCase("candidateToNullMaximumRatio", 1.501)]
         [TestCase("timingObservedMaximumSeconds", 50.1)]
         [TestCase("timingUpperToleranceSeconds", 75.1)]
         public void RejectsOutOfPolicyCommissioningStatistic(string property, double value) {
@@ -151,7 +151,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
             Encoding.UTF8.GetBytes(value.ToString(Formatting.None));
 
         private static JObject Valid() => new() {
-            ["schemaVersion"] = 2,
+            ["schemaVersion"] = 3,
             ["authorityId"] = "10000000-0000-4000-8000-000000000001",
             ["commissionedUtc"] = "2026-08-03T00:00:00.0000000Z",
             ["validUntilUtc"] = "2026-08-05T00:00:00.0000000Z",
@@ -177,9 +177,9 @@ namespace NINA.Plugins.PolarAlignment.Test {
             ["sourceTimingDeterminationCount"] = 59,
             ["sourceNightCount"] = 2,
             ["maximumVectorSeparationMinutes"] = 0.5,
-            ["nullP95SeparationMinutes"] = 0.2,
-            ["candidateP95SeparationMinutes"] = 0.25,
-            ["candidateToNullP95Ratio"] = 1.25,
+            ["nullMaximumSeparationMinutes"] = 0.2,
+            ["candidateMaximumSeparationMinutes"] = 0.25,
+            ["candidateToNullMaximumRatio"] = 1.25,
             ["timingObservedMaximumSeconds"] = 42.0,
             ["timingUpperToleranceSeconds"] = 47.0,
             ["timingExcludedSampleCount"] = 0,
