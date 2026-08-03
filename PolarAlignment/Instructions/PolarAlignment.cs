@@ -589,6 +589,10 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     $"autoPause={fastConfiguration.AutoPauseEnabled}; " +
                     $"reason={fastConfiguration.Reason}.");
                 if (!fastConfiguration.IsEligible) {
+                    TryLogFastRunEvent("admission-rejected", new Dictionary<string, object> {
+                        ["stage"] = "configuration",
+                        ["reasonCode"] = "fast-runtime-configuration-ineligible"
+                    }, terminal: true);
                     throw new SequenceEntityFailedException(
                         $"Automated polar alignment cannot satisfy the five-minute runtime contract: " +
                         $"{fastConfiguration.Reason}. No UPAS connection or movement was authorized.");
@@ -939,6 +943,23 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                             "Fast-alignment initial evidence could not be preserved. No UPAS movement was authorized.");
                     }
                     Logger.Info($"TPPA fresh 3-point active target diagnostic: {activeTarget}.");
+                    if (enforceFastRuntimeBudget) {
+                        var admission = TppaFastAlignmentExecutionBudget.EvaluateInitialTotal(
+                            freshVector.TotalMinutes);
+                        Logger.Info($"TPPA_FAST_INITIAL_ADMISSION eligible={admission.CanStart}; reason={admission.Reason}.");
+                        if (!admission.CanStart) {
+                            TryLogFastRunEvent("admission-rejected", new Dictionary<string, object> {
+                                ["stage"] = "initial-fresh-determination",
+                                ["reasonCode"] = "initial-total-outside-qualified-window",
+                                ["initialTotalMinutes"] = freshVector.TotalMinutes
+                            }, terminal: true);
+                            throw new SequenceEntityFailedException(
+                                $"Automated polar alignment initial total is outside the qualified " +
+                                $"{TppaFastAlignmentExecutionBudget.MinimumQualifiedInitialTotalMinutes:F0}-" +
+                                $"{TppaFastAlignmentExecutionBudget.MaximumQualifiedInitialTotalMinutes:F0}' five-minute window. " +
+                                "No UPAS movement was authorized.");
+                        }
+                    }
 
                     try {
                         var alternateTarget = correctForRefraction ? "refracted apparent pole" : "true celestial pole";

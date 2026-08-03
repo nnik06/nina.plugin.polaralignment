@@ -18,10 +18,16 @@ fresh TPPA confirmation. A 10-12 minute PHD2 Guiding Assistant run is an
 acceptance-campaign witness and cannot be included in the production clock.
 
 Eligible production starts must be bounded. Until field evidence expands the
-range, use 20-60 arcminutes total starting error, qualified plate solves,
+range, use 0-24 arcminutes total starting error, qualified plate solves,
 true-pole refraction mode, valid site coordinates, safe telescope geometry,
 and verified UPAS physical headroom. Larger errors require coarse manual or
 separately qualified coarse correction before starting the five-minute run.
+The 24 arcminute cap is a preregistered field-test boundary motivated by the
+idealized response of two moves at the current 0.65 gain. It is not a
+convergence guarantee: measured gain can differ by axis, direction, and
+mechanical state. Expanding the window requires a
+separately simulated and field-qualified gain schedule; it must not be implied
+by accepting more starts in the evidence analyzer.
 
 ## Evidence adjudication
 

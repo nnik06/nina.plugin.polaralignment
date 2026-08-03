@@ -19,6 +19,11 @@ namespace NINA.Plugins.PolarAlignment {
         public const int MaximumFreshFeedbackMoves = 2;
 
         public const double MaximumRuntimeSeconds = 300;
+        public const double MinimumQualifiedInitialTotalMinutes = 0;
+        // The 24' cap is a preregistered field-test boundary motivated by an
+        // idealized 0.65 response. It is not a convergence guarantee because
+        // measured response can differ by axis, direction, and mechanical state.
+        public const double MaximumQualifiedInitialTotalMinutes = 24;
         // The clean field maximum was 72.726s for a same-arc three-point
         // determination and return solve at the qualified 30s settle setting.
         public const double FreshDeterminationReserveSeconds = 75;
@@ -67,6 +72,23 @@ namespace NINA.Plugins.PolarAlignment {
                 eligible
                     ? "five-minute configuration is eligible"
                     : "five-minute configuration is ineligible: " + string.Join("; ", reasons));
+        }
+
+        public static TppaFastAlignmentBudgetDecision EvaluateInitialTotal(
+                double initialTotalMinutes) {
+            if (!double.IsFinite(initialTotalMinutes) || initialTotalMinutes < 0) {
+                throw new ArgumentOutOfRangeException(nameof(initialTotalMinutes));
+            }
+            var eligible = initialTotalMinutes >= MinimumQualifiedInitialTotalMinutes
+                && initialTotalMinutes <= MaximumQualifiedInitialTotalMinutes;
+            return new(
+                eligible,
+                ElapsedSeconds: 0,
+                RemainingSeconds: 0,
+                RequiredReserveSeconds: 0,
+                eligible
+                    ? $"initial total {initialTotalMinutes:F2}' is inside the qualified {MinimumQualifiedInitialTotalMinutes:F0}-{MaximumQualifiedInitialTotalMinutes:F0}' window"
+                    : $"initial total {initialTotalMinutes:F2}' is outside the qualified {MinimumQualifiedInitialTotalMinutes:F0}-{MaximumQualifiedInitialTotalMinutes:F0}' window");
         }
 
         public static TppaFastAlignmentBudgetDecision EvaluateBeforeMove(

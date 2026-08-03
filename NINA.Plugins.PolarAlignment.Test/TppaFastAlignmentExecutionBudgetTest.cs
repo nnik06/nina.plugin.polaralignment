@@ -31,6 +31,26 @@ namespace NINA.Plugins.PolarAlignment.Test {
             TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMoves.Should().Be(2);
         }
 
+        [TestCase(0.0)]
+        [TestCase(12.0)]
+        [TestCase(22.0)]
+        [TestCase(24.0)]
+        public void AcceptsInitialTotalsInsideQualifiedWindow(double totalMinutes) {
+            var result = TppaFastAlignmentExecutionBudget.EvaluateInitialTotal(totalMinutes);
+
+            result.CanStart.Should().BeTrue(result.Reason);
+        }
+
+        [TestCase(24.001)]
+        [TestCase(60.0)]
+        [TestCase(120.0)]
+        public void RejectsInitialTotalsOutsideQualifiedWindow(double totalMinutes) {
+            var result = TppaFastAlignmentExecutionBudget.EvaluateInitialTotal(totalMinutes);
+
+            result.CanStart.Should().BeFalse();
+            result.Reason.Should().Contain("outside the qualified");
+        }
+
         [Test]
         public void CleanInitialDeterminationUsesMinimumMoveTail() {
             var result = TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(

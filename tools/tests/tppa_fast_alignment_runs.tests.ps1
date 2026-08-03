@@ -25,9 +25,9 @@ function New-FastRunLog(
         $nightOffset = [Math]::Floor(($index - 1) / 7)
         $start = [DateTimeOffset]::Parse('2026-08-03T18:00:00Z').AddDays($nightOffset).AddMinutes($index)
         $refraction = if ($index -eq $RefractionStringRun) { 'false' } else { $index -ne $RefractionOffRun }
-        $initialAzimuth = if ($index -eq $InitialOutsideRangeRun) { 64.0 } else { 24.0 }
-        $initialAltitude = if ($index -eq $InitialOutsideRangeRun) { 48.0 } else { 18.0 }
-        $initialTotal = if ($index -eq $InitialOutsideRangeRun) { 80.0 } else { 30.0 }
+        $initialAzimuth = if ($index -eq $InitialOutsideRangeRun) { 64.0 } else { 19.2 }
+        $initialAltitude = if ($index -eq $InitialOutsideRangeRun) { 48.0 } else { 14.4 }
+        $initialTotal = if ($index -eq $InitialOutsideRangeRun) { 80.0 } else { 24.0 }
         $events = @(
             [ordered]@{
                 schemaVersion = 1; runId = $runId; event = 'started'
@@ -113,6 +113,9 @@ Describe 'TPPA fast alignment evidence analyzer contract' {
 
         $result = & $scriptPath -LogPath $log
 
+        $result.MinimumEligibleRuns | Should Be 10
+        $result.RequiredPassingRuns | Should Be 8
+        $result.RequiredPassRate | Should Be 0.8
         $result.EligibleRunCount | Should Be 20
         $result.PassingRunCount | Should Be 18
         $result.PassingNightCount | Should Be 3
@@ -124,6 +127,75 @@ Describe 'TPPA fast alignment evidence analyzer contract' {
         $result.OverallGoalQualified | Should Be $false
     }
 
+    It 'retains a structured configuration admission rejection without corrupting evidence' {
+        $log = Join-Path $TestDrive 'admission-rejected.log'
+        New-FastRunLog $log
+        $runId = [Guid]::NewGuid().ToString('D')
+        $rejected = [ordered]@{
+            schemaVersion = 1; runId = $runId; event = 'admission-rejected'
+            observedUtc = '2026-08-06T18:00:00Z'; elapsedSeconds = 0.1
+            stage = 'configuration'; reasonCode = 'fast-runtime-configuration-ineligible'
+        }
+        Add-Content -LiteralPath $log -Value (
+            "2026-08-06|INFO| TPPA_FAST_RUN_EVENT " + ($rejected | ConvertTo-Json -Compress))
+
+        $result = & $scriptPath -LogPath $log
+
+        $result.AdmissionRejectedCount | Should Be 1
+        $result.InvalidEvidenceRunCount | Should Be 0
+        @($result.Runs | Where-Object AdmissionRejected).Count | Should Be 1
+    }
+
+    It 'accepts a coherent two-move run and checks the inter-move chain' {
+        $log = Join-Path $TestDrive 'two-move.log'
+        $runId = [Guid]::NewGuid().ToString('D')
+        $start = [DateTimeOffset]::Parse('2026-08-03T18:00:00Z')
+        $events = @(
+            [ordered]@{
+                schemaVersion = 1; runId = $runId; event = 'started'
+                observedUtc = $start.ToString('O'); elapsedSeconds = 0.0
+                settleSeconds = 30.0; exposureSeconds = 1.0
+                alignmentToleranceMinutes = 3.0; refractionAdjustmentEnabled = $true
+            }
+            [ordered]@{
+                schemaVersion = 1; runId = $runId; event = 'initial-fresh-determination'
+                observedUtc = $start.AddSeconds(75).ToString('O'); elapsedSeconds = 75.0
+                azimuthMinutes = 19.2; altitudeMinutes = 14.4; totalMinutes = 24.0
+            }
+            [ordered]@{
+                schemaVersion = 1; runId = $runId; event = 'post-move-response'
+                observedUtc = $start.AddSeconds(150).ToString('O'); elapsedSeconds = 150.0
+                classification = 'Improved'
+                preAzimuthMinutes = 19.2; preAltitudeMinutes = 14.4; preTotalMinutes = 24.0
+                postAzimuthMinutes = 6.0; postAltitudeMinutes = 4.5; postTotalMinutes = 7.5
+                totalImprovementMinutes = 16.5; requiredImprovementMinutes = 0.5
+            }
+            [ordered]@{
+                schemaVersion = 1; runId = $runId; event = 'post-move-response'
+                observedUtc = $start.AddSeconds(225).ToString('O'); elapsedSeconds = 225.0
+                classification = 'ConvergedCandidate'
+                preAzimuthMinutes = 6.0; preAltitudeMinutes = 4.5; preTotalMinutes = 7.5
+                postAzimuthMinutes = 1.6; postAltitudeMinutes = 1.2; postTotalMinutes = 2.0
+                totalImprovementMinutes = 5.5; requiredImprovementMinutes = 0.5
+            }
+            [ordered]@{
+                schemaVersion = 1; runId = $runId; event = 'completed'
+                observedUtc = $start.AddSeconds(300).ToString('O'); elapsedSeconds = 300.0
+                outcome = 'fresh-confirmed-within-tolerance'; moveCount = 2
+                finalAzimuthMinutes = 1.6; finalAltitudeMinutes = 1.2; finalTotalMinutes = 2.0
+            }
+        )
+        $events | ForEach-Object {
+            "2026-08-03|INFO| TPPA_FAST_RUN_EVENT $($_ | ConvertTo-Json -Compress)"
+        } | Set-Content -LiteralPath $log -Encoding utf8
+
+        $result = & $scriptPath -LogPath $log
+        $run = $result.Runs | Where-Object RunId -eq $runId
+        $run.MoveCount | Should Be 2
+        $run.Passed | Should Be $true
+        $run.Issues.Count | Should Be 0
+        $result.FastAlignmentEvidenceQualified | Should Be $false
+    }
     It 'fails the campaign on a completed run with refraction disabled' {
         $log = Join-Path $TestDrive 'refraction-off.log'
         New-FastRunLog $log -RefractionOffRun 4
@@ -179,10 +251,10 @@ Describe 'TPPA fast alignment evidence analyzer contract' {
 
     It 'requires a ninety percent pass rate rather than unbounded retries' {
         $log = Join-Path $TestDrive 'low-pass-rate.log'
-        New-FastRunLog $log -RunCount 21 -PassingRunCount 18
+        New-FastRunLog $log -RunCount 11 -PassingRunCount 8
         $result = & $scriptPath -LogPath $log
-        $result.EligibleRunCount | Should Be 21
-        $result.PassingRunCount | Should Be 18
+        $result.EligibleRunCount | Should Be 11
+        $result.PassingRunCount | Should Be 8
         $result.FastAlignmentEvidenceQualified | Should Be $false
     }
 
@@ -263,10 +335,10 @@ Describe 'TPPA fast alignment evidence analyzer contract' {
 
     It 'excludes runs outside the initial eligibility window' {
         $log = Join-Path $TestDrive 'initial-outside-range.log'
-        New-FastRunLog $log -InitialOutsideRangeRun 20
+        New-FastRunLog $log -RunCount 10 -PassingRunCount 8 -InitialOutsideRangeRun 10
         $result = & $scriptPath -LogPath $log
-        $result.TotalRunCount | Should Be 20
-        $result.EligibleRunCount | Should Be 19
+        $result.TotalRunCount | Should Be 10
+        $result.EligibleRunCount | Should Be 9
         $result.IneligibleRunCount | Should Be 1
         $result.FastAlignmentEvidenceQualified | Should Be $false
     }

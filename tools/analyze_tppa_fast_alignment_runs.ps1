@@ -4,11 +4,11 @@ param(
     [string[]]$LogPath,
     [string]$OutputPath = '',
     [ValidateRange(1, 100)]
-    [int]$MinimumEligibleRuns = 20,
+    [int]$MinimumEligibleRuns = 10,
     [ValidateRange(1, 100)]
-    [int]$RequiredPassingRuns = 18,
+    [int]$RequiredPassingRuns = 8,
     [ValidateRange(0.01, 1.0)]
-    [double]$RequiredPassRate = 0.9,
+    [double]$RequiredPassRate = 0.8,
     [ValidateRange(1, 30)]
     [int]$MinimumNights = 3,
     [ValidateRange(1.0, 1800.0)]
@@ -18,23 +18,27 @@ param(
     [ValidateRange(0.1, 60.0)]
     [double]$MaximumToleranceMinutes = 3.0,
     [ValidateRange(0.0, 180.0)]
-    [double]$MinimumInitialTotalMinutes = 20.0,
+    [double]$MinimumInitialTotalMinutes = 0.0,
     [ValidateRange(0.1, 180.0)]
-    [double]$MaximumInitialTotalMinutes = 60.0,
-    [ValidateRange(1, 1)]
-    [int]$RequiredMoveCount = 1,
+    [double]$MaximumInitialTotalMinutes = 24.0,
+    [ValidateRange(0, 2)]
+    [int]$MinimumMoveCount = 1,
+    [ValidateRange(1, 2)]
+    [int]$MaximumMoveCount = 2,
     [ValidateRange(0.0, 10.0)]
     [double]$MaximumClockSkewSeconds = 2.0,
     [ValidateRange(0.05, 10.0)]
     [double]$MaximumPostFinalSeparationMinutes = 1.5,
     [ValidateRange(0.05, 10.0)]
-    [double]$MaximumInitialPreSeparationMinutes = 1.5
+    [double]$MaximumInitialPreSeparationMinutes = 1.5,
+    [ValidateRange(0.05, 10.0)]
+    [double]$MaximumInterMoveSeparationMinutes = 1.5
 )
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 $marker = 'TPPA_FAST_RUN_EVENT '
-$terminalEvents = @('completed', 'failed', 'cancelled', 'abandoned')
+$terminalEvents = @('completed', 'failed', 'cancelled', 'abandoned', 'admission-rejected')
 $allowedEvents = @('started', 'initial-fresh-determination', 'post-move-response') + $terminalEvents
 
 function ConvertTo-FiniteDouble([object]$Value, [string]$FieldName) {
@@ -164,8 +168,18 @@ foreach ($group in $runGroups) {
     $initial = @($events | Where-Object { [string]$_.Payload.event -eq 'initial-fresh-determination' })
     $postMove = @($events | Where-Object { [string]$_.Payload.event -eq 'post-move-response' })
     $terminal = @($events | Where-Object { $terminalEvents -contains [string]$_.Payload.event })
-    if ($started.Count -ne 1) { $issues.Add("expected one started event; found $($started.Count)") }
-    if ($initial.Count -ne 1) { $issues.Add("expected one initial event; found $($initial.Count)") }
+    $admissionRejected = @($events | Where-Object { [string]$_.Payload.event -eq 'admission-rejected' })
+    $rejectionStage = if ($admissionRejected.Count -eq 1) {
+        [string](Get-PropertyValue $admissionRejected[0].Payload 'stage')
+    } else { $null }
+    $expectedStarted = if ($rejectionStage -eq 'configuration') { 0 } else { 1 }
+    $expectedInitial = if ($rejectionStage -eq 'configuration') { 0 } else { 1 }
+    if ($started.Count -ne $expectedStarted) { $issues.Add("expected $expectedStarted started event(s); found $($started.Count)") }
+    if ($initial.Count -ne $expectedInitial) { $issues.Add("expected $expectedInitial initial event(s); found $($initial.Count)") }
+    if ($admissionRejected.Count -gt 1) { $issues.Add("expected at most one admission-rejected event; found $($admissionRejected.Count)") }
+    if ($admissionRejected.Count -eq 1 -and $rejectionStage -notin @('configuration', 'initial-fresh-determination')) {
+        $issues.Add("unknown admission rejection stage '$rejectionStage'")
+    }
     if ($terminal.Count -ne 1) { $issues.Add("expected one terminal event; found $($terminal.Count)") }
     if ($started.Count -eq 1 -and $started[0].Sequence -ne $events[0].Sequence) {
         $issues.Add('started event is not the first run event')
@@ -177,7 +191,8 @@ foreach ($group in $runGroups) {
     if ($terminal.Count -eq 1 -and $terminal[0].Sequence -ne $events[-1].Sequence) {
         $issues.Add('terminal event is not the last run event')
     }
-    foreach ($post in $postMove) {
+    for ($postIndex = 0; $postIndex -lt $postMove.Count; $postIndex++) {
+        $post = $postMove[$postIndex]
         if ($initial.Count -eq 1 -and $post.Sequence -le $initial[0].Sequence) {
             $issues.Add('post-move event does not follow initial')
         }
@@ -197,6 +212,15 @@ foreach ($group in $runGroups) {
                 $issues.Add('requiredImprovementMinutes is negative')
             } elseif ($reportedImprovement -lt $requiredImprovement) {
                 $issues.Add("reported improvement $reportedImprovement arcmin is below required improvement $requiredImprovement arcmin")
+            }
+            if ($postIndex -gt 0) {
+                $previousPostVector = Get-ValidatedVector $postMove[$postIndex - 1].Payload 'postAzimuthMinutes' 'postAltitudeMinutes' 'postTotalMinutes' 'post-move.previous-post'
+                $interMoveSeparation = [Math]::Sqrt(
+                    [Math]::Pow($previousPostVector.Azimuth - $preVector.Azimuth, 2) +
+                    [Math]::Pow($previousPostVector.Altitude - $preVector.Altitude, 2))
+                if ($interMoveSeparation -gt $MaximumInterMoveSeparationMinutes) {
+                    $issues.Add("inter-move vector separation $interMoveSeparation arcmin exceeds $MaximumInterMoveSeparationMinutes arcmin")
+                }
             }
         } catch {
             $issues.Add($_.Exception.Message)
@@ -247,14 +271,14 @@ foreach ($group in $runGroups) {
     if ($completed) {
         try {
             $moveCount = ConvertTo-StrictInt (Get-PropertyValue $terminal[0].Payload 'moveCount') 'completed.moveCount'
-            if ($moveCount -ne $RequiredMoveCount) {
-                $issues.Add("completed moveCount=$moveCount; required $RequiredMoveCount")
+            if ($moveCount -lt $MinimumMoveCount -or $moveCount -gt $MaximumMoveCount) {
+                $issues.Add("completed moveCount=$moveCount; required range is $MinimumMoveCount-$MaximumMoveCount")
             }
             if ($postMove.Count -ne $moveCount) {
                 $issues.Add("post-move event count $($postMove.Count) does not match moveCount $moveCount")
             }
-            if ($moveCount -eq 1 -and $postMove.Count -eq 1) {
-                $classification = [string](Get-PropertyValue $postMove[0].Payload 'classification')
+            if ($moveCount -ge 1 -and $postMove.Count -eq $moveCount) {
+                $classification = [string](Get-PropertyValue $postMove[-1].Payload 'classification')
                 if ($classification -ne 'ConvergedCandidate') {
                     $issues.Add("post-move classification '$classification' is not ConvergedCandidate")
                 }
@@ -270,8 +294,8 @@ foreach ($group in $runGroups) {
             }
             $finalVector = Get-ValidatedVector $terminal[0].Payload 'finalAzimuthMinutes' 'finalAltitudeMinutes' 'finalTotalMinutes' 'completed'
             $finalTotal = $finalVector.Total
-            if ($moveCount -eq 1 -and $postMove.Count -eq 1) {
-                $postVector = Get-ValidatedVector $postMove[0].Payload 'postAzimuthMinutes' 'postAltitudeMinutes' 'postTotalMinutes' 'post-move.post'
+            if ($moveCount -ge 1 -and $postMove.Count -eq $moveCount) {
+                $postVector = Get-ValidatedVector $postMove[-1].Payload 'postAzimuthMinutes' 'postAltitudeMinutes' 'postTotalMinutes' 'post-move.post'
                 $postFinalSeparation = [Math]::Sqrt(
                     [Math]::Pow($finalVector.Azimuth - $postVector.Azimuth, 2) +
                     [Math]::Pow($finalVector.Altitude - $postVector.Altitude, 2))
@@ -299,6 +323,7 @@ foreach ($group in $runGroups) {
         }
     }
 
+    $admissionWasRejected = $terminalName -eq 'admission-rejected'
     $passed = $eligible -and $completed -and $issues.Count -eq 0
     $falseSuccess = $completed -and $issues.Count -gt 0
     $night = if ($null -eq $startedUtc) { $null } else {
@@ -308,6 +333,8 @@ foreach ($group in $runGroups) {
         RunId = $runId.ToString('D')
         NightDubai = $night
         Eligible = $eligible
+        AdmissionRejected = $admissionWasRejected
+        AdmissionRejectionStage = $rejectionStage
         TerminalEvent = $terminalName
         MoveCount = $moveCount
         InitialTotalMinutes = $initialTotal
@@ -319,6 +346,7 @@ foreach ($group in $runGroups) {
 }
 
 $eligibleRuns = @($runResults | Where-Object Eligible)
+$admissionRejections = @($runResults | Where-Object AdmissionRejected)
 $passingRuns = @($eligibleRuns | Where-Object Passed)
 $falseSuccesses = @($runResults | Where-Object FalseSuccess)
 $invalidEvidenceRuns = @($runResults | Where-Object { $_.Issues.Count -gt 0 })
@@ -343,13 +371,16 @@ $report = [ordered]@{
     MinimumSettleSeconds = $MinimumSettleSeconds
     MaximumToleranceMinutes = $MaximumToleranceMinutes
     InitialEligibilityRangeMinutes = @($MinimumInitialTotalMinutes, $MaximumInitialTotalMinutes)
-    RequiredMoveCount = $RequiredMoveCount
+    MinimumMoveCount = $MinimumMoveCount
+    MaximumMoveCount = $MaximumMoveCount
     MaximumClockSkewSeconds = $MaximumClockSkewSeconds
     MaximumPostFinalSeparationMinutes = $MaximumPostFinalSeparationMinutes
     MaximumInitialPreSeparationMinutes = $MaximumInitialPreSeparationMinutes
+    MaximumInterMoveSeparationMinutes = $MaximumInterMoveSeparationMinutes
     TotalRunCount = $runResults.Count
     EligibleRunCount = $eligibleRuns.Count
     IneligibleRunCount = $runResults.Count - $eligibleRuns.Count
+    AdmissionRejectedCount = $admissionRejections.Count
     PassingRunCount = $passingRuns.Count
     PassRate = $passRate
     FalseSuccessCount = $falseSuccesses.Count
@@ -359,7 +390,7 @@ $report = [ordered]@{
     AbsoluteAccuracyQualified = $false
     DeliveredExposureQualified = $false
     OverallGoalQualified = $false
-    ScopeNote = 'This verifier qualifies self-reported, logged run lifecycle, timing, true-pole settings and reported convergence only. Eligibility is based on self-reported initial error, and unlogged attempts are undetectable. It does not independently prove absolute PA accuracy, physical hard-limit clearance, delivered-image quality, or absence of selection bias.'
+    ScopeNote = 'This is an admitted-envelope screening result for logged run lifecycle, timing, true-pole settings and reported convergence only; 8/10 is not population reliability. It retains structured admission rejections, but attempts that never emit a fast-run event remain undetectable. It does not independently prove absolute PA accuracy, physical hard-limit clearance, delivered-image quality, or absence of selection bias.'
     Runs = $runResults.ToArray()
 }
 

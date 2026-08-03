@@ -46,6 +46,9 @@ namespace NINA.Plugins.PolarAlignment.Test {
             source.Should().Contain("bool TryLogFastRunEvent(");
             source.Should().Contain("if (!TryLogFastRunEvent(\"started\"");
             source.Should().Contain("if (!TryLogFastRunEvent(\"initial-fresh-determination\"");
+            source.Should().Contain("TryLogFastRunEvent(\"admission-rejected\"");
+            source.Should().Contain("TppaFastAlignmentExecutionBudget.EvaluateInitialTotal(");
+            source.Should().Contain("No UPAS movement was authorized.");
             source.Should().Contain("if (!TryLogFastRunEvent(\"post-move-response\"");
             source.Should().Contain("if (!TryLogFastRunEvent(\"completed\"");
             source.Should().NotContain("[\"reason\"] = ex.Message");

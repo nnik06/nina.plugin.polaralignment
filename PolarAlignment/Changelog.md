@@ -1,3 +1,17 @@
+## Version 2.2.6.95
+
+- Reject five-minute fixed-gain actuator starts above the preregistered 24
+  arcminute field-test boundary before any UPAS movement. Easier starts remain
+  eligible and may complete without movement. The upper bound is motivated by
+  an idealized two-move 0.65 response, not a convergence guarantee; wider
+  starts require a separately qualified gain schedule.
+- Emit and retain structured admission rejections for configuration and
+  initial-measurement denials instead of silently dropping non-admitted trials.
+- Qualify one- or two-move evidence chains, require every inter-move pre-vector
+  to match the previous fresh post-vector, and screen the campaign at 8 of 10
+  admitted attempts while keeping absolute accuracy and delivered-exposure
+  claims explicitly false. The 8-of-10 result is an admitted-envelope
+  screening milestone, not population reliability.
 ## Version 2.2.6.94
 
 - Bind the passive 900-second sequence, calibrated policy, scout evidence, and

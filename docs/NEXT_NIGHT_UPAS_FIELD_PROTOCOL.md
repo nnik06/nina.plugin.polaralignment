@@ -75,7 +75,7 @@ supersede the actuator trial below; UPAS remains disabled for that campaign.
 ## Starting State
 - Put both UPAS markers near their engraved zero positions and photograph them.
 - Confirm GRBL reports Idle and record MPos X/Y. Treat MPos as commanded position, not encoder feedback.
-- Focus successfully, plate solve reliably, and begin between 20 and 60 arcminutes total PA error.
+- Focus successfully, plate solve reliably, and begin at no more than 24 arcminutes total PA error for the fixed-gain, two-move five-minute campaign. Easier starts remain eligible and may complete without movement. Starts above this window are retained as admission rejections and receive no UPAS movement. A wider window requires a separately qualified gain schedule.
 - Disable pre-seat for the first trial. Keep configured azimuth travel guards enabled.
 - Record reversal settings and do not change them during a run.
 - After Home, a major slew, cable handling, or physical contact, hold the mount undisturbed for at least five minutes before the first qualified VerificationOnly determination. Restart the dwell after any new disturbance.
@@ -213,7 +213,7 @@ supersede the actuator trial below; UPAS remains disabled for that campaign.
 ## Actuator Trial
 1. Only after measurement qualification passes, run `tools/run_guarded_tppa_verification.ps1` with the tested DLL hash and a VerificationOnly sequence whose target has at least 2 degrees of altitude margin inside the measured balcony opening.
 2. Require the forward and repeated-forward determinations to agree within the selected tolerance. Treat the centered reciprocal comparison as a required internal-consistency gate, not an absolute-accuracy proof.
-3. Enable automated correction and permit exactly one bounded UPAS move.
+3. Enable automated correction and permit one or two bounded UPAS moves only while the measured cadence leaves time for a final independent confirmation.
 4. Verify the plugin performs an independent fresh three-point measurement before planning another move.
 5. Compare signed fresh azimuth/altitude changes with the command. Continue one move at a time only while the response is plausible.
 6. Require two consecutive independent fresh results below the selected tolerance before accepting completion.
