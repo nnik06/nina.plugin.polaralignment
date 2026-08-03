@@ -1,3 +1,8 @@
+## Version 2.2.6.100
+
+- Seal the current rig mechanical-epoch receipt in every preregistered fast-alignment campaign and runtime start event.
+- Reject campaign evidence when the active TPPA mechanical epoch differs from the sealed campaign, even when DLL and covariance-authority identities still match.
+
 ## Version 2.2.6.99
 
 - Bind covariance commissioning and runtime authority use to one explicit,

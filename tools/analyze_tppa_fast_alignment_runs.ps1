@@ -161,6 +161,7 @@ $declaredRepositoryHead = $null
 $declaredPluginAssemblySha256 = $null
 $declaredCovarianceAuthorityId = $null
 $declaredCovarianceAuthoritySha256 = $null
+$declaredMechanicalStateId = $null
 $declaredLoadProfileId = $null
 $campaignCreatedUtc = $null
 $campaignStartUtc = $null
@@ -181,7 +182,7 @@ if (-not [string]::IsNullOrWhiteSpace($CampaignManifestPath)) {
             'SchemaVersion', 'CampaignId', 'CreatedUtc', 'CampaignStartUtc',
             'CampaignEndUtc', 'OpticalTrainId', 'RepositoryHead',
             'PluginAssemblySha256', 'CovarianceAuthorityId',
-            'CovarianceAuthoritySha256', 'LoadProfileId', 'ExpectedAttemptCount',
+            'CovarianceAuthoritySha256', 'MechanicalStateId', 'LoadProfileId', 'ExpectedAttemptCount',
             'LogPaths', 'RequiredPassRate', 'MinimumSuccessfulAttempts',
             'MinimumEligibleRuns', 'MinimumNights', 'MaximumRuntimeSeconds',
             'MinimumSettleSeconds', 'MaximumToleranceMinutes',
@@ -193,8 +194,8 @@ if (-not [string]::IsNullOrWhiteSpace($CampaignManifestPath)) {
         if ($unexpected.Count -gt 0 -or $missing.Count -gt 0) {
             throw "campaign manifest fields are not exact; missing=$($missing -join ','); unexpected=$($unexpected -join ',')"
         }
-        if ((ConvertTo-StrictInt (Get-PropertyValue $campaignManifest 'SchemaVersion') 'campaign.SchemaVersion') -ne 3) {
-            throw 'campaign manifest SchemaVersion is not 3; legacy manifests cannot qualify the exact-build campaign verdict'
+        if ((ConvertTo-StrictInt (Get-PropertyValue $campaignManifest 'SchemaVersion') 'campaign.SchemaVersion') -ne 4) {
+            throw 'campaign manifest SchemaVersion is not 4; legacy manifests cannot qualify the exact-build-and-epoch campaign verdict'
         }
         $campaignId = [string](Get-PropertyValue $campaignManifest 'CampaignId')
         $declaredOpticalTrainId = [string](Get-PropertyValue $campaignManifest 'OpticalTrainId')
@@ -202,11 +203,13 @@ if (-not [string]::IsNullOrWhiteSpace($CampaignManifestPath)) {
         $declaredPluginAssemblySha256 = [string](Get-PropertyValue $campaignManifest 'PluginAssemblySha256')
         $declaredCovarianceAuthorityId = [string](Get-PropertyValue $campaignManifest 'CovarianceAuthorityId')
         $declaredCovarianceAuthoritySha256 = [string](Get-PropertyValue $campaignManifest 'CovarianceAuthoritySha256')
+        $declaredMechanicalStateId = [string](Get-PropertyValue $campaignManifest 'MechanicalStateId')
         $declaredLoadProfileId = [string](Get-PropertyValue $campaignManifest 'LoadProfileId')
         if ($declaredRepositoryHead -cnotmatch '^[0-9a-f]{40}$' -or
                 $declaredPluginAssemblySha256 -cnotmatch '^[0-9a-f]{64}$' -or
                 $declaredCovarianceAuthorityId -cnotmatch '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' -or
                 $declaredCovarianceAuthoritySha256 -cnotmatch '^[0-9a-f]{64}$' -or
+                $declaredMechanicalStateId -cnotmatch '^[0-9a-f]{64}$' -or
                 [string]::IsNullOrWhiteSpace($declaredLoadProfileId)) {
             throw 'campaign exact-build identity is malformed or blank'
         }
@@ -428,12 +431,14 @@ foreach ($group in $runGroups) {
             $pluginAssemblySha256 = [string](Get-PropertyValue $started[0].Payload 'pluginAssemblySha256')
             $covarianceAuthorityId = [string](Get-PropertyValue $started[0].Payload 'covarianceAuthorityId')
             $covarianceAuthoritySha256 = [string](Get-PropertyValue $started[0].Payload 'covarianceAuthoritySha256')
+            $mechanicalStateId = [string](Get-PropertyValue $started[0].Payload 'mechanicalStateId')
             $loadProfileId = [string](Get-PropertyValue $started[0].Payload 'loadProfileId')
             $tppaCampaignId = [string](Get-PropertyValue $started[0].Payload 'tppaCampaignId')
             if ($repositoryHead -cnotmatch '^[0-9a-f]{40}$' -or
                     $pluginAssemblySha256 -cnotmatch '^[0-9a-f]{64}$' -or
                     $covarianceAuthorityId -cnotmatch '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' -or
                     $covarianceAuthoritySha256 -cnotmatch '^[0-9a-f]{64}$' -or
+                    $mechanicalStateId -cnotmatch '^[0-9a-f]{64}$' -or
                     [string]::IsNullOrWhiteSpace($loadProfileId) -or
                     $tppaCampaignId -cnotmatch '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$') {
                 $issues.Add('started event exact-build identity is malformed or blank')
@@ -443,6 +448,7 @@ foreach ($group in $runGroups) {
                      $pluginAssemblySha256 -cne $declaredPluginAssemblySha256 -or
                      $covarianceAuthorityId -cne $declaredCovarianceAuthorityId -or
                      $covarianceAuthoritySha256 -cne $declaredCovarianceAuthoritySha256 -or
+                     $mechanicalStateId -cne $declaredMechanicalStateId -or
                      $loadProfileId -cne $declaredLoadProfileId)) {
                 $issues.Add('started event exact-build identity does not match preregistered campaign')
             }
@@ -652,6 +658,7 @@ $report = [ordered]@{
     DeclaredPluginAssemblySha256 = $declaredPluginAssemblySha256
     DeclaredCovarianceAuthorityId = $declaredCovarianceAuthorityId
     DeclaredCovarianceAuthoritySha256 = $declaredCovarianceAuthoritySha256
+    DeclaredMechanicalStateId = $declaredMechanicalStateId
     DeclaredLoadProfileId = $declaredLoadProfileId
     CampaignStartUtc = $campaignStartUtc
     CampaignEndUtc = $campaignEndUtc

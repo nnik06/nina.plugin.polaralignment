@@ -4,6 +4,7 @@ $repositoryHead = '0123456789abcdef0123456789abcdef01234567'
 $pluginAssemblySha256 = '11' * 32
 $covarianceAuthorityId = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
 $covarianceAuthoritySha256 = '22' * 32
+$mechanicalStateId = '44' * 32
 $loadProfileId = 'commissioned-load-profile-v1'
 
 function New-FastRunLog(
@@ -66,6 +67,7 @@ function New-FastRunLog(
                 refractionAdjustmentEnabled = $refraction
                 repositoryHead = $repositoryHead; pluginAssemblySha256 = $pluginAssemblySha256
                 covarianceAuthorityId = $covarianceAuthorityId; covarianceAuthoritySha256 = $covarianceAuthoritySha256
+                mechanicalStateId = $mechanicalStateId
                 loadProfileId = $loadProfileId; tppaCampaignId = [Guid]::NewGuid().ToString('D')
             }
             [ordered]@{
@@ -133,7 +135,7 @@ function New-FastRunLog(
 function New-FastCampaignManifest([string]$Path, [string[]]$Logs, [int]$ExpectedAttempts = 20) {
     $creator = Join-Path $PSScriptRoot '..\new_tppa_fast_alignment_campaign.ps1'
     & $creator -OpticalTrainId 'WO-GT81-IV-0.8-OAG-L-ASI2600MM-gain100-bin1' `
-        -RepositoryHead $repositoryHead -PluginAssemblySha256 $pluginAssemblySha256 -CovarianceAuthorityId $covarianceAuthorityId -CovarianceAuthoritySha256 $covarianceAuthoritySha256 -LoadProfileId $loadProfileId -LogPath $Logs -OutputPath $Path -ExpectedAttemptCount $ExpectedAttempts `
+        -RepositoryHead $repositoryHead -PluginAssemblySha256 $pluginAssemblySha256 -CovarianceAuthorityId $covarianceAuthorityId -CovarianceAuthoritySha256 $covarianceAuthoritySha256 -MechanicalStateId $mechanicalStateId -LoadProfileId $loadProfileId -LogPath $Logs -OutputPath $Path -ExpectedAttemptCount $ExpectedAttempts `
         -CampaignEndUtc ([DateTimeOffset]::UtcNow.AddDays(4)) | Out-Null
     $manifest = [IO.File]::ReadAllText($Path) | ConvertFrom-Json
     $manifest.CreatedUtc = '2026-08-03T17:00:00Z'
@@ -280,17 +282,31 @@ Describe 'TPPA fast alignment evidence analyzer contract' {
         $result.PreregisteredCampaignPassRateMet | Should Be $false
         @($result.Runs | Where-Object { $_.Issues -contains 'started event exact-build identity does not match preregistered campaign' }).Count | Should Be 20
     }
-    It 'rejects a legacy schema v2 manifest from the exact-build verdict' {
+    It 'rejects a run from a different mechanical epoch than the sealed campaign' {
+        $log = Join-Path $TestDrive 'epoch-mismatch.log'
+        New-FastRunLog $log -UseObjectiveStrata
+        $manifest = Join-Path $TestDrive 'epoch-mismatch-campaign.json'
+        $sealed = New-FastCampaignManifest $manifest @($log)
+        $document = [IO.File]::ReadAllText($manifest) | ConvertFrom-Json
+        $document.MechanicalStateId = '55' * 32
+        [IO.File]::WriteAllText($manifest, ($document | ConvertTo-Json -Depth 6) + "`r`n", [Text.UTF8Encoding]::new($false))
+        $hash = (Get-FileHash $manifest -Algorithm SHA256).Hash
+        $result = & $scriptPath -LogPath $log -CampaignManifestPath $manifest -ExpectedCampaignManifestSha256 $hash
+        $result.PreregisteredCampaignPassRateMet | Should Be $false
+        @($result.Runs | Where-Object { $_.Issues -contains 'started event exact-build identity does not match preregistered campaign' }).Count | Should Be 20
+    }
+
+    It 'rejects a legacy schema v3 manifest from the exact-build-and-epoch verdict' {
         $log = Join-Path $TestDrive 'legacy-schema.log'
         New-FastRunLog $log -UseObjectiveStrata
         $manifest = Join-Path $TestDrive 'legacy-schema-campaign.json'
         $sealed = New-FastCampaignManifest $manifest @($log)
         $document = [IO.File]::ReadAllText($manifest) | ConvertFrom-Json
-        $document.SchemaVersion = 2
+        $document.SchemaVersion = 3
         [IO.File]::WriteAllText($manifest, ($document | ConvertTo-Json -Depth 6) + "`r`n", [Text.UTF8Encoding]::new($false))
         $hash = (Get-FileHash $manifest -Algorithm SHA256).Hash
         $result = & $scriptPath -LogPath $log -CampaignManifestPath $manifest -ExpectedCampaignManifestSha256 $hash
-        ($result.CampaignIssues -join ' ') | Should Match 'SchemaVersion is not 3; legacy manifests cannot qualify'
+        ($result.CampaignIssues -join ' ') | Should Match 'SchemaVersion is not 4; legacy manifests cannot qualify'
     }
 
     It 'rejects a campaign manifest whose external hash anchor does not match' {
@@ -379,6 +395,7 @@ Describe 'TPPA fast alignment evidence analyzer contract' {
                 alignmentToleranceMinutes = 3.0; refractionAdjustmentEnabled = $true
                 repositoryHead = $repositoryHead; pluginAssemblySha256 = $pluginAssemblySha256
                 covarianceAuthorityId = $covarianceAuthorityId; covarianceAuthoritySha256 = $covarianceAuthoritySha256
+                mechanicalStateId = $mechanicalStateId
                 loadProfileId = $loadProfileId; tppaCampaignId = [Guid]::NewGuid().ToString('D')
             }
             [ordered]@{

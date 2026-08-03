@@ -634,6 +634,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     ["pluginAssemblySha256"] = activeTppaCovarianceAuthority.PluginAssemblySha256,
                     ["covarianceAuthorityId"] = activeTppaCovarianceAuthority.AuthorityId.ToString("D"),
                     ["covarianceAuthoritySha256"] = activeTppaCovarianceAuthority.ArtifactSha256,
+                    ["mechanicalStateId"] = activeTppaCovarianceAuthority.MechanicalStateSha256,
                     ["loadProfileId"] = activeTppaCovarianceAuthority.LoadProfileId,
                     ["tppaCampaignId"] = activeTppaCampaignId.ToString("D")
                 })) {

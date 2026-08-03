@@ -9,6 +9,7 @@ param(
     [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{64}$')][string]$PluginAssemblySha256,
     [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')][string]$CovarianceAuthorityId,
     [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{64}$')][string]$CovarianceAuthoritySha256,
+    [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{64}$')][string]$MechanicalStateId,
     [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$LoadProfileId,
     [Parameter(Mandatory)][string[]]$LogPath,
     [Parameter(Mandatory)][string]$OutputPath,
@@ -76,7 +77,7 @@ $initialTotalStrata = for ($index = 0; $index -lt $stratumCounts.Count; $index++
 }
 
 $manifest = [ordered]@{
-    SchemaVersion = 3
+    SchemaVersion = 4
     CampaignId = [Guid]::NewGuid().ToString('D')
     CreatedUtc = $createdUtc.ToUniversalTime().ToString('O')
     CampaignStartUtc = $createdUtc.ToUniversalTime().ToString('O')
@@ -86,6 +87,7 @@ $manifest = [ordered]@{
     PluginAssemblySha256 = $PluginAssemblySha256
     CovarianceAuthorityId = $CovarianceAuthorityId
     CovarianceAuthoritySha256 = $CovarianceAuthoritySha256
+    MechanicalStateId = $MechanicalStateId
     LoadProfileId = $LoadProfileId
     ExpectedAttemptCount = $ExpectedAttemptCount
     LogPaths = $logs
