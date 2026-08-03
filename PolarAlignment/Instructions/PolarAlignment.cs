@@ -91,7 +91,6 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
         private const double MinimumPositiveAlignmentTolerance = 0.5;
         private double alignmentTolerance;
         private bool enforceFiveMinuteRuntimeBudget;
-        private const string QualifiedUpasLoadProfileId = "hae29c-ec-full-rig-v1";
         private static readonly HttpClient UpasSupervisorHttpClient = new() {
             Timeout = Timeout.InfiniteTimeSpan
         };
@@ -1451,7 +1450,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 evidence = await source.GetAsync(
                     expectedCallerLeaseId: null,
                     currentTemperatureC: temperature,
-                    currentLoadProfileId: QualifiedUpasLoadProfileId,
+                    currentLoadProfileId: Properties.Settings.Default.UpasSupervisorLoadProfileId,
                     token).ConfigureAwait(false);
             } catch (Exception ex) when (ex is not OperationCanceledException) {
                 throw new SequenceEntityFailedException(

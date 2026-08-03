@@ -73,6 +73,16 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public void SupervisorLoadProfileHasAnExplicitDefault() {
+            var property = typeof(NINA.Plugins.PolarAlignment.Properties.Settings)
+                .GetProperty(nameof(NINA.Plugins.PolarAlignment.Properties.Settings.UpasSupervisorLoadProfileId));
+
+            property.Should().NotBeNull();
+            property!.GetCustomAttribute<DefaultSettingValueAttribute>()!.Value
+                .Should().Be("hae29c-ec-full-rig-v1");
+        }
+
+        [Test]
         public void StrictStatusParserRejectsWhitespaceLockReason() {
             var whitespaceLock = ValidDryRunStatus.Replace(
                 "\"lockedReason\": null",

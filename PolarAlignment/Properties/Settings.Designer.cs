@@ -469,6 +469,18 @@ namespace NINA.Plugins.PolarAlignment.Properties {
 
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("hae29c-ec-full-rig-v1")]
+        public string UpasSupervisorLoadProfileId {
+            get {
+                return ((string)(this["UpasSupervisorLoadProfileId"]));
+            }
+            set {
+                this["UpasSupervisorLoadProfileId"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
         [global::System.Configuration.DefaultSettingValueAttribute("2")]
         public double AvalonAzimuthTravelLimitDegrees {
             get {

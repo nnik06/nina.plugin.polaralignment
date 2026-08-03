@@ -80,6 +80,9 @@
     <Setting Name="UpasSupervisorEndpoint" Type="System.String" Scope="User">
       <Value Profile="(Default)">https://127.0.0.1:8443/</Value>
     </Setting>
+    <Setting Name="UpasSupervisorLoadProfileId" Type="System.String" Scope="User">
+      <Value Profile="(Default)">hae29c-ec-full-rig-v1</Value>
+    </Setting>
     <Setting Name="AutomatedAdjustmentSettleTime" Type="System.Double" Scope="User">
       <Value Profile="(Default)">2</Value>
     </Setting>

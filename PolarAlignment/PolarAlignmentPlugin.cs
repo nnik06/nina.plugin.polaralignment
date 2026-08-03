@@ -303,6 +303,22 @@ namespace NINA.Plugins.PolarAlignment {
             }
         }
 
+        public string UpasSupervisorLoadProfileId {
+            get => Properties.Settings.Default.UpasSupervisorLoadProfileId;
+            set {
+                var canonical = value?.Trim();
+                if (string.IsNullOrWhiteSpace(canonical)
+                        || canonical.Length > 128
+                        || canonical.Any(character => !(char.IsLetterOrDigit(character)
+                            || character is '-' or '_' or '.'))) {
+                    return;
+                }
+                Properties.Settings.Default.UpasSupervisorLoadProfileId = canonical;
+                CoreUtil.SaveSettings(Properties.Settings.Default);
+                RaisePropertyChanged();
+            }
+        }
+
         public string ExternalUpasSupervisorState =>
             RequireExternalUpasSupervisorForAutomatedMoves
                 ? "Required: automated motion fails closed until external physical authority is commissioned"
