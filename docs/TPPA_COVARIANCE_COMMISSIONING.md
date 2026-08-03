@@ -14,9 +14,15 @@ shared systematic error and grants no absolute-accuracy claim.
 4. Create a mechanical-epoch receipt before NINA starts with
    tools/new_tppa_mechanical_epoch.ps1. Set the returned
    TPPA_MECHANICAL_STATE_ID in the user environment and restart NINA. The
-   receipt hash must remain unchanged for the whole no-motion campaign.
-   Any relocation, reseating, load/balance/cable change, impact, or fastener
-   adjustment invalidates the epoch and requires a new receipt and NINA restart.
+   receipt hash must remain unchanged for the whole commissioning campaign.
+   The epoch represents the unchanged rigid assembly, optical train, load,
+   balance, cable routing, and mechanical seating. Rigid-body relocation,
+   intended UPAS travel, and manual polar-axis orientation changes do not by
+   themselves invalidate it. A tripod/pier component reseat, optical or load
+   change, cable-routing change, impact, fastener adjustment, or unexplained
+   discontinuity does invalidate it and requires a new receipt and NINA restart.
+   Commissioning samples must span the deployment and orientation variability
+   intended for the campaign; every individual source run remains stationary.
 5. Collect at least 20 complete VerificationOnly run-evidence JSON files. Each
    file must use evidence schema 6, contain exactly three fresh qualified
    determinations, have correction sequence zero, and carry the same mechanical

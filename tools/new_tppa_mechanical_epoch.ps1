@@ -25,13 +25,19 @@ if (-not [string]::IsNullOrWhiteSpace($parent)) {
     [void][IO.Directory]::CreateDirectory($parent)
 }
 $receipt = [ordered]@{
-    schemaVersion = 1
+    schemaVersion = 2
     epochId = [Guid]::NewGuid().ToString('D')
     establishedUtc = $EstablishedUtc.ToUniversalTime().ToString('O')
     opticalTrainId = $OpticalTrainId
     physicalConfigurationDescription = $PhysicalConfigurationDescription
+    epochScope = 'rigid assembly, optical train, load, balance, cable routing, and mechanical seating'
+    notInvalidatedBy = @(
+        'rigid-body relocation with the assembly unchanged',
+        'intended UPAS azimuth or altitude travel within qualified limits',
+        'manual polar-axis orientation change without assembly, seating, load, balance, cable, or fastener change'
+    )
     invalidatedBy = @(
-        'tripod or pier relocation',
+        'tripod or pier leg, foot, spreader, clamp, adapter, or plate reseating or adjustment',
         'UPAS removal, reset, or mechanical reseating',
         'mount, saddle, OTA, reducer, OAG, camera, rotator, or guider removal or reseating',
         'counterweight, balance, cable-routing, or load-profile change',

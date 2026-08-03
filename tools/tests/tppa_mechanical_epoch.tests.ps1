@@ -9,8 +9,10 @@ Describe 'TPPA mechanical epoch receipt generator' {
         $receipt = [IO.File]::ReadAllText($output) | ConvertFrom-Json
         $result.MechanicalStateId | Should Match '^[0-9a-f]{64}$'
         $result.MechanicalStateId | Should Be ((Get-FileHash $output -Algorithm SHA256).Hash.ToLowerInvariant())
-        $receipt.schemaVersion | Should Be 1
+        $receipt.schemaVersion | Should Be 2
         $receipt.invalidatedBy.Count | Should BeGreaterThan 3
+        $receipt.epochScope | Should Match 'rigid assembly'
+        @($receipt.notInvalidatedBy | Where-Object { $_ -match 'relocation' }).Count | Should Be 1
         $result.SetForNextNinaLaunch | Should Match 'TPPA_MECHANICAL_STATE_ID'
     }
 
