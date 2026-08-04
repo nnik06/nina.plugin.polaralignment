@@ -1,3 +1,8 @@
+## Version 2.2.6.109
+
+- Make generated field preflight receipts assert the exact supervisor commit and
+  embedded coarse-response protocol hash, rather than accepting generic provenance-shaped text.
+
 ## Version 2.2.6.108
 
 - Bind each field-readiness packet to an exact supervisor commit and embed the

@@ -88,6 +88,8 @@ $untracked = @(Invoke-GitCommand @('status', '--porcelain', '--untracked-files=a
 $fieldReadiness = [IO.File]::ReadAllText([IO.Path]::Combine($packet, 'FIELD_READINESS.md'))
 $fieldMatrix = [IO.File]::ReadAllText([IO.Path]::Combine($packet, 'FIELD_CAMPAIGN_MATRIX.md'))
 $coarsePrerequisite = [IO.File]::ReadAllText([IO.Path]::Combine($packet, 'COARSE_RESPONSE_PREREQUISITE.md'))
+$expectedSupervisorCommit = '__SUPERVISOR_SOURCE_COMMIT__'
+$expectedSupervisorProtocolSha256 = '__SUPERVISOR_PROTOCOL_SHA256__'
 Require ($fieldReadiness -notmatch '(?i)\bp95\b') 'Field readiness retains retired p95 cadence semantics.'
 Require ($fieldReadiness -cmatch 'observed null maximum') 'Field readiness omits schema-3 null-maximum semantics.'
 Require ($fieldReadiness -cmatch 'four-attempt starting-error stratum requires at least two successes') 'Field readiness omits the edge-stratum success floor.'
@@ -95,8 +97,12 @@ Require ($fieldMatrix -cmatch '0--30 and 240--300') 'Field matrix omits the four
 Require ($fieldMatrix -cmatch 'Totals are 4, 3, 3, 3, 3 and 4 attempts') 'Field matrix disagrees with the sealed generator stratum counts.'
 Require ($fieldMatrix -cmatch 'require at least two successes') 'Field matrix omits the endpoint-stratum success floor.'
 Require ($coarsePrerequisite -notmatch '__[A-Z0-9_]+__') 'Coarse prerequisite contains unresolved provenance tokens.'
-Require ($coarsePrerequisite -cmatch '[0-9a-f]{40}') 'Coarse prerequisite omits supervisor source commit.'
-Require ($coarsePrerequisite -cmatch '[0-9A-F]{64}') 'Coarse prerequisite omits supervisor protocol SHA-256.'
+Require ($coarsePrerequisite.Contains($expectedSupervisorCommit)) `
+    "Coarse prerequisite omits exact supervisor source commit: $expectedSupervisorCommit"
+Require ($coarsePrerequisite.Contains($expectedSupervisorProtocolSha256)) `
+    "Coarse prerequisite omits exact supervisor protocol SHA-256: $expectedSupervisorProtocolSha256"
+Require ($verified['SUPERVISOR_COARSE_RESPONSE_PROTOCOL.md'] -ceq $expectedSupervisorProtocolSha256) `
+    'Embedded supervisor protocol does not match the generated supervisor protocol SHA-256.'
 
 $manifestPath = [IO.Path]::Combine($packet, 'TPPA.runtime-manifest.json')
 $manifest = [IO.File]::ReadAllText($manifestPath) | ConvertFrom-Json
@@ -156,6 +162,7 @@ $result = [ordered]@{
     PacketChecksumManifestSha256 = Sha256 $hashFile
     VerifiedPacketFiles = $verified
     RuntimeManifestSha256 = $verified['TPPA.runtime-manifest.json']
+    SupervisorSourceCommit = $expectedSupervisorCommit
     SupervisorProtocolSha256 = $verified['SUPERVISOR_COARSE_RESPONSE_PROTOCOL.md']
     RequiredToolSha256 = $toolHashes
     NextStage = 'Per-train coarse-response and travel commissioning'

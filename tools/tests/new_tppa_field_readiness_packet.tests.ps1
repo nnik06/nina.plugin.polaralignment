@@ -68,6 +68,10 @@ Describe 'TPPA field readiness packet builder' {
         $allText | Should Match $result.SupervisorProtocolSha256
         ([IO.File]::ReadAllText((Join-Path $output 'verify_field_preflight.ps1'))) |
             Should Match 'NextStage = ''Per-train coarse-response and travel commissioning'''
+        $verifierText = [IO.File]::ReadAllText((Join-Path $output 'verify_field_preflight.ps1'))
+        $verifierText | Should Match ([regex]::Escape($head))
+        $verifierText | Should Match ([regex]::Escape($result.SupervisorProtocolSha256))
+        $verifierText | Should Match 'SupervisorSourceCommit = \$expectedSupervisorCommit'
 
         $manifest = [IO.File]::ReadAllText((Join-Path $output 'TPPA.runtime-manifest.json')) | ConvertFrom-Json
         $manifest.sourceCommit | Should Be $head
