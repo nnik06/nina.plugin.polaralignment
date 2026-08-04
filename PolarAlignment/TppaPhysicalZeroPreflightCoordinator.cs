@@ -13,12 +13,28 @@ namespace NINA.Plugins.PolarAlignment {
             CancellationToken token);
     }
 
+    internal sealed record UpasSupervisorPhysicalZeroAdmission(
+        string AdmissionSha256,
+        string CampaignId,
+        string ZeroReferenceId,
+        string TransactionId,
+        string TerminalEvidenceCoreSha256,
+        string TerminalPlanSha256,
+        long VerifiedStartedMonotonicNs,
+        long VerifiedCompletedMonotonicNs,
+        double AzimuthPositionDegrees,
+        double AltitudePositionDegrees,
+        double AzimuthAbsoluteBoundDegrees,
+        double AltitudeAbsoluteBoundDegrees,
+        double ZeroToleranceDegrees);
+
     internal sealed record UpasSupervisorPhysicalZeroReturnResult(
         bool IsCompleted,
         string TransactionId,
         string Reason,
         string CampaignId,
-        long CampaignExpiresMonotonicNs);
+        long CampaignExpiresMonotonicNs,
+        UpasSupervisorPhysicalZeroAdmission Admission);
 
     internal sealed record TppaPhysicalZeroPreflightResult(
         bool ReturnWasRequired,
@@ -73,7 +89,8 @@ namespace NINA.Plugins.PolarAlignment {
             if (returned == null || !returned.IsCompleted
                     || string.IsNullOrWhiteSpace(returned.TransactionId)
                     || string.IsNullOrWhiteSpace(returned.CampaignId)
-                    || returned.CampaignExpiresMonotonicNs <= 0) {
+                    || returned.CampaignExpiresMonotonicNs <= 0
+                    || returned.Admission == null) {
                 throw new InvalidOperationException(
                     "UPAS supervisor did not complete a witnessed physical-zero return: "
                     + (returned?.Reason ?? "no transaction result"));
@@ -84,6 +101,14 @@ namespace NINA.Plugins.PolarAlignment {
                 throw new InvalidOperationException(
                     "UPAS supervisor physical-zero response did not preserve the sealed "
                     + "preregistered campaign identity.");
+            }
+            if (!string.Equals(returned.Admission.CampaignId, returned.CampaignId,
+                    StringComparison.Ordinal)
+                    || !string.Equals(returned.Admission.TransactionId,
+                        returned.TransactionId, StringComparison.Ordinal)) {
+                throw new InvalidOperationException(
+                    "UPAS supervisor terminal zero admission is not bound to the returned "
+                    + "campaign and transaction.");
             }
 
             var after = await evidenceSource.GetAsync(

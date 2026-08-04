@@ -160,7 +160,15 @@ namespace NINA.Plugins.PolarAlignment.Test {
                     completed ? "zero-transaction" : null,
                     completed ? "completed" : "denied",
                     completed ? returnedCampaignId ?? preregisteredCampaignId : null,
-                    completed ? 300_000_000_000 : 0));
+                    completed ? 300_000_000_000 : 0,
+                    completed ? new UpasSupervisorPhysicalZeroAdmission(
+                        new string('a', 64),
+                        returnedCampaignId ?? preregisteredCampaignId,
+                        HttpsUpasSupervisorPhysicalZeroReturnExecutor.ZeroReferenceId,
+                        "zero-transaction",
+                        new string('b', 64),
+                        new string('c', 64),
+                        10, 20, 0.0, 0.0, 0.03, 0.03, 0.1) : null));
             }
         }
     }

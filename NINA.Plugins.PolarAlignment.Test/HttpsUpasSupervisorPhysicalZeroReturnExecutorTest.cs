@@ -50,6 +50,11 @@ namespace NINA.Plugins.PolarAlignment.Test {
             result.TransactionId.Should().Be(TransactionId);
             result.CampaignId.Should().Be("50000000-0000-4000-8000-000000000001");
             result.CampaignExpiresMonotonicNs.Should().Be(300_000_001_000);
+            result.Admission.Should().NotBeNull();
+            result.Admission.CampaignId.Should().Be(result.CampaignId);
+            result.Admission.TransactionId.Should().Be(result.TransactionId);
+            result.Admission.AzimuthAbsoluteBoundDegrees.Should().Be(0.03);
+            result.Admission.AltitudeAbsoluteBoundDegrees.Should().Be(0.03);
             handler.Requests.Should().HaveCount(3);
             handler.Requests[0].Method.Should().Be(HttpMethod.Post);
             handler.Requests[0].Uri.AbsolutePath.Should().Be("/v1/leases");
@@ -89,6 +94,44 @@ namespace NINA.Plugins.PolarAlignment.Test {
             handler.Requests.Last().Method.Should().Be(HttpMethod.Delete);
         }
 
+        [Test]
+        public async Task RejectsCorruptedTerminalAdmissionDigest() {
+            var handler = new RecordingHandler(corruptAdmissionDigest: true);
+            using var client = new HttpClient(handler);
+            var executor = new HttpsUpasSupervisorPhysicalZeroReturnExecutor(
+                client, "https://supervisor.test/", () => "token",
+                idempotencyKeyProvider: () => "fixed-key");
+
+            var action = () => executor.ReturnAsync(
+                new string('b', 64), 35.0, 0.5,
+                "hae29c-ec-full-rig-v1",
+                "50000000-0000-4000-8000-000000000001",
+                CancellationToken.None);
+
+            await action.Should().ThrowAsync<InvalidOperationException>()
+                .WithMessage("*admission digest is invalid*");
+            handler.Requests.Last().Method.Should().Be(HttpMethod.Delete);
+        }
+
+        [Test]
+        public async Task RejectsTerminalAdmissionForAnotherCampaign() {
+            var handler = new RecordingHandler(mismatchAdmissionCampaign: true);
+            using var client = new HttpClient(handler);
+            var executor = new HttpsUpasSupervisorPhysicalZeroReturnExecutor(
+                client, "https://supervisor.test/", () => "token",
+                idempotencyKeyProvider: () => "fixed-key");
+
+            var action = () => executor.ReturnAsync(
+                new string('b', 64), 35.0, 0.5,
+                "hae29c-ec-full-rig-v1",
+                "50000000-0000-4000-8000-000000000001",
+                CancellationToken.None);
+
+            await action.Should().ThrowAsync<InvalidOperationException>()
+                .WithMessage("*invalid terminal physical-zero admission*");
+            handler.Requests.Last().Method.Should().Be(HttpMethod.Delete);
+        }
+
         private sealed record CapturedRequest(
             HttpMethod Method,
             Uri Uri,
@@ -97,9 +140,42 @@ namespace NINA.Plugins.PolarAlignment.Test {
 
         private sealed class RecordingHandler : HttpMessageHandler {
             private readonly string terminalState;
-            public RecordingHandler(string terminalState = "completed") =>
+            private readonly bool corruptAdmissionDigest;
+            private readonly bool mismatchAdmissionCampaign;
+            public RecordingHandler(
+                    string terminalState = "completed",
+                    bool corruptAdmissionDigest = false,
+                    bool mismatchAdmissionCampaign = false) {
                 this.terminalState = terminalState;
+                this.corruptAdmissionDigest = corruptAdmissionDigest;
+                this.mismatchAdmissionCampaign = mismatchAdmissionCampaign;
+            }
             public List<CapturedRequest> Requests { get; } = new();
+
+            private static JObject CreateAdmission(
+                    string transactionId, string campaignId, bool corruptDigest) {
+                var value = new JObject {
+                    ["schemaVersion"] = 1,
+                    ["admissionSha256"] = new string('0', 64),
+                    ["preregisteredCampaignId"] = campaignId,
+                    ["zeroReferenceId"] =
+                        HttpsUpasSupervisorPhysicalZeroReturnExecutor.ZeroReferenceId,
+                    ["transactionId"] = transactionId,
+                    ["terminalEvidenceCoreSha256"] = new string('b', 64),
+                    ["terminalPlanSha256"] = new string('c', 64),
+                    ["verifiedStartedMonotonicNs"] = 10,
+                    ["verifiedCompletedMonotonicNs"] = 20,
+                    ["positionMicrodegrees"] = new JArray(0, 0),
+                    ["positionAbsoluteBoundsMicrodegrees"] = new JArray(30000, 30000),
+                    ["zeroToleranceMicrodegrees"] = 100000,
+                    ["tppaTimerMayStart"] = true
+                };
+                value["admissionSha256"] = corruptDigest
+                    ? new string('d', 64)
+                    : HttpsUpasSupervisorCoarseTppaExecutor
+                        .ComputeRequestBodySha256(value);
+                return value;
+            }
 
             protected override async Task<HttpResponseMessage> SendAsync(
                     HttpRequestMessage request, CancellationToken cancellationToken) {
@@ -134,6 +210,12 @@ namespace NINA.Plugins.PolarAlignment.Test {
                         ["replayed"] = false,
                         ["planKind"] = "physicalZeroPreflight",
                         ["returnWasRequired"] = true,
+                        ["physicalZeroAdmission"] = CreateAdmission(
+                            TransactionId,
+                            mismatchAdmissionCampaign
+                                ? "60000000-0000-4000-8000-000000000001"
+                                : "50000000-0000-4000-8000-000000000001",
+                            corruptAdmissionDigest),
                         ["tppaCampaign"] = new JObject {
                             ["campaignId"] = "50000000-0000-4000-8000-000000000001",
                             ["openedMonotonicNs"] = 1000,

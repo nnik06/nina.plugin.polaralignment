@@ -190,7 +190,8 @@ namespace NINA.Plugins.PolarAlignment {
         private static UpasSupervisorPhysicalZeroReturnResult ParseTerminalResponse(JObject root) {
             RequireExactProperties(root,
                 "schemaVersion", "transactionId", "state", "replayed",
-                "planKind", "returnWasRequired", "tppaCampaign");
+                "planKind", "returnWasRequired", "physicalZeroAdmission",
+                "tppaCampaign");
             var valid = root["schemaVersion"]?.Type == JTokenType.Integer
                 && root["schemaVersion"]?.Value<int>() == 1
                 && root["transactionId"]?.Type == JTokenType.String
@@ -201,6 +202,7 @@ namespace NINA.Plugins.PolarAlignment {
                 && root["planKind"]?.Type == JTokenType.String
                 && root["planKind"]?.Value<string>() == "physicalZeroPreflight"
                 && root["returnWasRequired"]?.Type == JTokenType.Boolean
+                && root["physicalZeroAdmission"]?.Type == JTokenType.Object
                 && root["tppaCampaign"]?.Type == JTokenType.Object;
             if (!valid) {
                 throw new InvalidOperationException(
@@ -218,10 +220,81 @@ namespace NINA.Plugins.PolarAlignment {
                 throw new InvalidOperationException(
                     "UPAS supervisor returned an invalid TPPA campaign.");
             }
+            var admission = ParsePhysicalZeroAdmission(
+                (JObject)root["physicalZeroAdmission"],
+                root["transactionId"].Value<string>(),
+                campaign["campaignId"].Value<string>());
             return new UpasSupervisorPhysicalZeroReturnResult(
                 true, root["transactionId"].Value<string>(), "completed",
                 campaign["campaignId"].Value<string>(),
-                campaign["expiresMonotonicNs"].Value<long>());
+                campaign["expiresMonotonicNs"].Value<long>(), admission);
+        }
+
+        private static UpasSupervisorPhysicalZeroAdmission ParsePhysicalZeroAdmission(
+                JObject admission, string transactionId, string campaignId) {
+            RequireExactProperties(admission,
+                "schemaVersion", "admissionSha256", "preregisteredCampaignId",
+                "zeroReferenceId", "transactionId", "terminalEvidenceCoreSha256",
+                "terminalPlanSha256", "verifiedStartedMonotonicNs",
+                "verifiedCompletedMonotonicNs", "positionMicrodegrees",
+                "positionAbsoluteBoundsMicrodegrees", "zeroToleranceMicrodegrees",
+                "tppaTimerMayStart");
+            var positions = admission["positionMicrodegrees"] as JArray;
+            var bounds = admission["positionAbsoluteBoundsMicrodegrees"] as JArray;
+            var valid = admission["schemaVersion"]?.Type == JTokenType.Integer
+                && admission["schemaVersion"]?.Value<int>() == 1
+                && admission["preregisteredCampaignId"]?.Value<string>() == campaignId
+                && admission["zeroReferenceId"]?.Value<string>() == ZeroReferenceId
+                && admission["transactionId"]?.Value<string>() == transactionId
+                && admission["verifiedStartedMonotonicNs"]?.Type == JTokenType.Integer
+                && admission["verifiedCompletedMonotonicNs"]?.Type == JTokenType.Integer
+                && admission["verifiedCompletedMonotonicNs"].Value<long>()
+                    >= admission["verifiedStartedMonotonicNs"].Value<long>()
+                && admission["tppaTimerMayStart"]?.Type == JTokenType.Boolean
+                && admission["tppaTimerMayStart"].Value<bool>()
+                && positions?.Count == 2 && bounds?.Count == 2
+                && positions.All(value => value.Type == JTokenType.Integer)
+                && bounds.All(value => value.Type == JTokenType.Integer)
+                && admission["zeroToleranceMicrodegrees"]?.Type == JTokenType.Integer;
+            if (!valid) {
+                throw new InvalidOperationException(
+                    "UPAS supervisor returned an invalid terminal physical-zero admission.");
+            }
+            RequireLowerHexSha256(admission["admissionSha256"]?.Value<string>(),
+                "physicalZeroAdmission.admissionSha256");
+            RequireLowerHexSha256(admission["terminalEvidenceCoreSha256"]?.Value<string>(),
+                "physicalZeroAdmission.terminalEvidenceCoreSha256");
+            RequireLowerHexSha256(admission["terminalPlanSha256"]?.Value<string>(),
+                "physicalZeroAdmission.terminalPlanSha256");
+            var toleranceMicrodegrees = admission["zeroToleranceMicrodegrees"].Value<long>();
+            if (toleranceMicrodegrees <= 0 || toleranceMicrodegrees > 100_000
+                    || bounds.Any(value => value.Value<long>() < 0
+                        || value.Value<long>() > toleranceMicrodegrees)) {
+                throw new InvalidOperationException(
+                    "UPAS supervisor terminal physical-zero bounds exceed tolerance.");
+            }
+            var digestInput = (JObject)admission.DeepClone();
+            digestInput["admissionSha256"] = new string('0', 64);
+            var actualDigest = HttpsUpasSupervisorCoarseTppaExecutor
+                .ComputeRequestBodySha256(digestInput);
+            if (!CryptographicOperations.FixedTimeEquals(
+                    Encoding.ASCII.GetBytes(actualDigest),
+                    Encoding.ASCII.GetBytes(admission["admissionSha256"].Value<string>()))) {
+                throw new InvalidOperationException(
+                    "UPAS supervisor terminal physical-zero admission digest is invalid.");
+            }
+            return new UpasSupervisorPhysicalZeroAdmission(
+                admission["admissionSha256"].Value<string>(),
+                campaignId, ZeroReferenceId, transactionId,
+                admission["terminalEvidenceCoreSha256"].Value<string>(),
+                admission["terminalPlanSha256"].Value<string>(),
+                admission["verifiedStartedMonotonicNs"].Value<long>(),
+                admission["verifiedCompletedMonotonicNs"].Value<long>(),
+                positions[0].Value<long>() / 1_000_000.0,
+                positions[1].Value<long>() / 1_000_000.0,
+                bounds[0].Value<long>() / 1_000_000.0,
+                bounds[1].Value<long>() / 1_000_000.0,
+                toleranceMicrodegrees / 1_000_000.0);
         }
 
         private async Task TryReleaseLeaseAsync(string leaseId, string bearerToken) {
