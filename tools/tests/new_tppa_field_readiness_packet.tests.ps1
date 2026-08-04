@@ -8,6 +8,8 @@ function New-TestRepository([string]$Root) {
     New-Item -ItemType Directory -Path (Join-Path $repo 'tools\field_packet_templates') -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $toolRoot 'new_tppa_runtime_manifest.ps1') -Destination (Join-Path $repo 'tools')
     Copy-Item -Path (Join-Path $toolRoot 'field_packet_templates\*') -Destination (Join-Path $repo 'tools\field_packet_templates')
+    New-Item -ItemType Directory -Path (Join-Path $repo 'docs') -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $repo 'docs\COARSE_RESPONSE_AND_FIVE_DEGREE_FIELD_PROTOCOL.md'), '# exact supervisor protocol' + [Environment]::NewLine)
     & git -C $repo init --quiet | Out-Null
     & git -C $repo config user.name 'TPPA Test' | Out-Null
     & git -C $repo config user.email 'tppa-test@example.invalid' | Out-Null
@@ -46,11 +48,13 @@ Describe 'TPPA field readiness packet builder' {
 
         $result = & $builder -RepositoryRoot $repo -PluginDllPath $plugin `
             -QualificationCoreDllPath $core -OutputDirectory $output `
-            -SourceCommit $head -PluginVersion '2.2.6.104'
+            -SourceCommit $head -SupervisorRepositoryRoot $repo -SupervisorSourceCommit $head -PluginVersion '2.2.6.104'
 
         $result.SourceCommit | Should Be $head
         $result.PluginVersion | Should Be '2.2.6.104'
-        (Get-ChildItem -File $output).Count | Should Be 9
+        $result.SupervisorSourceCommit | Should Be $head
+        $result.SupervisorProtocolSha256 | Should Be (Get-FileHash -Algorithm SHA256 (Join-Path $output 'SUPERVISOR_COARSE_RESPONSE_PROTOCOL.md')).Hash
+        (Get-ChildItem -File $output).Count | Should Be 10
         $allText = (Get-ChildItem -File $output -Filter '*.md' |
             ForEach-Object { [IO.File]::ReadAllText($_.FullName) }) -join "`n"
         $allText | Should Not Match '__[A-Z0-9_]+__'
@@ -60,6 +64,8 @@ Describe 'TPPA field readiness packet builder' {
         $allText | Should Match 'upas-coarse-response-fit'
         $allText | Should Match 'upas-coarse-response-commission'
         $allText | Should Match 'one-degree reserve'
+        $allText | Should Match $head
+        $allText | Should Match $result.SupervisorProtocolSha256
         ([IO.File]::ReadAllText((Join-Path $output 'verify_field_preflight.ps1'))) |
             Should Match 'NextStage = ''Per-train coarse-response and travel commissioning'''
 
@@ -67,7 +73,7 @@ Describe 'TPPA field readiness packet builder' {
         $manifest.sourceCommit | Should Be $head
         $manifest.pluginVersion | Should Be '2.2.6.104'
         $hashLines = [IO.File]::ReadAllLines((Join-Path $output 'HASHES.sha256'))
-        $hashLines.Count | Should Be 8
+        $hashLines.Count | Should Be 9
         foreach ($line in $hashLines) {
             if ($line -notmatch '^([0-9A-F]{64})  ([A-Za-z0-9._-]+)$') {
                 throw "Malformed hash line: $line"
@@ -94,7 +100,7 @@ Describe 'TPPA field readiness packet builder' {
         try {
             & $builder -RepositoryRoot $repo -PluginDllPath $plugin `
                 -QualificationCoreDllPath $core -OutputDirectory $output `
-                -SourceCommit $head -PluginVersion '2.2.6.104' | Out-Null
+                -SourceCommit $head -SupervisorRepositoryRoot $repo -SupervisorSourceCommit $head -PluginVersion '2.2.6.104' | Out-Null
         } catch { $caught = $_ }
         $caught | Should Not BeNullOrEmpty
         $caught.Exception.Message | Should Match 'Refusing to overwrite'
@@ -117,28 +123,46 @@ Describe 'TPPA field readiness packet builder' {
         try {
             & $builder -RepositoryRoot $repo -PluginDllPath $plugin `
                 -QualificationCoreDllPath $core -OutputDirectory $output `
-                -SourceCommit $head -PluginVersion '2.2.6.104' | Out-Null
+                -SourceCommit $head -SupervisorRepositoryRoot $repo -SupervisorSourceCommit $head -PluginVersion '2.2.6.104' | Out-Null
         } catch { $caught = $_ }
         $caught | Should Not BeNullOrEmpty
         $caught.Exception.Message | Should Match 'tracked changes'
         Test-Path -LiteralPath $output | Should Be $false
     }
+    It 'rejects a stale supervisor checkpoint before producing a packet' {
+        $root = Join-Path $TestDrive 'stale-supervisor'
+        New-Item -ItemType Directory -Path $root | Out-Null
+        $repo = New-TestRepository $root
+        $head = (& git -C $repo rev-parse HEAD).Trim()
+        $runtime = New-MatchingRuntimePair $root $head
+        $output = Join-Path $root 'packet'
+        $caught = $null
+        try {
+            & $builder -RepositoryRoot $repo -PluginDllPath $runtime.Plugin  `
+                -QualificationCoreDllPath $runtime.Core -OutputDirectory $output  `
+                -SourceCommit $head -SupervisorRepositoryRoot $repo  `
+                -SupervisorSourceCommit ('0' * 40) -PluginVersion '2.2.6.104' | Out-Null
+        } catch { $caught = $_ }
+        $caught | Should Not BeNullOrEmpty
+        $caught.Exception.Message | Should Match 'Supervisor repository HEAD does not match'
+        Test-Path -LiteralPath $output | Should Be $false
+    }
     It 'rejects a stale plugin version before producing a packet' {
         $root = Join-Path $TestDrive 'stale-version'; New-Item -ItemType Directory -Path $root | Out-Null
         $repo = New-TestRepository $root; $head = (& git -C $repo rev-parse HEAD).Trim(); $runtime = New-MatchingRuntimePair $root $head; $output = Join-Path $root 'packet'; $caught = $null
-        try { & $builder -RepositoryRoot $repo -PluginDllPath $runtime.Plugin -QualificationCoreDllPath $runtime.Core -OutputDirectory $output -SourceCommit $head -PluginVersion '2.2.6.105' | Out-Null } catch { $caught = $_ }
+        try { & $builder -RepositoryRoot $repo -PluginDllPath $runtime.Plugin -QualificationCoreDllPath $runtime.Core -OutputDirectory $output -SourceCommit $head -SupervisorRepositoryRoot $repo -SupervisorSourceCommit $head -PluginVersion '2.2.6.105' | Out-Null } catch { $caught = $_ }
         $caught | Should Not BeNullOrEmpty; $caught.Exception.Message | Should Match 'assembly version does not match'; Test-Path -LiteralPath $output | Should Be $false
     }
     It 'rejects stale plugin provenance before producing a packet' {
         $root = Join-Path $TestDrive 'stale-commit'; New-Item -ItemType Directory -Path $root | Out-Null
         $repo = New-TestRepository $root; $head = (& git -C $repo rev-parse HEAD).Trim(); $plugin = New-ProvenanceAssembly $root 'Stale.Plugin' '2.2.6.104' '2.2.6.104+0000000000000000000000000000000000000000'; $core = New-ProvenanceAssembly $root 'Stale.Core' '1.0.0.0' "1.0.0+$head"; $output = Join-Path $root 'packet'; $caught = $null
-        try { & $builder -RepositoryRoot $repo -PluginDllPath $plugin -QualificationCoreDllPath $core -OutputDirectory $output -SourceCommit $head -PluginVersion '2.2.6.104' | Out-Null } catch { $caught = $_ }
+        try { & $builder -RepositoryRoot $repo -PluginDllPath $plugin -QualificationCoreDllPath $core -OutputDirectory $output -SourceCommit $head -SupervisorRepositoryRoot $repo -SupervisorSourceCommit $head -PluginVersion '2.2.6.104' | Out-Null } catch { $caught = $_ }
         $caught | Should Not BeNullOrEmpty; $caught.Exception.Message | Should Match 'informational version is not bound'; Test-Path -LiteralPath $output | Should Be $false
     }
     It 'rejects stale qualification-core provenance before producing a packet' {
         $root = Join-Path $TestDrive 'stale-core'; New-Item -ItemType Directory -Path $root | Out-Null
         $repo = New-TestRepository $root; $head = (& git -C $repo rev-parse HEAD).Trim(); $plugin = New-ProvenanceAssembly $root 'Current.Plugin' '2.2.6.104' "2.2.6.104+$head"; $core = New-ProvenanceAssembly $root 'Stale.Core' '1.0.0.0' '1.0.0+0000000000000000000000000000000000000000'; $output = Join-Path $root 'packet'; $caught = $null
-        try { & $builder -RepositoryRoot $repo -PluginDllPath $plugin -QualificationCoreDllPath $core -OutputDirectory $output -SourceCommit $head -PluginVersion '2.2.6.104' | Out-Null } catch { $caught = $_ }
+        try { & $builder -RepositoryRoot $repo -PluginDllPath $plugin -QualificationCoreDllPath $core -OutputDirectory $output -SourceCommit $head -SupervisorRepositoryRoot $repo -SupervisorSourceCommit $head -PluginVersion '2.2.6.104' | Out-Null } catch { $caught = $_ }
         $caught | Should Not BeNullOrEmpty; $caught.Exception.Message | Should Match 'core informational version is not bound'; Test-Path -LiteralPath $output | Should Be $false
     }
 }

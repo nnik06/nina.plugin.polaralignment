@@ -1,3 +1,10 @@
+## Version 2.2.6.108
+
+- Bind each field-readiness packet to an exact supervisor commit and embed the
+  coarse-response protocol from that checkpoint under the packet checksum manifest.
+- Reject packet generation when the supervisor checkpoint is stale or its
+  commissioning protocol is absent.
+
 ## Version 2.2.6.107
 
 - Bind the witnessed UPAS physical-zero transaction to the sealed preregistered

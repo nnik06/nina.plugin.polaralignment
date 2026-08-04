@@ -5,6 +5,8 @@ param(
     [Parameter(Mandatory)][string]$QualificationCoreDllPath,
     [Parameter(Mandatory)][string]$OutputDirectory,
     [Parameter(Mandatory)][ValidatePattern('^[0-9a-fA-F]{40}$')][string]$SourceCommit,
+    [Parameter(Mandatory)][string]$SupervisorRepositoryRoot,
+    [Parameter(Mandatory)][ValidatePattern('^[0-9a-fA-F]{40}$')][string]$SupervisorSourceCommit,
     [Parameter(Mandatory)][ValidatePattern('^\d+\.\d+\.\d+\.\d+$')][string]$PluginVersion
 )
 
@@ -38,7 +40,9 @@ function Read-AssemblyProvenance([string]$Path, [string]$Label) {
 }
 
 $repo = [IO.Path]::GetFullPath($RepositoryRoot)
+$supervisorRepo = [IO.Path]::GetFullPath($SupervisorRepositoryRoot)
 Require ([IO.Directory]::Exists($repo)) "RepositoryRoot does not exist: $repo"
+Require ([IO.Directory]::Exists($supervisorRepo)) "SupervisorRepositoryRoot does not exist: $supervisorRepo"
 $plugin = FullFile $PluginDllPath 'PluginDllPath'
 $core = FullFile $QualificationCoreDllPath 'QualificationCoreDllPath'
 $output = [IO.Path]::GetFullPath($OutputDirectory)
@@ -52,6 +56,17 @@ $trackedDirty = @(& git -C $repo status --porcelain=v1 --untracked-files=no)
 Require ($LASTEXITCODE -eq 0 -and $trackedDirty.Count -eq 0) `
     "Repository has tracked changes: $($trackedDirty -join '; ')"
 $normalizedCommit = $SourceCommit.ToLowerInvariant()
+$normalizedSupervisorCommit = $SupervisorSourceCommit.ToLowerInvariant()
+$supervisorHead = (& git -C $supervisorRepo rev-parse HEAD).Trim()
+Require ($LASTEXITCODE -eq 0 -and $supervisorHead -ceq $normalizedSupervisorCommit) `
+    "Supervisor repository HEAD does not match SupervisorSourceCommit: expected $normalizedSupervisorCommit, found $supervisorHead"
+$supervisorProtocolRelativePath = 'docs/COARSE_RESPONSE_AND_FIVE_DEGREE_FIELD_PROTOCOL.md'
+$supervisorProtocolLines = @(& git -C $supervisorRepo show "$normalizedSupervisorCommit`:$supervisorProtocolRelativePath")
+Require ($LASTEXITCODE -eq 0 -and $supervisorProtocolLines.Count -gt 0) `
+    "Supervisor coarse-response protocol is absent at commit $normalizedSupervisorCommit"
+$supervisorProtocolText = ($supervisorProtocolLines -join "`n") + "`n"
+$supervisorProtocolBytes = [Text.UTF8Encoding]::new($false).GetBytes($supervisorProtocolText)
+$supervisorProtocolSha = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($supervisorProtocolBytes))
 $pluginProvenance = Read-AssemblyProvenance $plugin 'PluginDllPath'
 Require ($pluginProvenance.AssemblyVersion -ceq $PluginVersion) `
     "Plugin assembly version does not match PluginVersion: expected $PluginVersion, found $($pluginProvenance.AssemblyVersion)"
@@ -94,7 +109,11 @@ try {
         '__PLUGIN_SHA256_LOWER__' = $pluginSha.ToLowerInvariant()
         '__CORE_SHA256__' = $coreSha
         '__MANIFEST_SHA256__' = $manifestSha
+        '__SUPERVISOR_SOURCE_COMMIT__' = $normalizedSupervisorCommit
+        '__SUPERVISOR_PROTOCOL_SHA256__' = $supervisorProtocolSha
     }
+
+    [IO.File]::WriteAllBytes((Join-Path $staging 'SUPERVISOR_COARSE_RESPONSE_PROTOCOL.md'), $supervisorProtocolBytes)
 
     $templateNames = @(
         'COARSE_RESPONSE_PREREQUISITE.md',
@@ -118,6 +137,7 @@ try {
         'FIELD_READINESS.md',
         'NINA.Plugins.PolarAlignment.dll',
         'NINA.Plugins.PolarAlignment.QualificationCore.dll',
+        'SUPERVISOR_COARSE_RESPONSE_PROTOCOL.md',
         'TPPA.runtime-manifest.json',
         'verify_field_preflight.ps1')
     $hashLines = foreach ($name in $packetNames) {
@@ -135,6 +155,8 @@ try {
         PacketRoot = $output
         SourceCommit = $SourceCommit.ToLowerInvariant()
         PluginVersion = $PluginVersion
+        SupervisorSourceCommit = $normalizedSupervisorCommit
+        SupervisorProtocolSha256 = $supervisorProtocolSha
         PluginSha256 = $pluginSha
         QualificationCoreSha256 = $coreSha
         RuntimeManifestSha256 = $manifestSha

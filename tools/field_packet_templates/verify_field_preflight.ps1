@@ -60,6 +60,7 @@ $requiredPacketFiles = @(
     'FIELD_READINESS.md',
     'NINA.Plugins.PolarAlignment.dll',
     'NINA.Plugins.PolarAlignment.QualificationCore.dll',
+    'SUPERVISOR_COARSE_RESPONSE_PROTOCOL.md',
     'TPPA.runtime-manifest.json',
     'verify_field_preflight.ps1'
 )
@@ -86,12 +87,16 @@ $untracked = @(Invoke-GitCommand @('status', '--porcelain', '--untracked-files=a
 
 $fieldReadiness = [IO.File]::ReadAllText([IO.Path]::Combine($packet, 'FIELD_READINESS.md'))
 $fieldMatrix = [IO.File]::ReadAllText([IO.Path]::Combine($packet, 'FIELD_CAMPAIGN_MATRIX.md'))
+$coarsePrerequisite = [IO.File]::ReadAllText([IO.Path]::Combine($packet, 'COARSE_RESPONSE_PREREQUISITE.md'))
 Require ($fieldReadiness -notmatch '(?i)\bp95\b') 'Field readiness retains retired p95 cadence semantics.'
 Require ($fieldReadiness -cmatch 'observed null maximum') 'Field readiness omits schema-3 null-maximum semantics.'
 Require ($fieldReadiness -cmatch 'four-attempt starting-error stratum requires at least two successes') 'Field readiness omits the edge-stratum success floor.'
 Require ($fieldMatrix -cmatch '0--30 and 240--300') 'Field matrix omits the four-attempt endpoint strata.'
 Require ($fieldMatrix -cmatch 'Totals are 4, 3, 3, 3, 3 and 4 attempts') 'Field matrix disagrees with the sealed generator stratum counts.'
 Require ($fieldMatrix -cmatch 'require at least two successes') 'Field matrix omits the endpoint-stratum success floor.'
+Require ($coarsePrerequisite -notmatch '__[A-Z0-9_]+__') 'Coarse prerequisite contains unresolved provenance tokens.'
+Require ($coarsePrerequisite -cmatch '[0-9a-f]{40}') 'Coarse prerequisite omits supervisor source commit.'
+Require ($coarsePrerequisite -cmatch '[0-9A-F]{64}') 'Coarse prerequisite omits supervisor protocol SHA-256.'
 
 $manifestPath = [IO.Path]::Combine($packet, 'TPPA.runtime-manifest.json')
 $manifest = [IO.File]::ReadAllText($manifestPath) | ConvertFrom-Json
@@ -151,6 +156,7 @@ $result = [ordered]@{
     PacketChecksumManifestSha256 = Sha256 $hashFile
     VerifiedPacketFiles = $verified
     RuntimeManifestSha256 = $verified['TPPA.runtime-manifest.json']
+    SupervisorProtocolSha256 = $verified['SUPERVISOR_COARSE_RESPONSE_PROTOCOL.md']
     RequiredToolSha256 = $toolHashes
     NextStage = 'Per-train coarse-response and travel commissioning'
     GrantsDeviceConnection = $false

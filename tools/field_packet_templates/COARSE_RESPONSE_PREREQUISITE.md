@@ -7,8 +7,11 @@ the governing supervisor protocol:
 
 `C:\Dev\upas-polar-align\docs\COARSE_RESPONSE_AND_FIVE_DEGREE_FIELD_PROTOCOL.md`
 
-Record the supervisor repository commit and protocol SHA-256 in the calibration
-ledger. The commissioned artifact must bind the hardware/controller identity,
+This packet binds supervisor commit
+`__SUPERVISOR_SOURCE_COMMIT__` and the embedded protocol SHA-256
+`__SUPERVISOR_PROTOCOL_SHA256__`. Record both values in the calibration ledger
+and use only `SUPERVISOR_COARSE_RESPONSE_PROTOCOL.md` from this packet. The
+commissioned artifact must bind the hardware/controller identity,
 P20 and independent position witnesses, mechanical epoch, load profile,
 temperature interval, response applicability interval, and expiry.
 
