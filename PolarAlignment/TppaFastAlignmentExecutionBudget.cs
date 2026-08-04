@@ -21,7 +21,7 @@ namespace NINA.Plugins.PolarAlignment {
         public const double MaximumRuntimeSeconds = 300;
         public const double MinimumQualifiedInitialTotalMinutes = 0;
         public const double MaximumQualifiedInitialTotalMinutes =
-            AutomatedAdjustmentInputPolicy.MaximumInitialErrorArcMinutes;
+            AutomatedAdjustmentInputPolicy.MaximumSupervisorCoarseInitialErrorArcMinutes;
         public const double FineControllerInitialTotalMinutes = 24;
         // The clean field maximum was 72.726s for a same-arc three-point
         // determination and return solve at the qualified 30s settle setting.

@@ -4,14 +4,59 @@ namespace NINA.Plugins.PolarAlignment {
         string Reason);
 
     internal static class AutomatedAdjustmentInputPolicy {
-        // The preregistered campaign uses the UPAS operational starting envelope,
-        // while the supervisor independently enforces physical position limits.
-        public const double MaximumInitialErrorArcMinutes = 300.0;
+        // The legacy controller remains limited to the range qualified before
+        // supervisor-backed coarse planning was introduced.
+        public const double MaximumInitialErrorArcMinutes = 120.0;
+        // The sealed five-minute campaign may use the wider UPAS starting
+        // envelope only through the supervisor transaction boundary.
+        public const double MaximumSupervisorCoarseInitialErrorArcMinutes = 300.0;
+
+        public static AutomatedAdjustmentInputDecision EvaluateForRoute(
+            double azimuthErrorArcMinutes,
+            double altitudeErrorArcMinutes,
+            double totalErrorArcMinutes,
+            bool supervisorCoarseRoute) {
+            return supervisorCoarseRoute
+                ? EvaluateSupervisorCoarse(
+                    azimuthErrorArcMinutes,
+                    altitudeErrorArcMinutes,
+                    totalErrorArcMinutes)
+                : Evaluate(
+                    azimuthErrorArcMinutes,
+                    altitudeErrorArcMinutes,
+                    totalErrorArcMinutes);
+        }
 
         public static AutomatedAdjustmentInputDecision Evaluate(
             double azimuthErrorArcMinutes,
             double altitudeErrorArcMinutes,
             double totalErrorArcMinutes) {
+            return EvaluateWithLimit(
+                azimuthErrorArcMinutes,
+                altitudeErrorArcMinutes,
+                totalErrorArcMinutes,
+                MaximumInitialErrorArcMinutes,
+                "legacy automated-correction");
+        }
+
+        public static AutomatedAdjustmentInputDecision EvaluateSupervisorCoarse(
+            double azimuthErrorArcMinutes,
+            double altitudeErrorArcMinutes,
+            double totalErrorArcMinutes) {
+            return EvaluateWithLimit(
+                azimuthErrorArcMinutes,
+                altitudeErrorArcMinutes,
+                totalErrorArcMinutes,
+                MaximumSupervisorCoarseInitialErrorArcMinutes,
+                "supervisor coarse-correction");
+        }
+
+        private static AutomatedAdjustmentInputDecision EvaluateWithLimit(
+            double azimuthErrorArcMinutes,
+            double altitudeErrorArcMinutes,
+            double totalErrorArcMinutes,
+            double maximumErrorArcMinutes,
+            string routeName) {
             if (!double.IsFinite(azimuthErrorArcMinutes)
                     || !double.IsFinite(altitudeErrorArcMinutes)
                     || !double.IsFinite(totalErrorArcMinutes)) {
@@ -24,15 +69,15 @@ namespace NINA.Plugins.PolarAlignment {
                 azimuthErrorArcMinutes * azimuthErrorArcMinutes
                 + altitudeErrorArcMinutes * altitudeErrorArcMinutes);
             if (System.Math.Max(System.Math.Abs(totalErrorArcMinutes), componentMagnitudeArcMinutes)
-                    > MaximumInitialErrorArcMinutes) {
+                    > maximumErrorArcMinutes) {
                 return new AutomatedAdjustmentInputDecision(
                     false,
-                    $"the fresh error vector exceeds the {MaximumInitialErrorArcMinutes:F0}' automated-correction qualification limit");
+                    $"the fresh error vector exceeds the {maximumErrorArcMinutes:F0}' {routeName} qualification limit");
             }
 
             return new AutomatedAdjustmentInputDecision(
                 true,
-                "the fresh three-point result is finite and inside the automated-correction qualification limit");
+                $"the fresh three-point result is finite and inside the {routeName} qualification limit");
         }
     }
 }

@@ -1,3 +1,8 @@
+## Version 2.2.6.111
+
+- Keep legacy open-loop automated adjustment capped at 120 arcminutes.
+- Admit the 0-300 arcminute campaign envelope only through the sealed,
+  supervisor-backed coarse-correction route.
 ## Version 2.2.6.110
 
 - Bundle a deterministic source archive from the exact supervisor checkpoint and

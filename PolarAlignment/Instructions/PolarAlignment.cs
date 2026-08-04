@@ -1042,10 +1042,11 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
 
                     if (executionPolicy.AllowActuatorMovement
                             && TPAPAVM.ActiveAlignmentSystemVM?.DoAutomatedAdjustments == true) {
-                        var inputDecision = AutomatedAdjustmentInputPolicy.Evaluate(
+                        var inputDecision = AutomatedAdjustmentInputPolicy.EvaluateForRoute(
                             determination.InitialMountAxisAzimuthError.ArcMinutes,
                             determination.InitialMountAxisAltitudeError.ArcMinutes,
-                            determination.InitialMountAxisTotalError.ArcMinutes);
+                            determination.InitialMountAxisTotalError.ArcMinutes,
+                            supervisorCoarseRoute: enforceFastRuntimeBudget);
                         Logger.Info(
                             $"TPPA automated-adjustment input qualification: " +
                             $"{(inputDecision.IsEligible ? "PASS" : "FAIL")}; {inputDecision.Reason}.");

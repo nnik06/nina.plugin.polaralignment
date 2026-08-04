@@ -14,7 +14,7 @@ namespace NINA.Plugins.PolarAlignment {
 
     internal static class TppaInitialCorrectionRoute {
         public const double MaximumCoarseInitialTotalMinutes =
-            AutomatedAdjustmentInputPolicy.MaximumInitialErrorArcMinutes;
+            AutomatedAdjustmentInputPolicy.MaximumSupervisorCoarseInitialErrorArcMinutes;
 
         public static TppaInitialCorrectionRouteDecision Evaluate(double initialTotalMinutes) {
             if (!double.IsFinite(initialTotalMinutes) || initialTotalMinutes < 0.0) {
