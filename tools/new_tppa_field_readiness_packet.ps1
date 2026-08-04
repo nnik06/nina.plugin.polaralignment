@@ -90,6 +90,10 @@ $staging = Join-Path $parent ('.tppa-field-packet-' + [Guid]::NewGuid().ToString
 [void][IO.Directory]::CreateDirectory($staging)
 
 try {
+    $supervisorSourceArchive = Join-Path $staging 'UPAS_SUPERVISOR_SOURCE.zip'
+    & git -C $supervisorRepo archive --format=zip --output=$supervisorSourceArchive $normalizedSupervisorCommit
+    Require ($LASTEXITCODE -eq 0 -and [IO.File]::Exists($supervisorSourceArchive)) `
+        "Unable to archive supervisor checkpoint $normalizedSupervisorCommit"
     Copy-Item -LiteralPath $plugin -Destination (Join-Path $staging 'NINA.Plugins.PolarAlignment.dll')
     Copy-Item -LiteralPath $core -Destination (Join-Path $staging 'NINA.Plugins.PolarAlignment.QualificationCore.dll')
 
@@ -102,6 +106,7 @@ try {
     $pluginSha = (Get-FileHash -Algorithm SHA256 (Join-Path $staging 'NINA.Plugins.PolarAlignment.dll')).Hash
     $coreSha = (Get-FileHash -Algorithm SHA256 (Join-Path $staging 'NINA.Plugins.PolarAlignment.QualificationCore.dll')).Hash
     $manifestSha = (Get-FileHash -Algorithm SHA256 (Join-Path $staging 'TPPA.runtime-manifest.json')).Hash
+    $supervisorSourceArchiveSha = (Get-FileHash -Algorithm SHA256 $supervisorSourceArchive).Hash
     $tokens = [ordered]@{
         '__PLUGIN_VERSION__' = $PluginVersion
         '__SOURCE_COMMIT__' = $SourceCommit.ToLowerInvariant()
@@ -111,6 +116,7 @@ try {
         '__MANIFEST_SHA256__' = $manifestSha
         '__SUPERVISOR_SOURCE_COMMIT__' = $normalizedSupervisorCommit
         '__SUPERVISOR_PROTOCOL_SHA256__' = $supervisorProtocolSha
+        '__SUPERVISOR_SOURCE_ARCHIVE_SHA256__' = $supervisorSourceArchiveSha
     }
 
     [IO.File]::WriteAllBytes((Join-Path $staging 'SUPERVISOR_COARSE_RESPONSE_PROTOCOL.md'), $supervisorProtocolBytes)
@@ -138,6 +144,7 @@ try {
         'NINA.Plugins.PolarAlignment.dll',
         'NINA.Plugins.PolarAlignment.QualificationCore.dll',
         'SUPERVISOR_COARSE_RESPONSE_PROTOCOL.md',
+        'UPAS_SUPERVISOR_SOURCE.zip',
         'TPPA.runtime-manifest.json',
         'verify_field_preflight.ps1')
     $hashLines = foreach ($name in $packetNames) {
@@ -157,6 +164,7 @@ try {
         PluginVersion = $PluginVersion
         SupervisorSourceCommit = $normalizedSupervisorCommit
         SupervisorProtocolSha256 = $supervisorProtocolSha
+        SupervisorSourceArchiveSha256 = $supervisorSourceArchiveSha
         PluginSha256 = $pluginSha
         QualificationCoreSha256 = $coreSha
         RuntimeManifestSha256 = $manifestSha

@@ -9,9 +9,12 @@ the governing supervisor protocol:
 
 This packet binds supervisor commit
 `__SUPERVISOR_SOURCE_COMMIT__` and the embedded protocol SHA-256
-`__SUPERVISOR_PROTOCOL_SHA256__`. Record both values in the calibration ledger
-and use only `SUPERVISOR_COARSE_RESPONSE_PROTOCOL.md` from this packet. The
-commissioned artifact must bind the hardware/controller identity,
+`__SUPERVISOR_PROTOCOL_SHA256__`, and exact-checkpoint source archive SHA-256
+`__SUPERVISOR_SOURCE_ARCHIVE_SHA256__`. Record all three values in the calibration
+ledger and use only `SUPERVISOR_COARSE_RESPONSE_PROTOCOL.md` and
+`UPAS_SUPERVISOR_SOURCE.zip` from this packet. The deployed supervisor must
+bind this archive digest as its installation identity before any physical motion.
+The commissioned artifact must bind the hardware/controller identity,
 P20 and independent position witnesses, mechanical epoch, load profile,
 temperature interval, response applicability interval, and expiry.
 

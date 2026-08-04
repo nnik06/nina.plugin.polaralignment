@@ -54,7 +54,8 @@ Describe 'TPPA field readiness packet builder' {
         $result.PluginVersion | Should Be '2.2.6.104'
         $result.SupervisorSourceCommit | Should Be $head
         $result.SupervisorProtocolSha256 | Should Be (Get-FileHash -Algorithm SHA256 (Join-Path $output 'SUPERVISOR_COARSE_RESPONSE_PROTOCOL.md')).Hash
-        (Get-ChildItem -File $output).Count | Should Be 10
+        $result.SupervisorSourceArchiveSha256 | Should Be (Get-FileHash -Algorithm SHA256 (Join-Path $output 'UPAS_SUPERVISOR_SOURCE.zip')).Hash
+        (Get-ChildItem -File $output).Count | Should Be 11
         $allText = (Get-ChildItem -File $output -Filter '*.md' |
             ForEach-Object { [IO.File]::ReadAllText($_.FullName) }) -join "`n"
         $allText | Should Not Match '__[A-Z0-9_]+__'
@@ -66,18 +67,20 @@ Describe 'TPPA field readiness packet builder' {
         $allText | Should Match 'one-degree reserve'
         $allText | Should Match $head
         $allText | Should Match $result.SupervisorProtocolSha256
+        $allText | Should Match $result.SupervisorSourceArchiveSha256
         ([IO.File]::ReadAllText((Join-Path $output 'verify_field_preflight.ps1'))) |
             Should Match 'NextStage = ''Per-train coarse-response and travel commissioning'''
         $verifierText = [IO.File]::ReadAllText((Join-Path $output 'verify_field_preflight.ps1'))
         $verifierText | Should Match ([regex]::Escape($head))
         $verifierText | Should Match ([regex]::Escape($result.SupervisorProtocolSha256))
+        $verifierText | Should Match ([regex]::Escape($result.SupervisorSourceArchiveSha256))
         $verifierText | Should Match 'SupervisorSourceCommit = \$expectedSupervisorCommit'
 
         $manifest = [IO.File]::ReadAllText((Join-Path $output 'TPPA.runtime-manifest.json')) | ConvertFrom-Json
         $manifest.sourceCommit | Should Be $head
         $manifest.pluginVersion | Should Be '2.2.6.104'
         $hashLines = [IO.File]::ReadAllLines((Join-Path $output 'HASHES.sha256'))
-        $hashLines.Count | Should Be 9
+        $hashLines.Count | Should Be 10
         foreach ($line in $hashLines) {
             if ($line -notmatch '^([0-9A-F]{64})  ([A-Za-z0-9._-]+)$') {
                 throw "Malformed hash line: $line"

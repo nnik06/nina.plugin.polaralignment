@@ -1,3 +1,10 @@
+## Version 2.2.6.110
+
+- Bundle a deterministic source archive from the exact supervisor checkpoint and
+  bind its SHA-256 into packet verification and commissioning prerequisites.
+- Require the deployed supervisor to use that digest as its installation identity
+  before any physical motion can be commissioned.
+
 ## Version 2.2.6.109
 
 - Make generated field preflight receipts assert the exact supervisor commit and
