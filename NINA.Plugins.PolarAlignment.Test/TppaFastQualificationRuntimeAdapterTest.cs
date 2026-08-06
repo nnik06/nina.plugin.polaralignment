@@ -28,6 +28,9 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 .Should().BeApproximately(0.20, 1e-6);
             result.QualificationInput.TppaToIndependentDeltaArcMinutes
                 .Should().BeApproximately(0.35, 1e-6);
+            result.MaximumDeterminationErrorArcMinutes.Should().BeLessThan(3.0);
+            result.EvaluateOperationalQualification(safetyGatesPassed: true)
+                .IsOperationallyQualified.Should().BeTrue();
             result.SourcePolarErrorVectorDigest.Should().MatchRegex("^[0-9a-f]{64}$");
             result.QualificationInput.TppaInputPathDigest.Should().MatchRegex("^[0-9a-f]{64}$");
         }

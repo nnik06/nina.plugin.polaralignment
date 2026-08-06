@@ -852,6 +852,13 @@ namespace NINA.Plugins.PolarAlignment {
             }
         }
 
+        internal bool? AutomatedAdjustmentGeometryQualification {
+            get {
+                lock (automatedAdjustmentGeometrySync) {
+                    return automatedAdjustmentGeometryQualified;
+                }
+            }
+        }
         private (bool? Qualified, string Reason) GetAutomatedAdjustmentGeometryAuthority() {
             lock (automatedAdjustmentGeometrySync) {
                 return (automatedAdjustmentGeometryQualified, automatedAdjustmentGeometryReason);

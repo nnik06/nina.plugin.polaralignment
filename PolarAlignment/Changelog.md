@@ -1,3 +1,15 @@
+## Version 2.2.6.113
+
+- Invoke the operational two-fresh, true-pole, safety-gated qualification policy from the five-minute UPAS completion path.
+- Preserve the existing stricter completion and absolute-evidence policies; this gate establishes imaging fitness only.
+
+## Version 2.2.6.112
+
+- Add a separate operational imaging-fitness qualification contract: two
+  independent uncached stationary TPPA determinations within 3 arcminutes,
+  true-pole refraction, qualified geometry/closure/safety, repeatability, and
+  a 300-second ceiling. The strict absolute-evidence witness policy remains
+  unchanged and is not implied by this operational claim.
 ## Version 2.2.6.111
 
 - Keep legacy open-loop automated adjustment capped at 120 arcminutes.

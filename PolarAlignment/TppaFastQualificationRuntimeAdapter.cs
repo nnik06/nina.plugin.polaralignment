@@ -74,7 +74,25 @@ namespace NINA.Plugins.PolarAlignment {
         TppaFastQualificationInput QualificationInput,
         string SourcePolarErrorVectorDigest,
         IReadOnlyList<string> DerivationIssues) {
+        public double MaximumDeterminationErrorArcMinutes { get; init; } = double.MaxValue;
+
         public bool IsDerivationComplete => DerivationIssues.Count == 0;
+
+        public TppaOperationalQualificationResult EvaluateOperationalQualification(
+                bool safetyGatesPassed) =>
+            TppaOperationalQualification.Evaluate(
+                new TppaOperationalQualificationInput(
+                    QualificationInput.DurationSeconds,
+                    QualificationInput.FreshDeterminationCount,
+                    QualificationInput.FreshSolvesUncached,
+                    MaximumDeterminationErrorArcMinutes,
+                    QualificationInput.MaximumPairwiseDeltaArcMinutes,
+                    QualificationInput.NoPhysicalAdjustmentBetweenDeterminations,
+                    QualificationInput.GeometryQualified,
+                    QualificationInput.ClosureQualified,
+                    safetyGatesPassed,
+                    QualificationInput.RefractionAdjustmentEnabled,
+                    QualificationInput.PoleTarget));
 
         public bool IsFastTruePoleQualified {
             get {
@@ -181,13 +199,18 @@ namespace NINA.Plugins.PolarAlignment {
             var maximumPairwiseDelta = vectorsQualified
                 ? MaximumPairwiseSeparationArcMinutes(vectors)
                 : double.MaxValue;
+            var maximumDeterminationError = vectorsQualified && targetPoleVector != null
+                ? vectors.Max(vector => AngularSeparationArcMinutes(vector, targetPoleVector))
+                : double.MaxValue;
             var finalReportedError = vectorsQualified && targetPoleVector != null
                 ? AngularSeparationArcMinutes(vectors[^1], targetPoleVector)
                 : double.MaxValue;
             if (!IsFiniteNonNegative(maximumPairwiseDelta)
+                    || !IsFiniteNonNegative(maximumDeterminationError)
                     || !IsFiniteNonNegative(finalReportedError)) {
                 issues.Add("spherical mount-axis separation produced a non-finite result");
                 maximumPairwiseDelta = double.MaxValue;
+                maximumDeterminationError = double.MaxValue;
                 finalReportedError = double.MaxValue;
                 vectorsQualified = false;
             }
@@ -385,7 +408,7 @@ namespace NINA.Plugins.PolarAlignment {
                 IndependentTruePoleErrorArcMinutes: independentError,
                 TppaToIndependentDeltaArcMinutes: tppaToIndependentDelta);
 
-            return new(input, sourceVectorDigest, issues);
+            return new(input, sourceVectorDigest, issues) { MaximumDeterminationErrorArcMinutes = maximumDeterminationError };
         }
 
         internal static double AngularSeparationArcMinutes(

@@ -1117,7 +1117,34 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                 confirmationDetermination.InitialMountAxisAltitudeError.ArcMinutes,
                                 confirmationDetermination.InitialMountAxisTotalError.ArcMinutes,
                                 AlignmentTolerance);
-                            Logger.Info($"TPPA fresh UPAS completion confirmation: Az: {confirmationDetermination.InitialMountAxisAzimuthError}, " +
+                            if (enforceFastRuntimeBudget) {
+                                var operationalQualification = TppaOperationalQualification.Evaluate(
+                                    new TppaOperationalQualificationInput(
+                                        alignmentRuntime.Elapsed.TotalSeconds,
+                                        activeObservedDeterminations.Count,
+                                        FreshSolvesUncached: true,
+                                        Math.Max(
+                                            Math.Abs(completionCandidate.InitialMountAxisTotalError.ArcMinutes),
+                                            Math.Abs(confirmationDetermination.InitialMountAxisTotalError.ArcMinutes)),
+                                        completionAgreement.VectorDeltaMinutes,
+                                        NoPhysicalAdjustmentBetweenDeterminations: true,
+                                        TPAPAVM.AutomatedAdjustmentGeometryQualification == true,
+                                        completionAgreement.IsRepeatable,
+                                        executionPolicy.AllowActuatorMovement
+                                            && automatedAdjustmentsEnabled
+                                            && fastInitialAdmissionGranted,
+                                        Properties.Settings.Default.RefractionAdjustment,
+                                        RefractionAlignmentTarget.GetPoleTarget(
+                                            Properties.Settings.Default.RefractionAdjustment)));
+                                Logger.Info(
+                                    $"TPPA operational qualification: {(operationalQualification.IsOperationallyQualified ? "PASS" : "FAIL")}; " +
+                                    $"issues={string.Join(" | ", operationalQualification.Issues)}.");
+                                if (!operationalQualification.IsOperationallyQualified) {
+                                    throw new SequenceEntityFailedException(
+                                        "Fast TPPA operational qualification failed: " +
+                                        string.Join(" | ", operationalQualification.Issues));
+                                }
+                            }                            Logger.Info($"TPPA fresh UPAS completion confirmation: Az: {confirmationDetermination.InitialMountAxisAzimuthError}, " +
                                         $"Alt: {confirmationDetermination.InitialMountAxisAltitudeError}, Tot: {confirmationDetermination.InitialMountAxisTotalError}. " +
                                         $"Repeatability: {(completionAgreement.IsRepeatable ? "PASS" : "FAIL")}; " +
                                         $"dAz={completionAgreement.AzimuthDeltaMinutes:+0.00;-0.00;0.00}', " +
