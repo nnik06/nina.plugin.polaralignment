@@ -29,6 +29,12 @@ function Test-DescendantPath([string] $Candidate, [string] $Parent) {
     return $Candidate.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)
 }
 
+function Get-RelativeChildPath([string] $Parent, [string] $Candidate) {
+    $baseUri = [Uri]($Parent.TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar)
+    $candidateUri = [Uri]$Candidate
+    return [Uri]::UnescapeDataString($baseUri.MakeRelativeUri($candidateUri).ToString()).Replace('/', [IO.Path]::DirectorySeparatorChar)
+}
+
 $packageRoot = (Resolve-Path -LiteralPath $PackageDirectory).Path
 $validator = (Resolve-Path -LiteralPath $ValidatorPath).Path
 $liveRoot = Get-FullPath $LivePluginDirectory
@@ -73,7 +79,7 @@ try {
         })
 
     foreach ($item in $existingCandidates) {
-        $relativePath = [IO.Path]::GetRelativePath($liveRoot, $item.FullName)
+        $relativePath = Get-RelativeChildPath $liveRoot $item.FullName
         $archivePath = Join-Path $archiveDirectory $relativePath
         New-Item -ItemType Directory -Path (Split-Path $archivePath -Parent) -Force | Out-Null
         Move-Item -LiteralPath $item.FullName -Destination $archivePath
