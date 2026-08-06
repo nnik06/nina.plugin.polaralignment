@@ -7,9 +7,15 @@ namespace NINA.Plugins.PolarAlignment {
         // The legacy controller remains limited to the range qualified before
         // supervisor-backed coarse planning was introduced.
         public const double MaximumInitialErrorArcMinutes = 120.0;
-        // The sealed five-minute campaign may use the wider UPAS starting
-        // envelope only through the supervisor transaction boundary.
-        public const double MaximumSupervisorCoarseInitialErrorArcMinutes = 300.0;
+        // The physical UPAS guard remains inside the approximately +/-6 degree
+        // hardware stops. The field controller may admit +/-5.4 degrees on
+        // either axis only after its independent fresh-determination gate.
+        public const double MaximumFieldInitialAxisErrorArcMinutes = 324.0;
+        public const double MaximumFieldInitialTotalErrorArcMinutes = 458.205195;
+
+        // Retained for compatibility with the supervisor campaign vocabulary.
+        public const double MaximumSupervisorCoarseInitialErrorArcMinutes =
+            MaximumFieldInitialTotalErrorArcMinutes;
 
         public static AutomatedAdjustmentInputDecision EvaluateForRoute(
             double azimuthErrorArcMinutes,
@@ -36,6 +42,7 @@ namespace NINA.Plugins.PolarAlignment {
                 altitudeErrorArcMinutes,
                 totalErrorArcMinutes,
                 MaximumInitialErrorArcMinutes,
+                MaximumInitialErrorArcMinutes,
                 "legacy automated-correction");
         }
 
@@ -47,7 +54,8 @@ namespace NINA.Plugins.PolarAlignment {
                 azimuthErrorArcMinutes,
                 altitudeErrorArcMinutes,
                 totalErrorArcMinutes,
-                MaximumSupervisorCoarseInitialErrorArcMinutes,
+                MaximumFieldInitialAxisErrorArcMinutes,
+                MaximumFieldInitialTotalErrorArcMinutes,
                 "supervisor coarse-correction");
         }
 
@@ -55,7 +63,8 @@ namespace NINA.Plugins.PolarAlignment {
             double azimuthErrorArcMinutes,
             double altitudeErrorArcMinutes,
             double totalErrorArcMinutes,
-            double maximumErrorArcMinutes,
+            double maximumAxisErrorArcMinutes,
+            double maximumTotalErrorArcMinutes,
             string routeName) {
             if (!double.IsFinite(azimuthErrorArcMinutes)
                     || !double.IsFinite(altitudeErrorArcMinutes)
@@ -68,11 +77,13 @@ namespace NINA.Plugins.PolarAlignment {
             var componentMagnitudeArcMinutes = System.Math.Sqrt(
                 azimuthErrorArcMinutes * azimuthErrorArcMinutes
                 + altitudeErrorArcMinutes * altitudeErrorArcMinutes);
-            if (System.Math.Max(System.Math.Abs(totalErrorArcMinutes), componentMagnitudeArcMinutes)
-                    > maximumErrorArcMinutes) {
+            if (System.Math.Abs(azimuthErrorArcMinutes) > maximumAxisErrorArcMinutes
+                    || System.Math.Abs(altitudeErrorArcMinutes) > maximumAxisErrorArcMinutes
+                    || System.Math.Max(System.Math.Abs(totalErrorArcMinutes), componentMagnitudeArcMinutes)
+                        > maximumTotalErrorArcMinutes) {
                 return new AutomatedAdjustmentInputDecision(
                     false,
-                    $"the fresh error vector exceeds the {maximumErrorArcMinutes:F0}' {routeName} qualification limit");
+                    $"the fresh error vector exceeds the {maximumAxisErrorArcMinutes:F0}' per-axis or {maximumTotalErrorArcMinutes:F0}' total {routeName} qualification limit");
             }
 
             return new AutomatedAdjustmentInputDecision(

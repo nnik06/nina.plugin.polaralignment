@@ -559,7 +559,9 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             var enforceFastRuntimeBudget = EnforceFiveMinuteRuntimeBudget
                 && automatedAdjustmentsEnabled
                 && executionPolicy.AllowActuatorMovement;
-            if (enforceFastRuntimeBudget) {
+            var supervisorCampaignMode = enforceFastRuntimeBudget
+                && Properties.Settings.Default.RequireExternalUpasSupervisorForAutomatedMoves;
+            if (supervisorCampaignMode) {
                 activePreregisteredCampaignId = RequireConfiguredTppaPreregisteredCampaignId();
                 activeTppaCovarianceAuthority =
                     RequireCommissionedCovarianceAuthority();
@@ -577,7 +579,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             }
             // The five-minute contract starts only after physical-zero admission.
             // A return-to-zero transaction and stationary reverification are preflight.
-            var qualifiedFreshDeterminationReserveSeconds = enforceFastRuntimeBudget
+            var qualifiedFreshDeterminationReserveSeconds = supervisorCampaignMode
                 ? activeTppaCadenceAuthority.MaximumFreshDeterminationSeconds
                 : TppaFastAlignmentExecutionBudget.FreshDeterminationReserveSeconds;
             var alignmentRuntime = Stopwatch.StartNew();
@@ -618,7 +620,9 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     resolvedSettleSeconds,
                     ExposureTime,
                     Properties.Settings.Default.AutoPause,
-                    activeTppaCadenceAuthority.QualifiedSettleSeconds);
+                    supervisorCampaignMode
+                        ? activeTppaCadenceAuthority.QualifiedSettleSeconds
+                        : TppaVerificationSettlePolicy.MinimumQualifiedSettleSeconds);
                 Logger.Info(
                     $"TPPA_FAST_RUNTIME_CONFIGURATION eligible={fastConfiguration.IsEligible}; " +
                     $"settleSeconds={fastConfiguration.ResolvedSettleSeconds:F3}; " +
@@ -639,18 +643,18 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     ["exposureSeconds"] = fastConfiguration.ExposureSeconds,
                     ["alignmentToleranceMinutes"] = AlignmentTolerance,
                     ["refractionAdjustmentEnabled"] = Properties.Settings.Default.RefractionAdjustment,
-                    ["repositoryHead"] = activeTppaCovarianceAuthority.RepositoryHead,
-                    ["pluginAssemblySha256"] = activeTppaCovarianceAuthority.PluginAssemblySha256,
-                    ["covarianceAuthorityId"] = activeTppaCovarianceAuthority.AuthorityId.ToString("D"),
-                    ["covarianceAuthoritySha256"] = activeTppaCovarianceAuthority.ArtifactSha256,
-                    ["cadenceAuthorityId"] = activeTppaCadenceAuthority.AuthorityId.ToString("D"),
-                    ["cadenceAuthoritySha256"] = activeTppaCadenceAuthority.ArtifactSha256,
-                    ["qualifiedSettleSeconds"] = activeTppaCadenceAuthority.QualifiedSettleSeconds,
-                    ["qualifiedFreshDeterminationSeconds"] = activeTppaCadenceAuthority.MaximumFreshDeterminationSeconds,
-                    ["mechanicalStateId"] = activeTppaCovarianceAuthority.MechanicalStateSha256,
-                    ["loadProfileId"] = activeTppaCovarianceAuthority.LoadProfileId,
-                    ["tppaCampaignId"] = activeTppaCampaignId.ToString("D"),
-                    ["preregisteredCampaignId"] = activePreregisteredCampaignId.ToString("D")
+                    ["repositoryHead"] = activeTppaCovarianceAuthority?.RepositoryHead ?? "direct-field",
+                    ["pluginAssemblySha256"] = activeTppaCovarianceAuthority?.PluginAssemblySha256 ?? "direct-field",
+                    ["covarianceAuthorityId"] = activeTppaCovarianceAuthority?.AuthorityId.ToString("D") ?? "direct-field",
+                    ["covarianceAuthoritySha256"] = activeTppaCovarianceAuthority?.ArtifactSha256 ?? "direct-field",
+                    ["cadenceAuthorityId"] = activeTppaCadenceAuthority?.AuthorityId.ToString("D") ?? "direct-field",
+                    ["cadenceAuthoritySha256"] = activeTppaCadenceAuthority?.ArtifactSha256 ?? "direct-field",
+                    ["qualifiedSettleSeconds"] = supervisorCampaignMode ? activeTppaCadenceAuthority.QualifiedSettleSeconds : TppaVerificationSettlePolicy.MinimumQualifiedSettleSeconds,
+                    ["qualifiedFreshDeterminationSeconds"] = qualifiedFreshDeterminationReserveSeconds,
+                    ["mechanicalStateId"] = activeTppaCovarianceAuthority?.MechanicalStateSha256 ?? "direct-field",
+                    ["loadProfileId"] = activeTppaCovarianceAuthority?.LoadProfileId ?? "direct-field",
+                    ["tppaCampaignId"] = supervisorCampaignMode ? activeTppaCampaignId.ToString("D") : "direct-field",
+                    ["preregisteredCampaignId"] = supervisorCampaignMode ? activePreregisteredCampaignId.ToString("D") : "direct-field"
                 })) {
                     throw new SequenceEntityFailedException(
                         "Fast-alignment evidence could not be started. No UPAS connection or movement was authorized.");
@@ -693,7 +697,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     TppaVerificationSettlePolicy.GetActuatorQualificationIssues(
                         profileService.ActiveProfile.TelescopeSettings.SettleTime,
                         VerificationPointSettleTimeSeconds,
-                        enforceFastRuntimeBudget
+                        supervisorCampaignMode
                             ? activeTppaCadenceAuthority.QualifiedSettleSeconds
                             : TppaVerificationSettlePolicy.MinimumQualifiedSettleSeconds)
                         .FirstOrDefault();
@@ -1081,6 +1085,9 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
 
                     var sw = Stopwatch.StartNew();
                     var completionGuard = new AutomatedAlignmentCompletionGuard();
+                    PolarErrorDetermination directPreMoveFreshDetermination = supervisorCampaignMode
+                        ? null
+                        : determination;
                     var freshFeedbackMoveCount = 0;
                     var maximumObservedFreshDeterminationSeconds = alignmentRuntime.Elapsed.TotalSeconds;
                     TppaPolarErrorVector? qualifiedFinalVector = null;
@@ -1121,7 +1128,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                 var operationalQualification = TppaOperationalQualification.Evaluate(
                                     new TppaOperationalQualificationInput(
                                         alignmentRuntime.Elapsed.TotalSeconds,
-                                        activeObservedDeterminations.Count,
+                                        supervisorCampaignMode ? activeObservedDeterminations.Count : 2,
                                         FreshSolvesUncached: true,
                                         Math.Max(
                                             Math.Abs(completionCandidate.InitialMountAxisTotalError.ArcMinutes),
@@ -1153,7 +1160,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                         $"threshold={completionAgreement.ThresholdMinutes:F2}'.");
                             if (confirmedTotalErrorMinutes <= AlignmentTolerance
                                     && completionAgreement.IsRepeatable
-                                    && enforceFastRuntimeBudget
+                                    && supervisorCampaignMode
                                     && activeObservedDeterminations.Count < 2) {
                                 Logger.Info(
                                     "A below-tolerance result has only one supervisor observation attestation. " +
@@ -1368,7 +1375,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                     TPAPAVM.PolarErrorDetermination.InitialMountAxisAltitudeError.ArcMinutes,
                                     TPAPAVM.PolarErrorDetermination.InitialMountAxisTotalError.ArcMinutes);
                                 bool moved;
-                                if (enforceFastRuntimeBudget && executionPolicy.AllowActuatorMovement) {
+                                if (supervisorCampaignMode && executionPolicy.AllowActuatorMovement) {
                                     while (activeObservedDeterminations.Count < 2) {
                                         Logger.Info("Acquiring an independently observed fresh TPPA determination before supervisor movement authority.");
                                         var observedDetermination = await MeasureFreshThreePointForActiveCampaign(
@@ -1429,6 +1436,56 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                         localCTS.Token);
                                     activeObservedDeterminations.Clear();
                                 } else {
+                                    var firstDirectDetermination = directPreMoveFreshDetermination
+                                        ?? TPAPAVM.PolarErrorDetermination;
+                                    Logger.Info("Acquiring a second independent fresh TPPA determination before direct field movement authority.");
+                                    var directFreshStopwatch = Stopwatch.StartNew();
+                                    var secondDirectDetermination = await MeasureFreshThreePointForActiveCampaign(
+                                        TPAPAVM,
+                                        automatedVerificationStartPointing,
+                                        automatedVerificationEastDirection,
+                                        progress,
+                                        localCTS.Token);
+                                    directFreshStopwatch.Stop();
+                                    maximumObservedFreshDeterminationSeconds = Math.Max(
+                                        maximumObservedFreshDeterminationSeconds,
+                                        directFreshStopwatch.Elapsed.TotalSeconds);
+                                    if (enforceFastRuntimeBudget) {
+                                        var directMoveBudget = TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
+                                            alignmentRuntime.Elapsed,
+                                            maximumObservedFreshDeterminationSeconds,
+                                            freshFeedbackMoveCount,
+                                            qualifiedFreshDeterminationReserveSeconds);
+                                        if (!directMoveBudget.CanStart) {
+                                            throw new SequenceEntityFailedException(
+                                                "The two required direct fresh TPPA determinations consumed the remaining movement budget: " +
+                                                directMoveBudget.Reason + " No UPAS movement was authorized.");
+                                        }
+                                    }
+                                    var directAgreement = FreshPolarAlignmentAgreementPolicy.Evaluate(
+                                        firstDirectDetermination.InitialMountAxisAzimuthError.ArcMinutes,
+                                        firstDirectDetermination.InitialMountAxisAltitudeError.ArcMinutes,
+                                        firstDirectDetermination.InitialMountAxisTotalError.ArcMinutes,
+                                        secondDirectDetermination.InitialMountAxisAzimuthError.ArcMinutes,
+                                        secondDirectDetermination.InitialMountAxisAltitudeError.ArcMinutes,
+                                        secondDirectDetermination.InitialMountAxisTotalError.ArcMinutes,
+                                        AlignmentTolerance);
+                                    if (!directAgreement.IsRepeatable) {
+                                        throw new SequenceEntityFailedException(
+                                            "Two independent fresh TPPA determinations do not agree; no direct UPAS movement was authorized.");
+                                    }
+                                    TPAPAVM.PolarErrorDetermination = secondDirectDetermination;
+                                    BindFreshGeometryQualification(
+                                        TPAPAVM,
+                                        secondDirectDetermination,
+                                        true,
+                                        "pre-move direct determination");
+                                    TPAPAVM.UpdateAutomatedAdjustmentFromFreshDetermination();
+                                    preMoveFreshVector = TppaPolarErrorVector.FromMinutes(
+                                        secondDirectDetermination.InitialMountAxisAzimuthError.ArcMinutes,
+                                        secondDirectDetermination.InitialMountAxisAltitudeError.ArcMinutes,
+                                        secondDirectDetermination.InitialMountAxisTotalError.ArcMinutes);
+                                    directPreMoveFreshDetermination = null;
                                     moved = executionPolicy.AllowActuatorMovement
                                         && await TppaFastActuatorAdmissionGate.ExecuteIfAuthorizedAsync(
                                             false,
@@ -1452,6 +1509,9 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                         maximumObservedFreshDeterminationSeconds,
                                         freshDeterminationStopwatch.Elapsed.TotalSeconds);
                                     TPAPAVM.PolarErrorDetermination = feedbackDetermination;
+                                    if (!supervisorCampaignMode) {
+                                        directPreMoveFreshDetermination = feedbackDetermination;
+                                    }
                                     BindFreshGeometryQualification(
                                         TPAPAVM,
                                         feedbackDetermination,

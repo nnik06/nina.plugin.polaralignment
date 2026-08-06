@@ -42,7 +42,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
             result.CanStart.Should().BeTrue(result.Reason);
         }
 
-        [TestCase(300.001)]
+        [TestCase(458.206)]
         [TestCase(600.0)]
         public void RejectsInitialTotalsOutsideQualifiedWindow(double totalMinutes) {
             var result = TppaFastAlignmentExecutionBudget.EvaluateInitialTotal(totalMinutes);

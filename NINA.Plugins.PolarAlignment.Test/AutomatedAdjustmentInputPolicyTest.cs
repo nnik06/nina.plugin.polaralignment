@@ -46,21 +46,21 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
-        public void SupervisorCoarseRouteAcceptsExactFiveDegreeVector() {
+        public void SupervisorCoarseRouteAcceptsFullFieldEnvelope() {
             var decision = AutomatedAdjustmentInputPolicy.EvaluateSupervisorCoarse(
-                240.0, -180.0, 300.0);
+                324.0, -324.0, 458.205195);
 
             decision.IsEligible.Should().BeTrue();
             decision.Reason.Should().Contain("supervisor coarse-correction");
         }
 
         [Test]
-        public void SupervisorCoarseRouteRejectsVectorAboveFiveDegrees() {
+        public void SupervisorCoarseRouteRejectsAxisAboveFivePointFourDegrees() {
             var decision = AutomatedAdjustmentInputPolicy.EvaluateSupervisorCoarse(
-                -300.1, 0.0, 300.1);
+                -324.1, 0.0, 324.1);
 
             decision.IsEligible.Should().BeFalse();
-            decision.Reason.Should().Contain("300'");
+            decision.Reason.Should().Contain("324'");
         }
 
         [TestCase(double.NaN, 0.0, 1.0)]

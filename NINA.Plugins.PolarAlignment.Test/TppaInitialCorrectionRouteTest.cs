@@ -20,7 +20,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
             decision.Reason.Should().Contain("separately qualified");
         }
 
-        [TestCase(300.001)]
+        [TestCase(458.206)]
         [TestCase(600.0)]
         public void RejectsTotalsAboveCoarseCampaignCeiling(double totalMinutes) {
             var decision = TppaInitialCorrectionRoute.Evaluate(totalMinutes);
