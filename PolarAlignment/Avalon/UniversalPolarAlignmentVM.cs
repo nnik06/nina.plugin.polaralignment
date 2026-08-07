@@ -228,6 +228,9 @@ namespace NINA.Plugins.PolarAlignment.Avalon {
         }
 
         protected override void InvalidatePhysicalPositionConfirmation() {
+            Logger.Warning(
+                $"Clearing UPAS visual-marker travel confirmations. " +
+                $"Caller stack: {System.Environment.StackTrace}");
             AzimuthTravelGuardConfirmed = false;
             InvalidateAltitudeTravelConfirmation();
         }

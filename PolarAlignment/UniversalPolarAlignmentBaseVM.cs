@@ -59,6 +59,12 @@ namespace NINA.Plugins.PolarAlignment {
         private Task connectTask;
 
         private int connectionGeneration;
+
+        // A persisted visual-scale confirmation is the operator's statement about the
+        // physical state at session start. The first connection only opens transport;
+        // a later reconnect can follow an unknown physical interruption and must clear it.
+        private bool hasEstablishedPhysicalConnection;
+
         [RelayCommand]
         public Task Connect() {
             lock (connectionSync) {
@@ -71,7 +77,12 @@ namespace NINA.Plugins.PolarAlignment {
                     return Task.CompletedTask;
                 }
 
-                InvalidatePhysicalPositionConfirmation();
+                if (hasEstablishedPhysicalConnection) {
+                    InvalidatePhysicalPositionConfirmation();
+                    Logger.Info($"Cleared {SystemName} physical-position confirmation before a reconnect.");
+                } else {
+                    Logger.Info($"Preserving persisted {SystemName} physical-position confirmation for the first connection in this NINA process.");
+                }
                 var generation = ++connectionGeneration;
                 connectTask = Task.Run(async () => {
                     using (operationScope) {
@@ -100,6 +111,7 @@ namespace NINA.Plugins.PolarAlignment {
                                     return;
                                 }
                                 Connected = true;
+                                hasEstablishedPhysicalConnection = true;
                             }
                             Notification.ShowInformation($"Successfully connected to {SystemName}");
                         } catch (Exception ex) {

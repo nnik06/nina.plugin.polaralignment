@@ -345,6 +345,18 @@ namespace NINA.Plugins.PolarAlignment {
                 Properties.Settings.Default.AvalonAltitudeDegreesPerNudgeUnit,
                 Properties.Settings.Default.AvalonReverseAltitude ? -1 : 1);
 
+            if (useUpasController) {
+                Logger.Info(
+                    $"UPAS travel guard runtime settings: " +
+                    $"azEnabled={Properties.Settings.Default.AvalonAzimuthTravelGuardEnabled}, " +
+                    $"azConfirmed={Properties.Settings.Default.AvalonAzimuthTravelGuardConfirmed}, " +
+                    $"azLimit={Properties.Settings.Default.AvalonAzimuthTravelLimitDegrees:F3}, " +
+                    $"altEnabled={Properties.Settings.Default.AvalonAltitudeTravelGuardEnabled}, " +
+                    $"altConfirmed={Properties.Settings.Default.AvalonAltitudeTravelGuardConfirmed}, " +
+                    $"altRange=[{Properties.Settings.Default.AvalonAltitudeMinimumDegrees:F3}, " +
+                    $"{Properties.Settings.Default.AvalonAltitudeMaximumDegrees:F3}].");
+            }
+
             if (!useUpasController) {
                 upasResponseMemorySeeded = false;
                 return;
@@ -387,9 +399,15 @@ namespace NINA.Plugins.PolarAlignment {
             Logger.Info($"Persisted UPAS azimuth response memory: Az/X={Math.Round(azimuthDeltaPerXUnit * 60.0, 4)}'/unit, ReverseAzimuth={Properties.Settings.Default.AvalonReverseAzimuth}.");
         }
 
+        public string LastAutomatedAdjustmentDecisionReason { get; private set; }
+
         public async Task<bool> MoveCloser(IProgress<ApplicationStatus> progress, CancellationToken token) {
             var activeSystem = ActiveAlignmentSystemVM;
-            if (activeSystem == null || !activeSystem.DoAutomatedAdjustments) { return false; }
+            if (activeSystem == null || !activeSystem.DoAutomatedAdjustments) {
+                LastAutomatedAdjustmentDecisionReason = "Automated adjustments are disabled or no alignment system is active.";
+                Logger.Warning($"UPAS automated movement not executed. {LastAutomatedAdjustmentDecisionReason}");
+                return false;
+            }
             var geometryAuthority = GetAutomatedAdjustmentGeometryAuthority();
             if (geometryAuthority.Qualified != true) {
                 throw new InvalidOperationException(
@@ -403,18 +421,23 @@ namespace NINA.Plugins.PolarAlignment {
             if (useContinuousErrorEstimator
                 && !lastContinuousEstimateStable
                 && AutomatedAdjustmentFeedbackPolicy.AllowsContinuousFeedback(AutomatedAdjustmentRequiresFreshMeasurementFeedback)) {
+                LastAutomatedAdjustmentDecisionReason = "The continuous error estimate is unstable.";
+                Logger.Warning($"UPAS automated movement not executed. {LastAutomatedAdjustmentDecisionReason}");
                 progress?.Report(new ApplicationStatus() { Status = "Skipping automated adjustment because the continuous error estimate is unstable." });
                 return false;
             }
 
             if (PolarErrorDetermination.CurrentCorrectionFieldNearEastWest) {
-                Logger.Info("Skipping automated adjustment because the current correction field is too close to exact east or west.");
+                LastAutomatedAdjustmentDecisionReason = "The current correction field is too close to exact east or west.";
+                Logger.Warning($"UPAS automated movement not executed. {LastAutomatedAdjustmentDecisionReason}");
                 progress?.Report(new ApplicationStatus() { Status = "Skipping automated adjustment because the current correction field is too close to exact east or west." });
                 return false;
             }
 
             var plan = automatedAdjustmentController.CreatePlan();
             if (!plan.HasMovement) {
+                LastAutomatedAdjustmentDecisionReason = plan.Reason ?? "The automated adjustment controller returned no movement plan.";
+                Logger.Warning($"UPAS automated movement not executed. {LastAutomatedAdjustmentDecisionReason}");
                 progress?.Report(new ApplicationStatus() { Status = plan.Reason });
                 return false;
             }
@@ -429,6 +452,7 @@ namespace NINA.Plugins.PolarAlignment {
             if (Math.Abs(plan.XMagnitude) > 0) {
                 var xExecution = await automatedMoveExecutor.ExecuteAsync(activeSystem, Axis.XAxis, (float)plan.XMagnitude, token);
                 if (!xExecution.PhysicalMotionVerified) {
+                    LastAutomatedAdjustmentDecisionReason = $"X command was denied: {xExecution.Reason}";
                     Logger.Warning($"Automated X movement denied. {xExecution.Reason}");
                     automatedAdjustmentController.NoteFailedExecution(new AutomatedAdjustmentPlan(plan.XMagnitude,
                                                                                                    0,
@@ -442,6 +466,7 @@ namespace NINA.Plugins.PolarAlignment {
             if (Math.Abs(plan.YMagnitude) > 0) {
                 var yExecution = await automatedMoveExecutor.ExecuteAsync(activeSystem, Axis.YAxis, (float)plan.YMagnitude, token);
                 if (!yExecution.PhysicalMotionVerified) {
+                    LastAutomatedAdjustmentDecisionReason = $"Y command was denied: {yExecution.Reason}";
                     Logger.Warning($"Automated Y movement denied. {yExecution.Reason}");
                     automatedAdjustmentController.NoteFailedExecution(new AutomatedAdjustmentPlan(0,
                                                                                                    plan.YMagnitude,
@@ -453,6 +478,7 @@ namespace NINA.Plugins.PolarAlignment {
                                                                                                            plan.IsProbe,
                                                                                                            $"{plan.Reason} (partial X move)"));
                         await CoreUtil.Wait(TimeSpan.FromSeconds(activeSystem.AutomatedAdjustmentSettleTime), token, progress, "Settling");
+                        LastAutomatedAdjustmentDecisionReason = $"X command executed; Y command was denied: {yExecution.Reason}";
                         return true;
                     }
 
@@ -463,6 +489,7 @@ namespace NINA.Plugins.PolarAlignment {
 
             automatedAdjustmentController.NoteSuccessfulExecution(new AutomatedAdjustmentPlan(executedX, executedY, plan.IsProbe, plan.Reason));
             await CoreUtil.Wait(TimeSpan.FromSeconds(activeSystem.AutomatedAdjustmentSettleTime), token, progress, "Settling");
+            LastAutomatedAdjustmentDecisionReason = $"Executed {plan.Reason}: X {Math.Round(executedX, 2)}, Y {Math.Round(executedY, 2)}.";
             return true;
         }
 

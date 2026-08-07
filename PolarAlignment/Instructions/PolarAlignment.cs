@@ -1470,9 +1470,23 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                         secondDirectDetermination.InitialMountAxisAltitudeError.ArcMinutes,
                                         secondDirectDetermination.InitialMountAxisTotalError.ArcMinutes,
                                         AlignmentTolerance);
+                                    Logger.Info(
+                                        "TPPA direct pre-move agreement: " +
+                                        $"first=(Az {firstDirectDetermination.InitialMountAxisAzimuthError.ArcMinutes:F3}', " +
+                                        $"Alt {firstDirectDetermination.InitialMountAxisAltitudeError.ArcMinutes:F3}', " +
+                                        $"Tot {firstDirectDetermination.InitialMountAxisTotalError.ArcMinutes:F3}'); " +
+                                        $"second=(Az {secondDirectDetermination.InitialMountAxisAzimuthError.ArcMinutes:F3}', " +
+                                        $"Alt {secondDirectDetermination.InitialMountAxisAltitudeError.ArcMinutes:F3}', " +
+                                        $"Tot {secondDirectDetermination.InitialMountAxisTotalError.ArcMinutes:F3}'); " +
+                                        $"delta=(Az {directAgreement.AzimuthDeltaMinutes:F3}', " +
+                                        $"Alt {directAgreement.AltitudeDeltaMinutes:F3}', " +
+                                        $"vector {directAgreement.VectorDeltaMinutes:F3}' / threshold {directAgreement.ThresholdMinutes:F3}'); " +
+                                        $"repeatable={directAgreement.IsRepeatable}; reason={directAgreement.Reason}.");
                                     if (!directAgreement.IsRepeatable) {
                                         throw new SequenceEntityFailedException(
-                                            "Two independent fresh TPPA determinations do not agree; no direct UPAS movement was authorized.");
+                                            "Two independent fresh TPPA determinations do not agree; no direct UPAS movement was authorized. " +
+                                            $"Vector delta {directAgreement.VectorDeltaMinutes:F3}' exceeds threshold " +
+                                            $"{directAgreement.ThresholdMinutes:F3}' ({directAgreement.Reason}).");
                                     }
                                     TPAPAVM.PolarErrorDetermination = secondDirectDetermination;
                                     BindFreshGeometryQualification(
@@ -1492,6 +1506,12 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                             fastInitialAdmissionGranted,
                                             "movement",
                                             () => TPAPAVM.MoveCloser(progress, localCTS.Token));
+                                    if (!moved) {
+                                        throw new SequenceEntityFailedException(
+                                            "Direct UPAS movement was not executed after two agreeing fresh TPPA determinations. " +
+                                            $"Reason: {TPAPAVM.LastAutomatedAdjustmentDecisionReason ?? "no reason was returned"}. " +
+                                            "No further sky sweeps were started.");
+                                    }
                                 }
                                 if (moved && TPAPAVM.AutomatedAdjustmentRequiresFreshMeasurementFeedback) {
                                     freshFeedbackMoveCount++;
