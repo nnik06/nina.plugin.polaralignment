@@ -11,7 +11,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
             instruction.VerificationOnly.Should().BeFalse();
             instruction.OverdeterminedShadowModelCheck.Should().BeFalse();
             instruction.DriftValidationOnly.Should().BeFalse();
-            instruction.EnforceFiveMinuteRuntimeBudget.Should().BeTrue();
+            instruction.EnforceFiveMinuteRuntimeBudget.Should().BeFalse();
         }
 
         [Test]

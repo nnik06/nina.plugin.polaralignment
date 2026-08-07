@@ -184,7 +184,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             TargetDistance = Properties.Settings.Default.DefaultTargetDistance;
             SearchRadius = Properties.Settings.Default.DefaultSearchRadius;
             AlignmentTolerance = Properties.Settings.Default.AlignmentTolerance;
-            EnforceFiveMinuteRuntimeBudget = true;
+            EnforceFiveMinuteRuntimeBudget = false;
 
             CameraInfo = this.cameraMediator.GetInfo();
 
