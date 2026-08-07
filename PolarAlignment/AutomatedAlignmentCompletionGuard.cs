@@ -12,6 +12,8 @@ namespace NINA.Plugins.PolarAlignment {
 
     internal static class FreshPolarAlignmentAgreementPolicy {
         private const double MinimumThresholdMinutes = 0.5;
+        private const double CoarseAcquisitionRelativeThreshold = 0.03;
+        private const double MaximumCoarseAcquisitionThresholdMinutes = 3.0;
         private const double MinimumReciprocitySpanSeconds = 1.0;
 
         public static FreshPolarAlignmentAgreement Evaluate(
@@ -45,6 +47,41 @@ namespace NINA.Plugins.PolarAlignment {
                 : "signed azimuth/altitude vector delta exceeds the repeatability threshold";
             return new FreshPolarAlignmentAgreement(isRepeatable, azimuthDeltaMinutes, altitudeDeltaMinutes,
                 totalDeltaMinutes, vectorDeltaMinutes, thresholdMinutes, reason);
+        }
+
+        /// <summary>
+        /// Applies a bounded relative agreement allowance only before the first coarse actuator correction.
+        /// Completion and post-move verification must continue to use <see cref="Evaluate"/>.
+        /// </summary>
+        public static FreshPolarAlignmentAgreement EvaluateForCoarseAcquisition(
+            double firstAzimuthMinutes,
+            double firstAltitudeMinutes,
+            double firstTotalMinutes,
+            double secondAzimuthMinutes,
+            double secondAltitudeMinutes,
+            double secondTotalMinutes,
+            double toleranceMinutes) {
+            var averageTotalMinutes = (Math.Abs(firstTotalMinutes) + Math.Abs(secondTotalMinutes)) / 2.0;
+            var coarseThresholdMinutes = Math.Min(
+                MaximumCoarseAcquisitionThresholdMinutes,
+                Math.Max(
+                    double.IsFinite(toleranceMinutes) && toleranceMinutes > 0
+                        ? Math.Max(MinimumThresholdMinutes, toleranceMinutes)
+                        : MinimumThresholdMinutes,
+                    averageTotalMinutes * CoarseAcquisitionRelativeThreshold));
+            var result = Evaluate(
+                firstAzimuthMinutes,
+                firstAltitudeMinutes,
+                firstTotalMinutes,
+                secondAzimuthMinutes,
+                secondAltitudeMinutes,
+                secondTotalMinutes,
+                coarseThresholdMinutes);
+            return result with {
+                Reason = result.IsRepeatable
+                    ? "signed azimuth/altitude vector delta is within the bounded coarse-acquisition repeatability threshold"
+                    : "signed azimuth/altitude vector delta exceeds the bounded coarse-acquisition repeatability threshold"
+            };
         }
 
         public static FreshPolarAlignmentAgreement EvaluateCenteredReciprocity(

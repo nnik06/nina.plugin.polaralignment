@@ -23,6 +23,35 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public void FreshPolarAlignmentAgreementPolicy_CoarseAcquisitionAllowsBoundedRelativeDelta() {
+            var result = FreshPolarAlignmentAgreementPolicy.EvaluateForCoarseAcquisition(
+                63.578, -5.948, 63.856,
+                65.125, -5.042, 65.320,
+                toleranceMinutes: 1.0);
+
+            result.IsRepeatable.Should().BeTrue();
+            result.VectorDeltaMinutes.Should().BeApproximately(1.793, 0.002);
+            result.ThresholdMinutes.Should().BeApproximately(1.93764, 0.0001);
+        }
+
+        [Test]
+        public void FreshPolarAlignmentAgreementPolicy_CoarseAcquisitionIsCappedAndDoesNotRelaxFinalAgreement() {
+            var coarse = FreshPolarAlignmentAgreementPolicy.EvaluateForCoarseAcquisition(
+                300, 0, 300,
+                304, 0, 304,
+                toleranceMinutes: 1.0);
+            var final = FreshPolarAlignmentAgreementPolicy.Evaluate(
+                300, 0, 300,
+                304, 0, 304,
+                toleranceMinutes: 1.0);
+
+            coarse.ThresholdMinutes.Should().Be(3.0);
+            coarse.IsRepeatable.Should().BeFalse();
+            final.ThresholdMinutes.Should().Be(1.0);
+            final.IsRepeatable.Should().BeFalse();
+        }
+
+        [Test]
         public void FreshPolarAlignmentAgreementPolicy_RejectsDifferentSignedVectorDespiteBothTotalsBeingSmall() {
             var result = FreshPolarAlignmentAgreementPolicy.Evaluate(
                 -0.60, 0.10, 0.61,

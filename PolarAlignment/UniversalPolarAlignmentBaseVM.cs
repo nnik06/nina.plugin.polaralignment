@@ -135,7 +135,15 @@ namespace NINA.Plugins.PolarAlignment {
 
         [RelayCommand]
         public void Disconnect() {
-            InvalidatePhysicalPositionConfirmation();
+            Disconnect(invalidatePhysicalPositionConfirmation: true);
+        }
+
+        internal void Disconnect(bool invalidatePhysicalPositionConfirmation) {
+            if (invalidatePhysicalPositionConfirmation) {
+                InvalidatePhysicalPositionConfirmation();
+            } else {
+                Logger.Info($"Disconnecting {SystemName} for TPPA view-model disposal while preserving the operator-confirmed physical marker state.");
+            }
 
             IPolarAlignmentSystem disconnectedSystem;
             CancellationTokenSource disconnectedPollCts;

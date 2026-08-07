@@ -1462,7 +1462,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                                 directMoveBudget.Reason + " No UPAS movement was authorized.");
                                         }
                                     }
-                                    var directAgreement = FreshPolarAlignmentAgreementPolicy.Evaluate(
+                                    var directAgreement = FreshPolarAlignmentAgreementPolicy.EvaluateForCoarseAcquisition(
                                         firstDirectDetermination.InitialMountAxisAzimuthError.ArcMinutes,
                                         firstDirectDetermination.InitialMountAxisAltitudeError.ArcMinutes,
                                         firstDirectDetermination.InitialMountAxisTotalError.ArcMinutes,

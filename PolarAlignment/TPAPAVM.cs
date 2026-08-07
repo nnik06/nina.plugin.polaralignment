@@ -848,7 +848,11 @@ namespace NINA.Plugins.PolarAlignment {
             } catch { }
             if (disconnectActiveAlignmentSystem) {
                 try {
-                    ActiveAlignmentSystemVM?.Disconnect();
+                    if (ActiveAlignmentSystemVM is UniversalPolarAlignmentBaseVM upasSystem) {
+                        upasSystem.Disconnect(invalidatePhysicalPositionConfirmation: false);
+                    } else {
+                        ActiveAlignmentSystemVM?.Disconnect();
+                    }
                 } catch { }
             }
         }
