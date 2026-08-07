@@ -436,7 +436,12 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
         private async Task<PlateSolveResult> AutomatedNextPoint(IProgress<ApplicationStatus> progress, CancellationToken token, bool? eastDirectionOverride = null) {
             PlateSolveResult solve;
             var totalDistance = (double)TargetDistance;
-            var previousMountRADegrees = telescopeMediator.GetCurrentPosition().RADegrees;
+            var currentPointing = telescopeMediator.GetCurrentPosition();
+            var previousMountRADegrees = currentPointing.RADegrees;
+            EnsureAutomatedArcEnvelopeSafe(
+                currentPointing,
+                totalDistance,
+                eastDirectionOverride ?? EastDirection);
 
             await WaitIfPaused(token, progress);
             var settleOverride = TppaVerificationSettlePolicy.ResolveSequenceOverride(
@@ -3825,6 +3830,59 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 throw new InvalidOperationException(
                     $"TPPA mount-motion envelope stopped the RA-axis move: {violation}.");
             }
+        }
+
+        private void EnsureAutomatedArcEnvelopeSafe(
+                Coordinates currentPointing,
+                double legDistanceDegrees,
+                bool eastDirection) {
+            if (!MountMotionEnvelopeEnabled) {
+                return;
+            }
+
+            var plan = TppaVerificationWaypointPlan.Create(
+                currentPointing,
+                legDistanceDegrees,
+                eastDirection);
+            var refraction = RefractionParameters.GetRefractionParameters(weatherDataMediator.GetInfo());
+            var nowUtc = DateTime.UtcNow;
+            var samples = plan.Forward
+                .Skip(1)
+                .Select((waypoint, index) => {
+                    var horizontal = waypoint.Transform(
+                        Latitude,
+                        Longitude,
+                        Elevation,
+                        refraction.PressureHPa,
+                        refraction.Temperature,
+                        refraction.RelativeHumidity,
+                        refraction.Wavelength,
+                        nowUtc);
+                    return new TppaArcEnvelopeSample(
+                        index == 0 ? "B" : "C",
+                        horizontal.Azimuth.Degree,
+                        horizontal.Altitude.Degree);
+                })
+                .ToArray();
+            var envelope = new TppaMountMotionEnvelope(
+                MountMotionMinimumAltitudeDegrees,
+                MountMotionMaximumAltitudeDegrees,
+                MountMotionAzimuthStartDegrees,
+                MountMotionAzimuthEndDegrees);
+            var result = TppaAutomatedArcEnvelopePolicy.Evaluate(
+                MountMotionEnvelopeEnabled,
+                envelope,
+                samples);
+            if (!result.IsSafe) {
+                throw new SequenceEntityFailedException(
+                    $"Automated TPPA arc rejected before RA-axis movement: {result.Reason}.");
+            }
+
+            Logger.Info(
+                $"Automated TPPA arc envelope preflight passed: " +
+                string.Join("; ", samples.Select(sample =>
+                    $"{sample.Name}=Az{sample.AzimuthDegrees:F2}/Alt{sample.AltitudeDegrees:F2}")) +
+                $"; {result.Reason}.");
         }
 
         public Angle Latitude {
