@@ -75,7 +75,7 @@
       <Value Profile="(Default)">False</Value>
     </Setting>
     <Setting Name="RequireExternalUpasSupervisorForAutomatedMoves" Type="System.Boolean" Scope="User">
-      <Value Profile="(Default)">True</Value>
+      <Value Profile="(Default)">False</Value>
     </Setting>
     <Setting Name="UpasSupervisorEndpoint" Type="System.String" Scope="User">
       <Value Profile="(Default)">https://127.0.0.1:8443/</Value>
@@ -111,19 +111,19 @@
       <Value Profile="(Default)">1</Value>
     </Setting>
     <Setting Name="AvalonAzimuthTravelGuardEnabled" Type="System.Boolean" Scope="User">
-      <Value Profile="(Default)">False</Value>
+      <Value Profile="(Default)">True</Value>
     </Setting>
     <Setting Name="AvalonAzimuthTravelGuardConfirmed" Type="System.Boolean" Scope="User">
       <Value Profile="(Default)">False</Value>
     </Setting>
     <Setting Name="AvalonAzimuthTravelLimitDegrees" Type="System.Double" Scope="User">
-      <Value Profile="(Default)">2</Value>
+      <Value Profile="(Default)">5.4</Value>
     </Setting>
     <Setting Name="AvalonAzimuthDegreesPerNudgeUnit" Type="System.Double" Scope="User">
       <Value Profile="(Default)">0.025</Value>
     </Setting>
     <Setting Name="AvalonAltitudeTravelGuardEnabled" Type="System.Boolean" Scope="User">
-      <Value Profile="(Default)">False</Value>
+      <Value Profile="(Default)">True</Value>
     </Setting>
     <Setting Name="AvalonAltitudeTravelGuardConfirmed" Type="System.Boolean" Scope="User">
       <Value Profile="(Default)">False</Value>
@@ -132,10 +132,10 @@
       <Value Profile="(Default)">0</Value>
     </Setting>
     <Setting Name="AvalonAltitudeMinimumDegrees" Type="System.Double" Scope="User">
-      <Value Profile="(Default)">-5</Value>
+      <Value Profile="(Default)">-5.4</Value>
     </Setting>
     <Setting Name="AvalonAltitudeMaximumDegrees" Type="System.Double" Scope="User">
-      <Value Profile="(Default)">5</Value>
+      <Value Profile="(Default)">5.4</Value>
     </Setting>
     <Setting Name="AvalonAltitudeDegreesPerNudgeUnit" Type="System.Double" Scope="User">
       <Value Profile="(Default)">0.022</Value>

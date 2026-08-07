@@ -65,11 +65,11 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
-        public void ExternalSupervisorIsRequiredByDefault() {
+        public void ExternalSupervisorIsOptInByDefault() {
             var property = typeof(NINA.Plugins.PolarAlignment.Properties.Settings)
                 .GetProperty(nameof(NINA.Plugins.PolarAlignment.Properties.Settings.RequireExternalUpasSupervisorForAutomatedMoves));
             property.Should().NotBeNull();
-            property!.GetCustomAttribute<DefaultSettingValueAttribute>()!.Value.Should().Be("True");
+            property!.GetCustomAttribute<DefaultSettingValueAttribute>()!.Value.Should().Be("False");
         }
 
         [Test]

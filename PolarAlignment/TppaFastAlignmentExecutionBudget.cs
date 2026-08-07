@@ -26,6 +26,11 @@ namespace NINA.Plugins.PolarAlignment {
         // The clean field maximum was 72.726s for a same-arc three-point
         // determination and return solve at the qualified 30s settle setting.
         public const double FreshDeterminationReserveSeconds = 75;
+        // Direct field alignment uses the mount's five-second settle floor.
+        // A three-point determination has a 40s operational reservation; if
+        // the observed cadence is slower, the five-minute planner uses that
+        // measured duration and declines iterations that no longer fit.
+        public const double DirectFieldFreshDeterminationReserveSeconds = 40;
         public const double ObservedCadenceSlackSeconds = 5;
         // Initial admission remains retry-capable before any actuator movement.
         public const double FreshDeterminationRetryReserveSeconds = 125;
@@ -121,15 +126,48 @@ namespace NINA.Plugins.PolarAlignment {
             // the initial fresh cadence. Later moves use the measured duration
             // of the immediately preceding post-move fresh determination so
             // setup time is not counted again as solve cadence.
-            var observedCadenceSeconds = Math.Max(
-                qualifiedFreshDeterminationReserveSeconds,
-                observedFreshDeterminationSeconds + ObservedCadenceSlackSeconds);
-            var requiredReserveSeconds = UpasMoveReserveSeconds
-                + 2 * observedCadenceSeconds;
+            var observedCadenceSeconds = ResolveObservedCadenceSeconds(
+                observedFreshDeterminationSeconds,
+                qualifiedFreshDeterminationReserveSeconds);
+            var remainingMoveSlots = MaximumFreshFeedbackMoves - completedMoves;
+            // Each remaining move needs its independent fresh response. A run
+            // may finish only after one final stationary confirmation, which is
+            // intentionally separate from the response used to steer a move.
+            var requiredReserveSeconds = remainingMoveSlots * UpasMoveReserveSeconds
+                + (remainingMoveSlots + 1) * observedCadenceSeconds;
             return Evaluate(
                 elapsed,
                 requiredReserveSeconds,
                 maximumRuntimeSeconds);
+        }
+
+        public static TppaFastAlignmentBudgetDecision EvaluateBeforeFreshAgreement(
+                TimeSpan elapsed,
+                double observedFreshDeterminationSeconds,
+                int completedMoves,
+                double qualifiedFreshDeterminationReserveSeconds = FreshDeterminationReserveSeconds,
+                double maximumRuntimeSeconds = MaximumRuntimeSeconds) {
+            var moveDecision = EvaluateBeforeMove(
+                elapsed,
+                observedFreshDeterminationSeconds,
+                completedMoves,
+                qualifiedFreshDeterminationReserveSeconds,
+                maximumRuntimeSeconds);
+            var observedCadenceSeconds = ResolveObservedCadenceSeconds(
+                observedFreshDeterminationSeconds,
+                qualifiedFreshDeterminationReserveSeconds);
+            return Evaluate(
+                elapsed,
+                moveDecision.RequiredReserveSeconds + observedCadenceSeconds,
+                maximumRuntimeSeconds);
+        }
+
+        private static double ResolveObservedCadenceSeconds(
+                double observedFreshDeterminationSeconds,
+                double qualifiedFreshDeterminationReserveSeconds) {
+            return Math.Max(
+                qualifiedFreshDeterminationReserveSeconds,
+                observedFreshDeterminationSeconds + ObservedCadenceSlackSeconds);
         }
 
         public static TppaFastAlignmentBudgetDecision Evaluate(

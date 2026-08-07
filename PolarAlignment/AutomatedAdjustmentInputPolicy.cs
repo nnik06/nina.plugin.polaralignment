@@ -4,12 +4,11 @@ namespace NINA.Plugins.PolarAlignment {
         string Reason);
 
     internal static class AutomatedAdjustmentInputPolicy {
-        // The legacy controller remains limited to the range qualified before
-        // supervisor-backed coarse planning was introduced.
+        // Direct alignment stays in the demonstrated 120' envelope until a
+        // calibrated, signed mechanical-position authority can map a sky error
+        // to remaining UPAS travel. A sky-frame error is not a hardware axis
+        // position, so the +/-5.4 degree field envelope remains supervisor-only.
         public const double MaximumInitialErrorArcMinutes = 120.0;
-        // The physical UPAS guard remains inside the approximately +/-6 degree
-        // hardware stops. The field controller may admit +/-5.4 degrees on
-        // either axis only after its independent fresh-determination gate.
         public const double MaximumFieldInitialAxisErrorArcMinutes = 324.0;
         public const double MaximumFieldInitialTotalErrorArcMinutes = 458.205195;
 
@@ -43,7 +42,7 @@ namespace NINA.Plugins.PolarAlignment {
                 totalErrorArcMinutes,
                 MaximumInitialErrorArcMinutes,
                 MaximumInitialErrorArcMinutes,
-                "legacy automated-correction");
+                "direct field automated-correction");
         }
 
         public static AutomatedAdjustmentInputDecision EvaluateSupervisorCoarse(

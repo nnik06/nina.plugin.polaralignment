@@ -421,7 +421,7 @@ namespace NINA.Plugins.PolarAlignment.Properties {
 
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        [global::System.Configuration.DefaultSettingValueAttribute("False")]
+        [global::System.Configuration.DefaultSettingValueAttribute("True")]
         public bool AvalonAzimuthTravelGuardEnabled {
             get {
                 return ((bool)(this["AvalonAzimuthTravelGuardEnabled"]));
@@ -445,7 +445,7 @@ namespace NINA.Plugins.PolarAlignment.Properties {
 
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        [global::System.Configuration.DefaultSettingValueAttribute("True")]
+        [global::System.Configuration.DefaultSettingValueAttribute("False")]
         public bool RequireExternalUpasSupervisorForAutomatedMoves {
             get {
                 return ((bool)(this["RequireExternalUpasSupervisorForAutomatedMoves"]));
@@ -505,7 +505,7 @@ namespace NINA.Plugins.PolarAlignment.Properties {
 
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        [global::System.Configuration.DefaultSettingValueAttribute("False")]
+        [global::System.Configuration.DefaultSettingValueAttribute("True")]
         public bool AvalonAltitudeTravelGuardEnabled {
             get {
                 return ((bool)(this["AvalonAltitudeTravelGuardEnabled"]));

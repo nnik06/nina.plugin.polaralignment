@@ -17,7 +17,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
-        public void ResultAboveLimitIsDenied() {
+        public void ResultAboveDirectLimitIsDenied() {
             var decision = AutomatedAdjustmentInputPolicy.Evaluate(-120.1, 0.0, 120.1);
 
             decision.IsEligible.Should().BeFalse();
@@ -25,7 +25,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
-        public void ComponentMagnitudeAboveLimitIsDeniedWhenReportedTotalIsInsideLimit() {
+        public void ComponentMagnitudeAboveDirectLimitIsDeniedWhenReportedTotalIsInsideLimit() {
             var decision = AutomatedAdjustmentInputPolicy.Evaluate(100.0, 100.0, 100.0);
 
             decision.IsEligible.Should().BeFalse();
@@ -33,14 +33,14 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
-        public void RouteSelectorKeepsLegacyAndSupervisorEnvelopesSeparate() {
-            var legacy = AutomatedAdjustmentInputPolicy.EvaluateForRoute(
+        public void RouteSelectorKeepsDirectAndSupervisorEnvelopesSeparate() {
+            var direct = AutomatedAdjustmentInputPolicy.EvaluateForRoute(
                 180.0, 0.0, 180.0, supervisorCoarseRoute: false);
             var supervisor = AutomatedAdjustmentInputPolicy.EvaluateForRoute(
                 180.0, 0.0, 180.0, supervisorCoarseRoute: true);
 
-            legacy.IsEligible.Should().BeFalse();
-            legacy.Reason.Should().Contain("legacy");
+            direct.IsEligible.Should().BeFalse();
+            direct.Reason.Should().Contain("direct field");
             supervisor.IsEligible.Should().BeTrue();
             supervisor.Reason.Should().Contain("supervisor");
         }

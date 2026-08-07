@@ -586,7 +586,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             // A return-to-zero transaction and stationary reverification are preflight.
             var qualifiedFreshDeterminationReserveSeconds = supervisorCampaignMode
                 ? activeTppaCadenceAuthority.MaximumFreshDeterminationSeconds
-                : TppaFastAlignmentExecutionBudget.FreshDeterminationReserveSeconds;
+                : TppaFastAlignmentExecutionBudget.DirectFieldFreshDeterminationReserveSeconds;
             var alignmentRuntime = Stopwatch.StartNew();
             var fastRunId = enforceFastRuntimeBudget ? Guid.NewGuid() : Guid.Empty;
             var fastTerminalEventLogged = false;
@@ -1055,7 +1055,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                             determination.InitialMountAxisAzimuthError.ArcMinutes,
                             determination.InitialMountAxisAltitudeError.ArcMinutes,
                             determination.InitialMountAxisTotalError.ArcMinutes,
-                            supervisorCoarseRoute: enforceFastRuntimeBudget);
+                            supervisorCoarseRoute: supervisorCampaignMode);
                         Logger.Info(
                             $"TPPA automated-adjustment input qualification: " +
                             $"{(inputDecision.IsEligible ? "PASS" : "FAIL")}; {inputDecision.Reason}.");
@@ -1362,7 +1362,13 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                 if (enforceFastRuntimeBudget
                                         && executionPolicy.AllowActuatorMovement
                                         && TPAPAVM.ActiveAlignmentSystemVM?.DoAutomatedAdjustments == true) {
-                                    var moveDecision = TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
+                                    var moveDecision = supervisorCampaignMode
+                                        ? TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
+                                            alignmentRuntime.Elapsed,
+                                            maximumObservedFreshDeterminationSeconds,
+                                            freshFeedbackMoveCount,
+                                            qualifiedFreshDeterminationReserveSeconds)
+                                        : TppaFastAlignmentExecutionBudget.EvaluateBeforeFreshAgreement(
                                         alignmentRuntime.Elapsed,
                                         maximumObservedFreshDeterminationSeconds,
                                         freshFeedbackMoveCount,
@@ -3977,6 +3983,13 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         : TppaVerificationSettlePolicy.MinimumDirectFieldSettleSeconds));
                 i.AddRange(
                     TppaThreePointGeometryQualificationPolicy.GetConfigurationIssues(TargetDistance));
+                i.AddRange(UpasDirectTravelAdmissionPolicy.GetIssues(
+                    PolarAlignmentPlugin.ActiveAlignmentSystemVM is NINA.Plugins.PolarAlignment.Avalon.UniversalPolarAlignmentVM,
+                    true,
+                    Properties.Settings.Default.AvalonAzimuthTravelGuardEnabled,
+                    Properties.Settings.Default.AvalonAzimuthTravelGuardConfirmed,
+                    Properties.Settings.Default.AvalonAltitudeTravelGuardEnabled,
+                    Properties.Settings.Default.AvalonAltitudeTravelGuardConfirmed));
             }
             if (executionPolicy.AllowActuatorMovement && PolarAlignmentPlugin.ActiveAlignmentSystemVM != null && PolarAlignmentPlugin.ActiveAlignmentSystemVM?.DoAutomatedAdjustments == true && AlignmentTolerance == 0) {
                 i.Add("Automated adjustments are enabled, but polar alignment tolerance is set to zero. Please set an alignment tolerance!");
