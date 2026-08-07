@@ -4,8 +4,11 @@ using System.Collections.Generic;
 namespace NINA.Plugins.PolarAlignment {
     internal static class TppaVerificationSettlePolicy {
         public const double MaximumOverrideSeconds = 120.0;
-        // This threshold gates both verification evidence and automated actuator authority.
+        // Verification and metrology retain their longer qualification hold.
         public const double MinimumQualifiedSettleSeconds = 30.0;
+        // Direct field alignment still requires a completed slew and stable telemetry,
+        // but uses the mount's operational settle floor instead of metrology cadence.
+        public const double MinimumDirectFieldSettleSeconds = 5.0;
         public const double MinimumQualifiedTargetDistanceDegrees =
             TppaThreePointGeometryQualificationPolicy.MinimumConfiguredLegDegrees;
 

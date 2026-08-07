@@ -81,6 +81,15 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public void ActuatorQualificationAcceptsDirectFieldSettleFloor() {
+            TppaVerificationSettlePolicy.GetActuatorQualificationIssues(
+                    5.0,
+                    0.0,
+                    TppaVerificationSettlePolicy.MinimumDirectFieldSettleSeconds)
+                .Should().BeEmpty();
+        }
+
+        [Test]
         public void VerificationSlewAcceptsSafeConstantPierSideDestination() {
             var result = VerificationOnlySlewSafetyPolicy.Evaluate(
                 true,

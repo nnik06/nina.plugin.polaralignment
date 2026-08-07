@@ -622,7 +622,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     Properties.Settings.Default.AutoPause,
                     supervisorCampaignMode
                         ? activeTppaCadenceAuthority.QualifiedSettleSeconds
-                        : TppaVerificationSettlePolicy.MinimumQualifiedSettleSeconds);
+                        : TppaVerificationSettlePolicy.MinimumDirectFieldSettleSeconds);
                 Logger.Info(
                     $"TPPA_FAST_RUNTIME_CONFIGURATION eligible={fastConfiguration.IsEligible}; " +
                     $"settleSeconds={fastConfiguration.ResolvedSettleSeconds:F3}; " +
@@ -649,7 +649,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     ["covarianceAuthoritySha256"] = activeTppaCovarianceAuthority?.ArtifactSha256 ?? "direct-field",
                     ["cadenceAuthorityId"] = activeTppaCadenceAuthority?.AuthorityId.ToString("D") ?? "direct-field",
                     ["cadenceAuthoritySha256"] = activeTppaCadenceAuthority?.ArtifactSha256 ?? "direct-field",
-                    ["qualifiedSettleSeconds"] = supervisorCampaignMode ? activeTppaCadenceAuthority.QualifiedSettleSeconds : TppaVerificationSettlePolicy.MinimumQualifiedSettleSeconds,
+                    ["qualifiedSettleSeconds"] = supervisorCampaignMode ? activeTppaCadenceAuthority.QualifiedSettleSeconds : TppaVerificationSettlePolicy.MinimumDirectFieldSettleSeconds,
                     ["qualifiedFreshDeterminationSeconds"] = qualifiedFreshDeterminationReserveSeconds,
                     ["mechanicalStateId"] = activeTppaCovarianceAuthority?.MechanicalStateSha256 ?? "direct-field",
                     ["loadProfileId"] = activeTppaCovarianceAuthority?.LoadProfileId ?? "direct-field",
@@ -699,7 +699,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         VerificationPointSettleTimeSeconds,
                         supervisorCampaignMode
                             ? activeTppaCadenceAuthority.QualifiedSettleSeconds
-                            : TppaVerificationSettlePolicy.MinimumQualifiedSettleSeconds)
+                            : TppaVerificationSettlePolicy.MinimumDirectFieldSettleSeconds)
                         .FirstOrDefault();
                 if (settleAuthorityIssue != null) {
                     throw new SequenceEntityFailedException(
@@ -3892,9 +3892,14 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             if (executionPolicy.AllowActuatorMovement
                     && (PolarAlignmentPlugin.ActiveAlignmentSystemVM?.DoAutomatedAdjustments == true
                         || Properties.Settings.Default.DoAutomatedAdjustments)) {
+                var supervisorCampaignMode = EnforceFiveMinuteRuntimeBudget
+                    && Properties.Settings.Default.RequireExternalUpasSupervisorForAutomatedMoves;
                 i.AddRange(TppaVerificationSettlePolicy.GetActuatorQualificationIssues(
                     profileService.ActiveProfile.TelescopeSettings.SettleTime,
-                    VerificationPointSettleTimeSeconds));
+                    VerificationPointSettleTimeSeconds,
+                    supervisorCampaignMode
+                        ? TppaVerificationSettlePolicy.MinimumQualifiedSettleSeconds
+                        : TppaVerificationSettlePolicy.MinimumDirectFieldSettleSeconds));
                 i.AddRange(
                     TppaThreePointGeometryQualificationPolicy.GetConfigurationIssues(TargetDistance));
             }
