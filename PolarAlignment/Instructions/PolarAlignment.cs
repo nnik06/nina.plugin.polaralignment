@@ -438,7 +438,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             var totalDistance = (double)TargetDistance;
             var currentPointing = telescopeMediator.GetCurrentPosition();
             var previousMountRADegrees = currentPointing.RADegrees;
-            EnsureAutomatedArcEnvelopeSafe(
+            EnsureAutomatedNextPointEnvelopeSafe(
                 currentPointing,
                 totalDistance,
                 eastDirectionOverride ?? EastDirection);
@@ -3832,7 +3832,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             }
         }
 
-        private void EnsureAutomatedArcEnvelopeSafe(
+        private void EnsureAutomatedNextPointEnvelopeSafe(
                 Coordinates currentPointing,
                 double legDistanceDegrees,
                 bool eastDirection) {
@@ -3845,25 +3845,22 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 legDistanceDegrees,
                 eastDirection);
             var refraction = RefractionParameters.GetRefractionParameters(weatherDataMediator.GetInfo());
-            var nowUtc = DateTime.UtcNow;
-            var samples = plan.Forward
-                .Skip(1)
-                .Select((waypoint, index) => {
-                    var horizontal = waypoint.Transform(
-                        Latitude,
-                        Longitude,
-                        Elevation,
-                        refraction.PressureHPa,
-                        refraction.Temperature,
-                        refraction.RelativeHumidity,
-                        refraction.Wavelength,
-                        nowUtc);
-                    return new TppaArcEnvelopeSample(
-                        index == 0 ? "B" : "C",
-                        horizontal.Azimuth.Degree,
-                        horizontal.Altitude.Degree);
-                })
-                .ToArray();
+            var nextWaypoint = plan.Forward[1];
+            var horizontal = nextWaypoint.Transform(
+                Latitude,
+                Longitude,
+                Elevation,
+                refraction.PressureHPa,
+                refraction.Temperature,
+                refraction.RelativeHumidity,
+                refraction.Wavelength,
+                DateTime.UtcNow);
+            var samples = new[] {
+                new TppaArcEnvelopeSample(
+                    "next",
+                    horizontal.Azimuth.Degree,
+                    horizontal.Altitude.Degree)
+            };
             var envelope = new TppaMountMotionEnvelope(
                 MountMotionMinimumAltitudeDegrees,
                 MountMotionMaximumAltitudeDegrees,
@@ -3875,11 +3872,11 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 samples);
             if (!result.IsSafe) {
                 throw new SequenceEntityFailedException(
-                    $"Automated TPPA arc rejected before RA-axis movement: {result.Reason}.");
+                $"Automated TPPA next-point slew rejected before RA-axis movement: {result.Reason}.");
             }
 
             Logger.Info(
-                $"Automated TPPA arc envelope preflight passed: " +
+                $"Automated TPPA next-point envelope preflight passed: " +
                 string.Join("; ", samples.Select(sample =>
                     $"{sample.Name}=Az{sample.AzimuthDegrees:F2}/Alt{sample.AltitudeDegrees:F2}")) +
                 $"; {result.Reason}.");

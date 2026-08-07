@@ -11,17 +11,16 @@ namespace NINA.Plugins.PolarAlignment.Test {
             AzimuthEndDegrees: 10);
 
         [Test]
-        public void Evaluate_RejectsTheEntireArcWhenTheThirdSampleBreachesTheCeiling() {
+        public void Evaluate_RejectsTheNextSampleWhenItBreachesTheCeiling() {
             var result = TppaAutomatedArcEnvelopePolicy.Evaluate(
                 true,
                 Balcony,
                 new[] {
-                    new TppaArcEnvelopeSample("B", 320, 58),
-                    new TppaArcEnvelopeSample("C", 338, 70.23)
+                    new TppaArcEnvelopeSample("next", 338, 70.23)
                 });
 
             result.IsSafe.Should().BeFalse();
-            result.Reason.Should().Contain("C").And.Contain("altitude");
+            result.Reason.Should().Contain("next").And.Contain("altitude");
         }
 
         [Test]
@@ -30,8 +29,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 true,
                 Balcony,
                 new[] {
-                    new TppaArcEnvelopeSample("B", 320, 48),
-                    new TppaArcEnvelopeSample("C", 338, 66)
+                    new TppaArcEnvelopeSample("next", 338, 66)
                 });
 
             result.IsSafe.Should().BeTrue();

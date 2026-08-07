@@ -41,11 +41,14 @@ final polar-error claim is supported.
 * The existing mount-motion envelope guarded VerificationOnly waypoints, but
   direct automated RA-axis motion did not preflight the full B/C arc.
 
-Commit `67c92ea` adds an opt-in preflight for direct automation. When the
-existing envelope is enabled, it predicts B and C from the current pointing
-and rejects the complete arc before the first RA-axis move if either sample is
-outside the configured envelope. Unit tests cover the observed 70.23 degree C
-sample, an admissible arc, and the disabled-envelope compatibility path.
+Commit `67c92ea` introduced the initial opt-in direct-automation preflight;
+the follow-up correction validates exactly the *next* RA-axis destination from
+fresh pointing/time telemetry immediately before each move. When the existing
+envelope is enabled it rejects that next sample before motion if it is outside
+the configured envelope. This prevents the unsafe C move without forecasting a
+future point from stale time or a phantom fourth point. Unit tests cover the
+observed 70.23 degree destination, an admissible destination, and the
+disabled-envelope compatibility path.
 
 ## Stationary camera/solver series
 
