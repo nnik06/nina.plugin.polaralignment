@@ -84,6 +84,32 @@ supersede the actuator trial below; UPAS remains disabled for that campaign.
 - Select exactly one UPAS transport for a session. Do not let a stale direct-USB COM port satisfy a Pi-bridge preflight or vice versa.
 - Confirm iPolar is enumerated and acquire its dark frame before a campaign; after restarting iPolar, explicitly select the preserved previous dark frame before collecting witness evidence.
 
+## Production Direct Five-Minute Route
+
+This is the operational path for a normal attended imaging night. It supersedes
+the diagnostic measurement-qualification blocks below for the purpose of
+authorizing direct TPPA correction. Those blocks remain useful for investigating
+geometry or flexure, but they are not a paperwork admission gate.
+
+1. Confirm the present signed AZ and ALT marker readings, the +/-5.4 degree
+   hard bounds, and the selected travel scale. A power reset, manual movement,
+   or uncertain command clears those readings.
+2. Require a current, directional X and Y TPPA response calibration. The ALT/Y
+   response must be measured independently; never substitute the X response.
+3. Collect two fresh three-point TPPA determinations. They must agree closely
+   enough to steer a correction and must fit the five-minute feasibility policy.
+4. Permit at most two headroom-clamped corrective moves. Each needs explicit
+   command completion, configured settle, and a new fresh three-point result
+   before another command can be considered.
+5. Finish only after two independent fresh determinations are at or below 3
+   arcminutes total. If any response is implausible, inconsistent, or worse,
+   stop automatic correction with the last fresh residual preserved.
+
+The P20, iPolar, supervisor receipts, covariance campaign, alternate-arc
+diagnostics, and PHD2 drift studies are supplementary evidence. None is a
+precondition for this attended direct route. Travel limits, oversized-command
+refusal, settle, cancellation, and fresh feedback remain mandatory.
+
 ## Measurement Qualification
 1. After the required settling dwell, run three no-motion fresh TPPA determinations on safe arc A with fixed settings and refraction state.
 2. Require the robust set gate to pass: component MAD at most 20 arcseconds and total-error MAD at most 10 arcseconds.
