@@ -345,6 +345,22 @@ namespace NINA.Plugins.PolarAlignment {
                 Properties.Settings.Default.AvalonAltitudeDegreesPerNudgeUnit,
                 Properties.Settings.Default.AvalonReverseAltitude ? -1 : 1);
 
+            automatedAdjustmentController.ConfigureCalibratedDirectFullTravelRoute(
+                useUpasController && Properties.Settings.Default.AvalonDirectFullTravelRouteEnabled,
+                Properties.Settings.Default.AvalonDirectFullTravelRouteConfirmed,
+                Properties.Settings.Default.AvalonAzimuthStartingPositionDegrees,
+                Properties.Settings.Default.AvalonAzimuthMinimumDegrees,
+                Properties.Settings.Default.AvalonAzimuthMaximumDegrees,
+                Properties.Settings.Default.AvalonAltitudeStartingPositionDegrees,
+                Properties.Settings.Default.AvalonAltitudeMinimumDegrees,
+                Properties.Settings.Default.AvalonAltitudeMaximumDegrees,
+                Properties.Settings.Default.AvalonCalibratedAzimuthDeltaPerXUnit,
+                Properties.Settings.Default.AvalonCalibratedAzimuthDeltaPerYUnit,
+                Properties.Settings.Default.AvalonCalibratedAltitudeDeltaPerXUnit,
+                Properties.Settings.Default.AvalonCalibratedAltitudeDeltaPerYUnit,
+                Properties.Settings.Default.AvalonCalibratedMaximumXUnitsPerMove,
+                Properties.Settings.Default.AvalonCalibratedMaximumYUnitsPerMove);
+
             if (useUpasController) {
                 Logger.Info(
                     $"UPAS travel guard runtime settings: " +

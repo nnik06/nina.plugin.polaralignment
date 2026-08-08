@@ -128,6 +128,39 @@
     <Setting Name="AvalonAltitudeTravelGuardConfirmed" Type="System.Boolean" Scope="User">
       <Value Profile="(Default)">False</Value>
     </Setting>
+    <Setting Name="AvalonDirectFullTravelRouteEnabled" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">False</Value>
+    </Setting>
+    <Setting Name="AvalonDirectFullTravelRouteConfirmed" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">False</Value>
+    </Setting>
+    <Setting Name="AvalonAzimuthStartingPositionDegrees" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">0</Value>
+    </Setting>
+    <Setting Name="AvalonAzimuthMinimumDegrees" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">-5.4</Value>
+    </Setting>
+    <Setting Name="AvalonAzimuthMaximumDegrees" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">5.4</Value>
+    </Setting>
+    <Setting Name="AvalonCalibratedAzimuthDeltaPerXUnit" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">0</Value>
+    </Setting>
+    <Setting Name="AvalonCalibratedAzimuthDeltaPerYUnit" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">0</Value>
+    </Setting>
+    <Setting Name="AvalonCalibratedAltitudeDeltaPerXUnit" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">0</Value>
+    </Setting>
+    <Setting Name="AvalonCalibratedAltitudeDeltaPerYUnit" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">0</Value>
+    </Setting>
+    <Setting Name="AvalonCalibratedMaximumXUnitsPerMove" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">0</Value>
+    </Setting>
+    <Setting Name="AvalonCalibratedMaximumYUnitsPerMove" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">0</Value>
+    </Setting>
     <Setting Name="AvalonAltitudeStartingPositionDegrees" Type="System.Double" Scope="User">
       <Value Profile="(Default)">0</Value>
     </Setting>

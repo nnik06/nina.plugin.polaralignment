@@ -46,6 +46,19 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public void RouteSelectorAdmitsFullEnvelopeOnlyAfterFullRouteQualification() {
+            var unqualified = AutomatedAdjustmentInputPolicy.EvaluateForRoute(
+                300.0, -300.0, 424.264, supervisorCoarseRoute: false, qualifiedDirectFullTravelRoute: false);
+            var qualified = AutomatedAdjustmentInputPolicy.EvaluateForRoute(
+                300.0, -300.0, 424.264, supervisorCoarseRoute: false, qualifiedDirectFullTravelRoute: true);
+
+            unqualified.IsEligible.Should().BeFalse();
+            unqualified.Reason.Should().Contain("120'");
+            qualified.IsEligible.Should().BeTrue();
+            qualified.Reason.Should().Contain("supervisor coarse-correction");
+        }
+
+        [Test]
         public void SupervisorCoarseRouteAcceptsFullFieldEnvelope() {
             var decision = AutomatedAdjustmentInputPolicy.EvaluateSupervisorCoarse(
                 324.0, -324.0, 458.205195);

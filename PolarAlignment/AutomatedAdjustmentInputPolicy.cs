@@ -21,6 +21,27 @@ namespace NINA.Plugins.PolarAlignment {
             double altitudeErrorArcMinutes,
             double totalErrorArcMinutes,
             bool supervisorCoarseRoute) {
+            return EvaluateForRoute(
+                azimuthErrorArcMinutes,
+                altitudeErrorArcMinutes,
+                totalErrorArcMinutes,
+                supervisorCoarseRoute,
+                qualifiedDirectFullTravelRoute: false);
+        }
+
+        public static AutomatedAdjustmentInputDecision EvaluateForRoute(
+            double azimuthErrorArcMinutes,
+            double altitudeErrorArcMinutes,
+            double totalErrorArcMinutes,
+            bool supervisorCoarseRoute,
+            bool qualifiedDirectFullTravelRoute) {
+            if (qualifiedDirectFullTravelRoute) {
+                return EvaluateSupervisorCoarse(
+                    azimuthErrorArcMinutes,
+                    altitudeErrorArcMinutes,
+                    totalErrorArcMinutes);
+            }
+
             return supervisorCoarseRoute
                 ? EvaluateSupervisorCoarse(
                     azimuthErrorArcMinutes,

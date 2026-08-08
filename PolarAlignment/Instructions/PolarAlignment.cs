@@ -1051,11 +1051,33 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
 
                     if (executionPolicy.AllowActuatorMovement
                             && TPAPAVM.ActiveAlignmentSystemVM?.DoAutomatedAdjustments == true) {
+                        var directFullTravelQualification = TppaDirectFullTravelRouteQualification.Evaluate(
+                            Properties.Settings.Default.AvalonDirectFullTravelRouteEnabled,
+                            Properties.Settings.Default.AvalonDirectFullTravelRouteConfirmed,
+                            Properties.Settings.Default.AvalonAzimuthStartingPositionDegrees,
+                            Properties.Settings.Default.AvalonAzimuthMinimumDegrees,
+                            Properties.Settings.Default.AvalonAzimuthMaximumDegrees,
+                            Properties.Settings.Default.AvalonAltitudeStartingPositionDegrees,
+                            Properties.Settings.Default.AvalonAltitudeMinimumDegrees,
+                            Properties.Settings.Default.AvalonAltitudeMaximumDegrees,
+                            Properties.Settings.Default.AvalonCalibratedAzimuthDeltaPerXUnit,
+                            Properties.Settings.Default.AvalonCalibratedAzimuthDeltaPerYUnit,
+                            Properties.Settings.Default.AvalonCalibratedAltitudeDeltaPerXUnit,
+                            Properties.Settings.Default.AvalonCalibratedAltitudeDeltaPerYUnit,
+                            Properties.Settings.Default.AvalonCalibratedMaximumXUnitsPerMove,
+                            Properties.Settings.Default.AvalonCalibratedMaximumYUnitsPerMove,
+                            determination.InitialMountAxisAzimuthError.ArcMinutes,
+                            determination.InitialMountAxisAltitudeError.ArcMinutes);
+                        Logger.Info(
+                            $"TPPA calibrated direct full-travel qualification: " +
+                            $"{(directFullTravelQualification.IsQualified ? "PASS" : "FAIL")}; " +
+                            $"{directFullTravelQualification.Reason}.");
                         var inputDecision = AutomatedAdjustmentInputPolicy.EvaluateForRoute(
                             determination.InitialMountAxisAzimuthError.ArcMinutes,
                             determination.InitialMountAxisAltitudeError.ArcMinutes,
                             determination.InitialMountAxisTotalError.ArcMinutes,
-                            supervisorCoarseRoute: supervisorCampaignMode);
+                            supervisorCoarseRoute: supervisorCampaignMode,
+                            qualifiedDirectFullTravelRoute: directFullTravelQualification.IsQualified);
                         Logger.Info(
                             $"TPPA automated-adjustment input qualification: " +
                             $"{(inputDecision.IsEligible ? "PASS" : "FAIL")}; {inputDecision.Reason}.");

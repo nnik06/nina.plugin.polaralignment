@@ -1373,5 +1373,60 @@ namespace NINA.Plugins.PolarAlignment.Test {
 
             controller.AltitudePossibleMaximumDegrees.Should().BeApproximately(0.176, 0.0001);
         }
+
+        [Test]
+        public void AutomatedAdjustmentController_UsesBoundedCalibratedDirectFullTravelCorrection() {
+            var controller = new AutomatedAdjustmentController(useUpasEngagementController: true);
+            controller.ConfigureCalibratedDirectFullTravelRoute(
+                enabled: true,
+                operatorConfirmed: true,
+                azimuthStartingPositionDegrees: 0,
+                azimuthMinimumDegrees: -5.4,
+                azimuthMaximumDegrees: 5.4,
+                altitudeStartingPositionDegrees: 0,
+                altitudeMinimumDegrees: -5.4,
+                altitudeMaximumDegrees: 5.4,
+                azimuthDeltaPerXUnitDegrees: 0.05,
+                azimuthDeltaPerYUnitDegrees: 0,
+                altitudeDeltaPerXUnitDegrees: 0,
+                altitudeDeltaPerYUnitDegrees: 0.05,
+                maximumXUnitsPerMove: 81,
+                maximumYUnitsPerMove: 81);
+            controller.UpdateObservation(5, -5);
+
+            var plan = controller.CreatePlan();
+
+            plan.HasMovement.Should().BeTrue();
+            plan.Reason.Should().Contain("Calibrated direct full-travel correction");
+            Math.Abs(plan.XMagnitude).Should().BeLessOrEqualTo(81);
+            Math.Abs(plan.YMagnitude).Should().BeLessOrEqualTo(81);
+            plan.XMagnitude.Should().BeNegative();
+            plan.YMagnitude.Should().BePositive();
+        }
+
+        [Test]
+        public void AutomatedAdjustmentController_RejectsSingularDirectFullTravelProfile() {
+            var controller = new AutomatedAdjustmentController(useUpasEngagementController: true);
+            controller.ConfigureCalibratedDirectFullTravelRoute(
+                enabled: true,
+                operatorConfirmed: true,
+                azimuthStartingPositionDegrees: 0,
+                azimuthMinimumDegrees: -5.4,
+                azimuthMaximumDegrees: 5.4,
+                altitudeStartingPositionDegrees: 0,
+                altitudeMinimumDegrees: -5.4,
+                altitudeMaximumDegrees: 5.4,
+                azimuthDeltaPerXUnitDegrees: 0.05,
+                azimuthDeltaPerYUnitDegrees: 0.10,
+                altitudeDeltaPerXUnitDegrees: 0.025,
+                altitudeDeltaPerYUnitDegrees: 0.05,
+                maximumXUnitsPerMove: 81,
+                maximumYUnitsPerMove: 81);
+            controller.UpdateObservation(5, -5);
+
+            var plan = controller.CreatePlan();
+
+            plan.Reason.Should().NotContain("Calibrated direct full-travel correction");
+        }
     }
 }
