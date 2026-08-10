@@ -1391,7 +1391,9 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 altitudeDeltaPerXUnitDegrees: 0,
                 altitudeDeltaPerYUnitDegrees: 0.05,
                 maximumXUnitsPerMove: 81,
-                maximumYUnitsPerMove: 81);
+                maximumYUnitsPerMove: 81,
+                physicalAzimuthDegreesPerXUnit: 0.05,
+                physicalAltitudeDegreesPerYUnit: 0.05);
             controller.UpdateObservation(5, -5);
 
             var plan = controller.CreatePlan();
@@ -1421,12 +1423,44 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 altitudeDeltaPerXUnitDegrees: 0.025,
                 altitudeDeltaPerYUnitDegrees: 0.05,
                 maximumXUnitsPerMove: 81,
-                maximumYUnitsPerMove: 81);
+                maximumYUnitsPerMove: 81,
+                physicalAzimuthDegreesPerXUnit: 0.05,
+                physicalAltitudeDegreesPerYUnit: 0.05);
             controller.UpdateObservation(5, -5);
 
             var plan = controller.CreatePlan();
 
             plan.Reason.Should().NotContain("Calibrated direct full-travel correction");
+        }
+
+        [Test]
+        public void AutomatedAdjustmentController_UsesCalibratedAzimuthRouteWithoutMovingY() {
+            var controller = new AutomatedAdjustmentController(useUpasEngagementController: true);
+            controller.ConfigureCalibratedDirectFullTravelRoute(
+                enabled: true,
+                operatorConfirmed: true,
+                azimuthStartingPositionDegrees: 0,
+                azimuthMinimumDegrees: -5.4,
+                azimuthMaximumDegrees: 5.4,
+                altitudeStartingPositionDegrees: 0,
+                altitudeMinimumDegrees: -5.4,
+                altitudeMaximumDegrees: 5.4,
+                azimuthDeltaPerXUnitDegrees: 0.05,
+                azimuthDeltaPerYUnitDegrees: 0,
+                altitudeDeltaPerXUnitDegrees: 0,
+                altitudeDeltaPerYUnitDegrees: 0,
+                maximumXUnitsPerMove: 81,
+                maximumYUnitsPerMove: 81,
+                physicalAzimuthDegreesPerXUnit: 0.05,
+                physicalAltitudeDegreesPerYUnit: 0.05);
+            controller.UpdateObservation(5, -1);
+
+            var plan = controller.CreatePlan();
+
+            plan.HasMovement.Should().BeTrue();
+            plan.Reason.Should().Contain("azimuth-only");
+            plan.XMagnitude.Should().BeNegative();
+            plan.YMagnitude.Should().Be(0);
         }
     }
 }

@@ -1088,6 +1088,20 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                             Properties.Settings.Default.AvalonCalibratedAltitudeDeltaPerYUnit,
                             Properties.Settings.Default.AvalonCalibratedMaximumXUnitsPerMove,
                             Properties.Settings.Default.AvalonCalibratedMaximumYUnitsPerMove,
+                            Properties.Settings.Default.AvalonAzimuthDegreesPerNudgeUnit,
+                            Properties.Settings.Default.AvalonAltitudeDegreesPerNudgeUnit,
+                            determination.InitialMountAxisAzimuthError.ArcMinutes,
+                            determination.InitialMountAxisAltitudeError.ArcMinutes);
+                        var directAzimuthQualification = TppaDirectAxisRouteQualification.Evaluate(
+                            Properties.Settings.Default.AvalonDirectFullTravelRouteEnabled,
+                            Properties.Settings.Default.AvalonDirectFullTravelRouteConfirmed,
+                            Properties.Settings.Default.AvalonAzimuthStartingPositionDegrees,
+                            Properties.Settings.Default.AvalonAzimuthMinimumDegrees,
+                            Properties.Settings.Default.AvalonAzimuthMaximumDegrees,
+                            Properties.Settings.Default.AvalonAzimuthDegreesPerNudgeUnit,
+                            Properties.Settings.Default.AvalonCalibratedAzimuthDeltaPerXUnit,
+                            Properties.Settings.Default.AvalonCalibratedAltitudeDeltaPerXUnit,
+                            Properties.Settings.Default.AvalonCalibratedMaximumXUnitsPerMove,
                             determination.InitialMountAxisAzimuthError.ArcMinutes,
                             determination.InitialMountAxisAltitudeError.ArcMinutes);
                         Logger.Info(
@@ -1099,7 +1113,8 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                             determination.InitialMountAxisAltitudeError.ArcMinutes,
                             determination.InitialMountAxisTotalError.ArcMinutes,
                             supervisorCoarseRoute: supervisorCampaignMode,
-                            qualifiedDirectFullTravelRoute: directFullTravelQualification.IsQualified);
+                            qualifiedDirectFullTravelRoute: directFullTravelQualification.IsQualified,
+                            qualifiedDirectAzimuthRoute: directAzimuthQualification.IsQualified);
                         Logger.Info(
                             $"TPPA automated-adjustment input qualification: " +
                             $"{(inputDecision.IsEligible ? "PASS" : "FAIL")}; {inputDecision.Reason}.");

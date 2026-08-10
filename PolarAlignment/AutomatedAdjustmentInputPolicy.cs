@@ -1,3 +1,5 @@
+using System;
+
 namespace NINA.Plugins.PolarAlignment {
     internal readonly record struct AutomatedAdjustmentInputDecision(
         bool IsEligible,
@@ -34,9 +36,17 @@ namespace NINA.Plugins.PolarAlignment {
             double altitudeErrorArcMinutes,
             double totalErrorArcMinutes,
             bool supervisorCoarseRoute,
-            bool qualifiedDirectFullTravelRoute) {
+            bool qualifiedDirectFullTravelRoute,
+            bool qualifiedDirectAzimuthRoute = false) {
             if (qualifiedDirectFullTravelRoute) {
                 return EvaluateSupervisorCoarse(
+                    azimuthErrorArcMinutes,
+                    altitudeErrorArcMinutes,
+                    totalErrorArcMinutes);
+            }
+
+            if (qualifiedDirectAzimuthRoute) {
+                return EvaluateMixedDirectEnvelope(
                     azimuthErrorArcMinutes,
                     altitudeErrorArcMinutes,
                     totalErrorArcMinutes);
@@ -77,6 +87,30 @@ namespace NINA.Plugins.PolarAlignment {
                 MaximumFieldInitialAxisErrorArcMinutes,
                 MaximumFieldInitialTotalErrorArcMinutes,
                 "supervisor coarse-correction");
+        }
+
+        private static AutomatedAdjustmentInputDecision EvaluateMixedDirectEnvelope(
+                double azimuthErrorArcMinutes,
+                double altitudeErrorArcMinutes,
+                double totalErrorArcMinutes) {
+            if (!double.IsFinite(azimuthErrorArcMinutes)
+                || !double.IsFinite(altitudeErrorArcMinutes)
+                || !double.IsFinite(totalErrorArcMinutes)) {
+                return new(false, "direct calibrated-azimuth input contains non-finite values");
+            }
+
+            var maximumTotal = Math.Sqrt(
+                MaximumFieldInitialAxisErrorArcMinutes * MaximumFieldInitialAxisErrorArcMinutes
+                + MaximumInitialErrorArcMinutes * MaximumInitialErrorArcMinutes);
+            if (Math.Abs(azimuthErrorArcMinutes) > MaximumFieldInitialAxisErrorArcMinutes
+                || Math.Abs(altitudeErrorArcMinutes) > MaximumInitialErrorArcMinutes
+                || Math.Abs(totalErrorArcMinutes) > maximumTotal) {
+                return new(false,
+                    $"direct calibrated-azimuth input exceeds the mixed envelope: AZ <= {MaximumFieldInitialAxisErrorArcMinutes:F0}', ALT <= {MaximumInitialErrorArcMinutes:F0}', total <= {maximumTotal:F0}'");
+            }
+
+            return new(true,
+                $"direct calibrated-azimuth input is inside the mixed envelope: AZ <= {MaximumFieldInitialAxisErrorArcMinutes:F0}', ALT <= {MaximumInitialErrorArcMinutes:F0}'");
         }
 
         private static AutomatedAdjustmentInputDecision EvaluateWithLimit(

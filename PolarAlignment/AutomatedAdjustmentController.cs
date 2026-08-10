@@ -147,6 +147,7 @@ namespace NINA.Plugins.PolarAlignment {
 
         public bool UseUpasEngagementController { get; set; }
         private CalibratedDirectFullTravelRoute calibratedDirectFullTravelRoute;
+        private CalibratedDirectAzimuthRoute calibratedDirectAzimuthRoute;
 
         public bool AzimuthTravelGuardEnabled { get; set; }
         public bool AzimuthTravelGuardConfirmed { get; set; }
@@ -294,7 +295,9 @@ namespace NINA.Plugins.PolarAlignment {
             double altitudeDeltaPerXUnitDegrees,
             double altitudeDeltaPerYUnitDegrees,
             double maximumXUnitsPerMove,
-            double maximumYUnitsPerMove) {
+            double maximumYUnitsPerMove,
+            double physicalAzimuthDegreesPerXUnit,
+            double physicalAltitudeDegreesPerYUnit) {
             calibratedDirectFullTravelRoute = enabled && operatorConfirmed
                 ? new CalibratedDirectFullTravelRoute(
                     azimuthStartingPositionDegrees,
@@ -309,7 +312,19 @@ namespace NINA.Plugins.PolarAlignment {
                         altitudeDeltaPerXUnitDegrees,
                         altitudeDeltaPerYUnitDegrees),
                     maximumXUnitsPerMove,
-                    maximumYUnitsPerMove)
+                    maximumYUnitsPerMove,
+                    physicalAzimuthDegreesPerXUnit,
+                    physicalAltitudeDegreesPerYUnit)
+                : null;
+            calibratedDirectAzimuthRoute = enabled && operatorConfirmed
+                ? new CalibratedDirectAzimuthRoute(
+                    azimuthStartingPositionDegrees,
+                    azimuthMinimumDegrees,
+                    azimuthMaximumDegrees,
+                    physicalAzimuthDegreesPerXUnit,
+                    azimuthDeltaPerXUnitDegrees,
+                    altitudeDeltaPerXUnitDegrees,
+                    maximumXUnitsPerMove)
                 : null;
         }
 
@@ -484,6 +499,10 @@ namespace NINA.Plugins.PolarAlignment {
                 return ApplyAzimuthTravelGuard(calibratedPlan);
             }
 
+            if (TryCreateCalibratedDirectAzimuthPlan(currentObservation, out var calibratedAzimuthPlan)) {
+                return ApplyAzimuthTravelGuard(calibratedAzimuthPlan);
+            }
+
             if (TryCreateXEngagementPlan(currentObservation, out var engagementPlan)) {
                 consecutiveUnsafeModelSkips = 0;
                 return ApplyAzimuthTravelGuard(engagementPlan);
@@ -554,6 +573,8 @@ namespace NINA.Plugins.PolarAlignment {
                 calibratedDirectFullTravelRoute.ResponseModel.AltitudeDeltaPerYUnit,
                 calibratedDirectFullTravelRoute.MaximumXUnitsPerMove,
                 calibratedDirectFullTravelRoute.MaximumYUnitsPerMove,
+                calibratedDirectFullTravelRoute.PhysicalAzimuthDegreesPerXUnit,
+                calibratedDirectFullTravelRoute.PhysicalAltitudeDegreesPerYUnit,
                 observation.AzimuthErrorDegrees * 60.0,
                 observation.AltitudeErrorDegrees * 60.0);
             if (!qualification.IsQualified) {
@@ -573,6 +594,49 @@ namespace NINA.Plugins.PolarAlignment {
             }
 
             plan = new AutomatedAdjustmentPlan(xMagnitude, yMagnitude, false, "Calibrated direct full-travel correction");
+            return true;
+        }
+
+        private bool TryCreateCalibratedDirectAzimuthPlan(
+                AutomatedAdjustmentObservation observation,
+                out AutomatedAdjustmentPlan plan) {
+            plan = null;
+            if (calibratedDirectAzimuthRoute == null) {
+                return false;
+            }
+
+            var qualification = TppaDirectAxisRouteQualification.Evaluate(
+                enabled: true,
+                operatorConfirmed: true,
+                calibratedDirectAzimuthRoute.StartingPositionDegrees,
+                calibratedDirectAzimuthRoute.MinimumDegrees,
+                calibratedDirectAzimuthRoute.MaximumDegrees,
+                calibratedDirectAzimuthRoute.PhysicalDegreesPerXUnit,
+                calibratedDirectAzimuthRoute.AzimuthErrorDeltaPerXUnit,
+                calibratedDirectAzimuthRoute.AltitudeErrorDeltaPerXUnit,
+                calibratedDirectAzimuthRoute.MaximumXUnitsPerMove,
+                observation.AzimuthErrorDegrees * 60.0,
+                observation.AltitudeErrorDegrees * 60.0);
+            if (!qualification.IsQualified) {
+                Logger.Info($"Calibrated direct azimuth-only route is not eligible: {qualification.Reason}.");
+                return false;
+            }
+
+            if (!TryCreateSingleAxisPlan(
+                    calibratedDirectAzimuthRoute.AzimuthErrorDeltaPerXUnit,
+                    calibratedDirectAzimuthRoute.AltitudeErrorDeltaPerXUnit,
+                    observation,
+                    xAxis: true,
+                    calibratedDirectAzimuthRoute.MaximumXUnitsPerMove,
+                    out var singleAxisPlan)) {
+                return false;
+            }
+
+            plan = new AutomatedAdjustmentPlan(
+                singleAxisPlan.XMagnitude,
+                0,
+                false,
+                "Calibrated direct azimuth-only correction");
             return true;
         }
 
@@ -1688,7 +1752,9 @@ namespace NINA.Plugins.PolarAlignment {
                 double altitudeMaximumDegrees,
                 ResponseModel responseModel,
                 double maximumXUnitsPerMove,
-                double maximumYUnitsPerMove) {
+                double maximumYUnitsPerMove,
+                double physicalAzimuthDegreesPerXUnit,
+                double physicalAltitudeDegreesPerYUnit) {
                 AzimuthStartingPositionDegrees = azimuthStartingPositionDegrees;
                 AzimuthMinimumDegrees = azimuthMinimumDegrees;
                 AzimuthMaximumDegrees = azimuthMaximumDegrees;
@@ -1698,6 +1764,8 @@ namespace NINA.Plugins.PolarAlignment {
                 ResponseModel = responseModel;
                 MaximumXUnitsPerMove = maximumXUnitsPerMove;
                 MaximumYUnitsPerMove = maximumYUnitsPerMove;
+                PhysicalAzimuthDegreesPerXUnit = physicalAzimuthDegreesPerXUnit;
+                PhysicalAltitudeDegreesPerYUnit = physicalAltitudeDegreesPerYUnit;
             }
 
             public double AzimuthStartingPositionDegrees { get; }
@@ -1709,6 +1777,35 @@ namespace NINA.Plugins.PolarAlignment {
             public ResponseModel ResponseModel { get; }
             public double MaximumXUnitsPerMove { get; }
             public double MaximumYUnitsPerMove { get; }
+            public double PhysicalAzimuthDegreesPerXUnit { get; }
+            public double PhysicalAltitudeDegreesPerYUnit { get; }
+        }
+
+        private sealed class CalibratedDirectAzimuthRoute {
+            public CalibratedDirectAzimuthRoute(
+                    double startingPositionDegrees,
+                    double minimumDegrees,
+                    double maximumDegrees,
+                    double physicalDegreesPerXUnit,
+                    double azimuthErrorDeltaPerXUnit,
+                    double altitudeErrorDeltaPerXUnit,
+                    double maximumXUnitsPerMove) {
+                StartingPositionDegrees = startingPositionDegrees;
+                MinimumDegrees = minimumDegrees;
+                MaximumDegrees = maximumDegrees;
+                PhysicalDegreesPerXUnit = physicalDegreesPerXUnit;
+                AzimuthErrorDeltaPerXUnit = azimuthErrorDeltaPerXUnit;
+                AltitudeErrorDeltaPerXUnit = altitudeErrorDeltaPerXUnit;
+                MaximumXUnitsPerMove = maximumXUnitsPerMove;
+            }
+
+            public double StartingPositionDegrees { get; }
+            public double MinimumDegrees { get; }
+            public double MaximumDegrees { get; }
+            public double PhysicalDegreesPerXUnit { get; }
+            public double AzimuthErrorDeltaPerXUnit { get; }
+            public double AltitudeErrorDeltaPerXUnit { get; }
+            public double MaximumXUnitsPerMove { get; }
         }
     }
 

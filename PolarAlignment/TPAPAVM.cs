@@ -359,7 +359,9 @@ namespace NINA.Plugins.PolarAlignment {
                 Properties.Settings.Default.AvalonCalibratedAltitudeDeltaPerXUnit,
                 Properties.Settings.Default.AvalonCalibratedAltitudeDeltaPerYUnit,
                 Properties.Settings.Default.AvalonCalibratedMaximumXUnitsPerMove,
-                Properties.Settings.Default.AvalonCalibratedMaximumYUnitsPerMove);
+                Properties.Settings.Default.AvalonCalibratedMaximumYUnitsPerMove,
+                Properties.Settings.Default.AvalonAzimuthDegreesPerNudgeUnit,
+                Properties.Settings.Default.AvalonAltitudeDegreesPerNudgeUnit);
 
             if (useUpasController) {
                 Logger.Info(

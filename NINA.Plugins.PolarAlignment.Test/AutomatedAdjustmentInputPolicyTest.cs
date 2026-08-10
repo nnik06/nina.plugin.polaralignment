@@ -59,6 +59,21 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public void RouteSelectorAdmitsWideAzimuthButKeepsUncalibratedAltitudeClamped() {
+            var eligible = AutomatedAdjustmentInputPolicy.EvaluateForRoute(
+                300.0, 120.0, 323.11, supervisorCoarseRoute: false,
+                qualifiedDirectFullTravelRoute: false, qualifiedDirectAzimuthRoute: true);
+            var rejectedAltitude = AutomatedAdjustmentInputPolicy.EvaluateForRoute(
+                300.0, 120.1, 323.15, supervisorCoarseRoute: false,
+                qualifiedDirectFullTravelRoute: false, qualifiedDirectAzimuthRoute: true);
+
+            eligible.IsEligible.Should().BeTrue();
+            eligible.Reason.Should().Contain("calibrated-azimuth");
+            rejectedAltitude.IsEligible.Should().BeFalse();
+            rejectedAltitude.Reason.Should().Contain("ALT <= 120'");
+        }
+
+        [Test]
         public void SupervisorCoarseRouteAcceptsFullFieldEnvelope() {
             var decision = AutomatedAdjustmentInputPolicy.EvaluateSupervisorCoarse(
                 324.0, -324.0, 458.205195);

@@ -20,6 +20,8 @@ namespace NINA.Plugins.PolarAlignment {
             double altitudeDeltaPerYUnitDegrees,
             double maximumXUnitsPerMove,
             double maximumYUnitsPerMove,
+            double physicalAzimuthDegreesPerXUnit,
+            double physicalAltitudeDegreesPerYUnit,
             double azimuthErrorMinutes,
             double altitudeErrorMinutes) {
             if (!enabled || !operatorConfirmed) {
@@ -39,6 +41,8 @@ namespace NINA.Plugins.PolarAlignment {
                     altitudeDeltaPerYUnitDegrees,
                     maximumXUnitsPerMove,
                     maximumYUnitsPerMove,
+                    physicalAzimuthDegreesPerXUnit,
+                    physicalAltitudeDegreesPerYUnit,
                     azimuthErrorMinutes,
                     altitudeErrorMinutes)) {
                 return Deny("the calibrated direct full-travel route contains non-finite values");
@@ -75,13 +79,13 @@ namespace NINA.Plugins.PolarAlignment {
                     azimuthStartingPositionDegrees,
                     azimuthMinimumDegrees,
                     azimuthMaximumDegrees,
-                    azimuthDeltaPerXUnitDegrees,
+                    physicalAzimuthDegreesPerXUnit,
                     feasibility.RequiredXUnits)
                 || !HasSignedHeadroom(
                     altitudeStartingPositionDegrees,
                     altitudeMinimumDegrees,
                     altitudeMaximumDegrees,
-                    altitudeDeltaPerYUnitDegrees,
+                    physicalAltitudeDegreesPerYUnit,
                     feasibility.RequiredYUnits)) {
                 return new(false, feasibility, "the signed visual-marker travel envelope lacks required full-route headroom");
             }

@@ -19,6 +19,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 0.03, 0.06,
                 0.02, 0.04,
                 108, 108,
+                0.05, 0.05,
                 120, 120);
 
             result.IsQualified.Should().BeFalse();
@@ -34,10 +35,26 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 0.05, 0,
                 0, 0.05,
                 81, 81,
+                0.05, 0.05,
                 180, 0);
 
             result.IsQualified.Should().BeFalse();
             result.Reason.Should().Contain("headroom");
+        }
+
+        [Test]
+        public void Evaluate_UsesPhysicalScaleRatherThanSkyResponseForSignedHeadroom() {
+            var result = TppaDirectFullTravelRouteQualification.Evaluate(
+                true, true,
+                5.2, -5.4, 5.4,
+                0, -5.4, 5.4,
+                0.05, 0,
+                0, 0.05,
+                81, 81,
+                0.001, 0.05,
+                180, 0);
+
+            result.IsQualified.Should().BeTrue();
         }
 
         [Test]
@@ -57,6 +74,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 0.05, 0,
                 0, 0.05,
                 81, 81,
+                0.05, 0.05,
                 azimuthMinutes, altitudeMinutes);
         }
     }
