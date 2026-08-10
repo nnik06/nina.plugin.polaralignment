@@ -839,6 +839,7 @@ function Wait-NinaFreshDetermination {
     $deadline = $SinceLocal.AddMinutes($TppaTimeoutMinutes)
     $movementPattern = 'Nudging Avalon Polar Alignment System along [XY] axis|Sending command: \$J=.*[XY]'
     $script:LastWaitReason = "Running"
+    $seenRunningSequence = $false
     while ((Get-Date) -lt $deadline) {
         if (Test-StopWindow) {
             Stop-NinaSequence -Base $Base
@@ -893,6 +894,25 @@ function Wait-NinaFreshDetermination {
                 $script:LastWaitReason = "StopWindow"
             }
             return $null
+        }
+
+        # A failed or cancelled TPPA sequence can become terminal before its normal
+        # solve-failure budget is reached. Do not leave the field launcher waiting
+        # for a fresh result that can no longer arrive.
+        $seenRunningSequence = $seenRunningSequence -or
+            (@($lines | Where-Object { $_ -match 'Advanced Sequence starting|Starting Category: Polar Alignment' }).Count -gt 0)
+        try {
+            $compact = Invoke-Nina -Base $Base -Path "/sequence/json" -TimeoutSec 3
+            $statuses = @(Get-NinaSequenceStatuses -Node $compact.Response)
+            if ($statuses -contains "RUNNING") {
+                $seenRunningSequence = $true
+            } elseif ($seenRunningSequence -and $statuses.Count -gt 0) {
+                $script:LastWaitReason = "SequenceTerminatedWithoutFreshResult"
+                Log "NINA sequence became terminal before a fresh TPPA determination; statuses=$($statuses -join ',')."
+                return $null
+            }
+        } catch {
+            Log "Compact NINA sequence status was unavailable while waiting for a fresh TPPA determination: $($_.Exception.Message)"
         }
         Start-Sleep -Seconds 2
     }
