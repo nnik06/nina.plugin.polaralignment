@@ -28,6 +28,8 @@ Assert-Contains 'PHD2 freshly selected guide star' "a stopped PHD2 session must 
 Assert-Contains 'function Wait-NinaSequenceIdle' "supervisor must define a bounded NINA sequence-idle wait"
 Assert-Contains 'if (-not (Wait-NinaSequenceIdle -Base $Base))' "fresh TPPA stop must confirm NINA is idle before another sequence load"
 Assert-Contains 'refusing to reload it' "idle timeout must fail closed instead of racing a sequence reload"
+Assert-Contains '"/sequence/json" -TimeoutSec 3' "idle confirmation must fall back to the bounded sequence JSON endpoint"
+Assert-Contains 'confirmed idle state through /sequence/json fallback' "JSON fallback must only accept explicit non-running terminality"
 Assert-Contains 'if ($Mode -eq "FreshMeasurement")' "supervisor must expose a one-result measurement-only mode"
 Assert-Contains 'FreshMeasurement mode requires -SequencePath' "measurement-only mode must require a known sequence"
 Assert-Contains 'FreshMeasurement mode armed. It will stop immediately after one fresh three-point result; no PHD2 capture is scheduled.' "measurement-only mode must explicitly deny PHD2 capture"

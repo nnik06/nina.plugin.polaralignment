@@ -652,7 +652,18 @@ function Wait-NinaSequenceIdle {
                 return $true
             }
         } catch {
-            Log "Waiting for NINA sequence idle state: $($_.Exception.Message)"
+            $stateFailure = $_.Exception.Message
+            try {
+                $sequence = Invoke-Nina -Base $Base -Path "/sequence/json" -TimeoutSec 3
+                $statuses = @(Get-NinaSequenceStatuses -Node $sequence.Response)
+                if ($statuses.Count -gt 0 -and -not ($statuses -contains "RUNNING")) {
+                    Log "NINA sequence reached confirmed idle state through /sequence/json fallback after /sequence/state failure: $($statuses -join ',')"
+                    return $true
+                }
+                Log "Waiting for NINA sequence idle state: /sequence/state failed ($stateFailure); /sequence/json statuses=$($statuses -join ',')"
+            } catch {
+                Log "Waiting for NINA sequence idle state: /sequence/state failed ($stateFailure); /sequence/json fallback failed: $($_.Exception.Message)"
+            }
         }
         Start-Sleep -Seconds 2
     }

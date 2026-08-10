@@ -1,3 +1,8 @@
+## Version 2.2.6.119
+
+- Keep the fresh-measurement terminality gate while using bounded sequence JSON
+  status as a fallback when NINA's sequence-state API stalls.
+
 ## Version 2.2.6.118
 
 - Add a guarded one-result field-runner mode that stops after the fresh
