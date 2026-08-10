@@ -1,3 +1,8 @@
+## Version 2.2.6.118
+
+- Add a guarded one-result field-runner mode that stops after the fresh
+  three-point determination and has no PHD2 capture path.
+
 ## Version 2.2.6.117
 
 - Preflight every requested verification-only waypoint before the initial slew,

@@ -28,6 +28,9 @@ Assert-Contains 'PHD2 freshly selected guide star' "a stopped PHD2 session must 
 Assert-Contains 'function Wait-NinaSequenceIdle' "supervisor must define a bounded NINA sequence-idle wait"
 Assert-Contains 'if (-not (Wait-NinaSequenceIdle -Base $Base))' "fresh TPPA stop must confirm NINA is idle before another sequence load"
 Assert-Contains 'refusing to reload it' "idle timeout must fail closed instead of racing a sequence reload"
+Assert-Contains 'if ($Mode -eq "FreshMeasurement")' "supervisor must expose a one-result measurement-only mode"
+Assert-Contains 'FreshMeasurement mode requires -SequencePath' "measurement-only mode must require a known sequence"
+Assert-Contains 'FreshMeasurement mode armed. It will stop immediately after one fresh three-point result; no PHD2 capture is scheduled.' "measurement-only mode must explicitly deny PHD2 capture"
 Assert-Contains '$lockPosition = $null' "strict mode must not swallow startup lock validation for an uninitialized coordinate"
 Assert-Contains '@("Stopped", "Looping") -notcontains $preState' "passive drift must refuse to disturb an active guiding state"
 Assert-Contains 'PHD2 drift capture attempt $attempt/$Phd2CaptureAttempts' "transient retries must be explicitly bounded and logged"
@@ -57,6 +60,16 @@ $disableIndex = $text.IndexOf('set_guide_output_enabled" -Params @($false)')
 $guideIndex = $text.IndexOf('-Method "guide" -Params $guideParams')
 if ($disableIndex -lt 0 -or $guideIndex -lt 0 -or $disableIndex -ge $guideIndex) {
     throw "Assertion failed: guide output must be disabled before the guide command"
+}
+
+$freshMeasurementStart = $text.IndexOf('if ($Mode -eq "FreshMeasurement")')
+$stabilityStart = $text.IndexOf('if ($Mode -eq "Stability")')
+if ($freshMeasurementStart -lt 0 -or $stabilityStart -le $freshMeasurementStart) {
+    throw "Assertion failed: FreshMeasurement mode must precede Stability mode."
+}
+$freshMeasurementBlock = $text.Substring($freshMeasurementStart, $stabilityStart - $freshMeasurementStart)
+if ($freshMeasurementBlock.Contains('Capture-Phd2')) {
+    throw "Assertion failed: FreshMeasurement mode must not call a PHD2 capture function."
 }
 
 foreach ($eventName in @(

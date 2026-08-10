@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("Probe", "Phd2Drift", "Cycle", "BurstThenDrift", "Stability")]
+    [ValidateSet("Probe", "FreshMeasurement", "Phd2Drift", "Cycle", "BurstThenDrift", "Stability")]
     [string]$Mode = "Probe",
     [string]$NinaBaseUrl = "",
     [int[]]$NinaCandidatePorts = @(1888, 1889, 5000, 5001, 59590, 8080, 8081, 9000),
@@ -995,6 +995,36 @@ if ($Mode -eq "Probe") {
 }
 
 if ($Mode -eq "Phd2Drift") { Capture-Phd2DriftWithRetry -OutDir $runDir -Minutes $DriftMinutes -Label "daylight"; Log "Phd2Drift mode complete"; return }
+
+if ($Mode -eq "FreshMeasurement") {
+    if (-not $SequencePath) {
+        throw "FreshMeasurement mode requires -SequencePath so each result begins from a known fixed sequence."
+    }
+
+    $nina = Find-Nina
+    if (-not $nina) { throw "NINA API not found. Start NINA and enable Advanced API first." }
+
+    Load-NinaSequence -Base $nina
+    $state = Invoke-Nina -Base $nina -Path "/sequence/state" -TimeoutSec 20
+    $stateJson = $state.Response | ConvertTo-Json -Depth 30 -Compress
+    if ($stateJson -match '"PreSeatAzimuthBeforeMeasurement":true') {
+        throw "The loaded TPPA sequence has UPAS azimuth pre-seat enabled. FreshMeasurement mode refuses to start."
+    }
+    if ($stateJson -match '"StartFromCurrentPosition":true') {
+        throw "The loaded TPPA sequence starts from the current position. FreshMeasurement mode requires fixed configured start coordinates."
+    }
+
+    Assert-RecentSuccessfulAutofocus
+    Log "FreshMeasurement mode armed. It will stop immediately after one fresh three-point result; no PHD2 capture is scheduled."
+    Start-NinaSequence -Base $nina
+    $started = Get-Date
+    $measurement = Wait-NinaFreshDetermination -Base $nina -SinceLocal $started
+    if ($null -eq $measurement) {
+        throw "FreshMeasurement mode did not receive a usable fresh TPPA result; reason=$script:LastWaitReason."
+    }
+    Log "FreshMeasurement mode complete: $($measurement.Line)"
+    return
+}
 
 if ($Mode -eq "Stability") {
     $nina = Find-Nina
