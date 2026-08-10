@@ -2395,6 +2395,25 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             var originalEastDirection = EastDirection;
             context.ActivateFirstVerificationStep();
 
+            // Validate the entire requested verification trajectory before the initial slew.
+            // The existing live-telemetry preflight below remains necessary because the
+            // telescope can arrive at a materially different A point.
+            if (!StartFromCurrentPosition) {
+                var refraction = RefractionParameters.GetRefractionParameters(weatherDataMediator.GetInfo());
+                var requestedInitialPointing = Coordinates.Coordinates.Transform(
+                    Epoch.J2000,
+                    refraction.PressureHPa,
+                    refraction.Temperature,
+                    refraction.RelativeHumidity,
+                    refraction.Wavelength);
+                var requestedWaypointPlan = TppaVerificationWaypointPlan.Create(
+                    requestedInitialPointing,
+                    TargetDistance,
+                    originalEastDirection);
+                EnsureVerificationOnlyWaypointPlanSafe(requestedWaypointPlan);
+                Logger.Info("TPPA verification-only requested A/B/C trajectory preflight passed before initial slew.");
+            }
+
             await VerificationOnlyCleanupRunner.Run(
                 async operationToken => {
                     if (!StartFromCurrentPosition) {
@@ -2427,14 +2446,10 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         cleanupPointing,
                         TargetDistance,
                         originalEastDirection);
-                    var reciprocalWaypoints = OverdeterminedShadowModelCheck
-                        ? waypointPlan.ReciprocalModelCheck
-                        : waypointPlan.Reciprocal;
+                    var reciprocalWaypoints = GetVerificationOnlyReciprocalWaypoints(waypointPlan);
                     var forwardDirection = originalEastDirection ? "East" : "West";
                     var reciprocalDirection = originalEastDirection ? "West" : "East";
-                    foreach (var waypoint in waypointPlan.Forward.Concat(reciprocalWaypoints)) {
-                        EnsureVerificationOnlySlewDestinationSafe(waypoint);
-                    }
+                    EnsureVerificationOnlyWaypointPlanSafe(waypointPlan);
                     Logger.Info($"TPPA verification-only waypoint preflight passed before measurement; " +
                                 $"overdeterminedShadowModelCheck={OverdeterminedShadowModelCheck}; reciprocalSamples={reciprocalWaypoints.Count}.");
 
@@ -3745,6 +3760,20 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 } catch (Exception timingFailure) {
                     Logger.Error("Failed to write TPPA movement timing evidence.", timingFailure);
                 }
+            }
+        }
+
+        private IReadOnlyList<Coordinates> GetVerificationOnlyReciprocalWaypoints(
+                TppaVerificationWaypointPlan waypointPlan) =>
+            OverdeterminedShadowModelCheck
+                ? waypointPlan.ReciprocalModelCheck
+                : waypointPlan.Reciprocal;
+
+        private void EnsureVerificationOnlyWaypointPlanSafe(
+                TppaVerificationWaypointPlan waypointPlan) {
+            var reciprocalWaypoints = GetVerificationOnlyReciprocalWaypoints(waypointPlan);
+            foreach (var waypoint in waypointPlan.Forward.Concat(reciprocalWaypoints)) {
+                EnsureVerificationOnlySlewDestinationSafe(waypoint);
             }
         }
 

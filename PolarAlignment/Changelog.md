@@ -1,3 +1,8 @@
+## Version 2.2.6.117
+
+- Preflight every requested verification-only waypoint before the initial slew,
+  then repeat the waypoint check from the settled live A pointing.
+
 ## Version 2.2.6.113
 
 - Invoke the operational two-fresh, true-pole, safety-gated qualification policy from the five-minute UPAS completion path.
