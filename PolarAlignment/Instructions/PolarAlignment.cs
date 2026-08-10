@@ -104,6 +104,15 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
         private TppaCommissionedCovarianceAuthority activeTppaCovarianceAuthority;
         private TppaCommissionedCadenceAuthority activeTppaCadenceAuthority;
         private readonly List<TppaCoarseDeterminationEvidence> activeObservedDeterminations = new();
+        private sealed class TppaSolveConsistencyQualificationBox {
+            public TppaSolveConsistencyQualificationBox(TppaSolveConsistencyQualification value) {
+                Value = value;
+            }
+
+            public TppaSolveConsistencyQualification Value { get; }
+        }
+
+        private readonly ConditionalWeakTable<PolarErrorDetermination, TppaSolveConsistencyQualificationBox> freshSolveConsistencyQualifications = new();
         private IList<string> issues = new List<string>();
         private const string ResumeAlignmentTopic = $"{nameof(PolarAlignmentPlugin)}_{nameof(PolarAlignment)}_ResumeAlignment";
         private const string PauseAlignmentTopic = $"{nameof(PolarAlignmentPlugin)}_{nameof(PolarAlignment)}_PauseAlignment";        
@@ -433,7 +442,11 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             }
         }
 
-        private async Task<PlateSolveResult> AutomatedNextPoint(IProgress<ApplicationStatus> progress, CancellationToken token, bool? eastDirectionOverride = null) {
+        private async Task<PlateSolveResult> AutomatedNextPoint(
+                IProgress<ApplicationStatus> progress,
+                CancellationToken token,
+                bool? eastDirectionOverride = null,
+                ICollection<TppaSolvedPointing> solvedPointings = null) {
             PlateSolveResult solve;
             var totalDistance = (double)TargetDistance;
             var currentPointing = telescopeMediator.GetCurrentPosition();
@@ -454,7 +467,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 await domeMediator.WaitForDomeSynchronization(token);
             }
 
-            solve = await Solve(TPAPAVM, 5.0, progress, token);
+            solve = await SolveWithLedger(TPAPAVM, 5.0, progress, token, solvedPointings);
 
             var distance = Distance(previousMountRADegrees, telescopeMediator.GetCurrentPosition().RADegrees);
             if (distance - totalDistance < -1) {
@@ -895,7 +908,8 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                             localCTS.Token);
                     }
 
-                    var solve1 = await Solve(TPAPAVM, 5.0, progress, localCTS.Token);
+                    var initialSolvedPointings = new List<TppaSolvedPointing>(3);
+                    var solve1 = await SolveWithLedger(TPAPAVM, 5.0, progress, localCTS.Token, initialSolvedPointings);
                     var refractionParameter = runRefractionParameters;
 
                     var telescopeInfo = telescopeMediator.GetInfo();
@@ -917,7 +931,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
 
                     PlateSolveResult solve2 = null;
                     if (!ManualMode) {
-                        solve2 = await AutomatedNextPoint(progress, localCTS.Token);
+                        solve2 = await AutomatedNextPoint(progress, localCTS.Token, null, initialSolvedPointings);
                     } else {
                         solve2 = await ManualNextPoint(solve1, progress, localCTS.Token);
                     }
@@ -935,7 +949,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
 
                     PlateSolveResult solve3 = null;
                     if (!ManualMode) {
-                        solve3 = await AutomatedNextPoint(progress, localCTS.Token);
+                        solve3 = await AutomatedNextPoint(progress, localCTS.Token, null, initialSolvedPointings);
                     } else {
                         solve3 = await ManualNextPoint(solve2, progress, localCTS.Token);
                         await CoreUtil.Wait(TimeSpan.FromSeconds(10), localCTS.Token, progress, "Waiting for things to settle. Make sure the scope is tracking and don't move any further!");
@@ -976,6 +990,14 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                                                                           Properties.Settings.Default.RefractionAdjustment,
                                                                                           decSpread.ArcSeconds),
                                                        localCTS.Token);
+                    var initialSolveConsistency = TppaSolveConsistencyQualificationPolicy.Evaluate(initialSolvedPointings);
+                    freshSolveConsistencyQualifications.Add(
+                        determination,
+                        new TppaSolveConsistencyQualificationBox(initialSolveConsistency));
+                    Logger.Info($"TPPA initial fresh solve consistency: {(initialSolveConsistency.IsQualified ? "PASS" : "FAIL")}; " +
+                                $"minResidual={initialSolveConsistency.MinimumResidualDegrees:F3}; " +
+                                $"maxResidual={initialSolveConsistency.MaximumResidualDegrees:F3}; " +
+                                $"reason={initialSolveConsistency.Reason}");
                     TPAPAVM.PolarErrorDetermination = determination;
                     BindFreshGeometryQualification(
                         TPAPAVM,
@@ -1910,6 +1932,21 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 throw new SequenceEntityFailedException(
                     $"Automated polar-alignment correction was denied because {qualification.Reason} " +
                     "The geometry gate qualifies numerical observability only and no UPAS movement was authorized.");
+            }
+            if (freshSolveConsistencyQualifications.TryGetValue(determination, out var solveConsistencyBox)) {
+                var solveConsistency = solveConsistencyBox.Value;
+                Logger.Info($"TPPA {context} solve consistency: " +
+                            $"{(solveConsistency.IsQualified ? "PASS" : "FAIL")}; " +
+                            $"reason={solveConsistency.Reason}");
+                if (requireForAutomatedMovement && !solveConsistency.IsQualified) {
+                    throw new SequenceEntityFailedException(
+                        "Automated polar-alignment correction was denied because " +
+                        $"{solveConsistency.Reason} No UPAS movement was authorized.");
+                }
+            } else if (requireForAutomatedMovement) {
+                throw new SequenceEntityFailedException(
+                    "Automated polar-alignment correction was denied because the fresh three-point " +
+                    "solve-consistency qualification is missing. No UPAS movement was authorized.");
             }
             return qualification;
         }
@@ -3244,6 +3281,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             var returnToCorrectionPointing = !ManualMode && telescopeMediator.GetInfo().Connected;
             var refractionParameter = RefractionParameters.GetRefractionParameters(weatherDataMediator.GetInfo());
             var solves = new PlateSolveResult[3];
+            var solvedPointings = new List<TppaSolvedPointing>(3);
             var positions = new Position[3];
             var mountConnected = new bool[3];
             var mountDeclinations = new double[3];
@@ -3261,7 +3299,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     }
                 }
 
-                solves[0] = await Solve(context, 5.0, progress, token);
+                solves[0] = await SolveWithLedger(context, 5.0, progress, token, solvedPointings);
                 var mountInfo0 = telescopeMediator.GetInfo();
                 mountConnected[0] = mountInfo0.Connected;
                 mountDeclinations[0] = mountInfo0.Declination;
@@ -3270,7 +3308,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 Logger.Info($"Completion verification first measurement point {solves[0].Coordinates} - Vector: {positions[0].Vector} - Position Angle: {positions[0].PositionAngle}{mountInfoSuffix0}");
 
                 solves[1] = !ManualMode
-                    ? await AutomatedNextPoint(progress, token, eastDirection)
+                    ? await AutomatedNextPoint(progress, token, eastDirection, solvedPointings)
                     : await ManualNextPoint(solves[0], progress, token);
                 var mountInfo1 = telescopeMediator.GetInfo();
                 mountConnected[1] = mountInfo1.Connected;
@@ -3280,7 +3318,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 Logger.Info($"Completion verification second measurement point {solves[1].Coordinates} - Vector: {positions[1].Vector} - Position Angle: {positions[1].PositionAngle}{mountInfoSuffix1}");
 
                 if (!ManualMode) {
-                    solves[2] = await AutomatedNextPoint(progress, token, eastDirection);
+                    solves[2] = await AutomatedNextPoint(progress, token, eastDirection, solvedPointings);
                 } else {
                     solves[2] = await ManualNextPoint(solves[1], progress, token);
                     await CoreUtil.Wait(TimeSpan.FromSeconds(10), token, progress, "Waiting for things to settle. Make sure the scope is tracking and don't move any further!");
@@ -3377,6 +3415,14 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                                                                   Properties.Settings.Default.RefractionAdjustment,
                                                                                   decSpread.ArcSeconds),
                                                token);
+            var solveConsistency = TppaSolveConsistencyQualificationPolicy.Evaluate(solvedPointings);
+            freshSolveConsistencyQualifications.Add(
+                determination,
+                new TppaSolveConsistencyQualificationBox(solveConsistency));
+            Logger.Info($"TPPA fresh solve consistency: {(solveConsistency.IsQualified ? "PASS" : "FAIL")}; " +
+                        $"minResidual={solveConsistency.MinimumResidualDegrees:F3}; " +
+                        $"maxResidual={solveConsistency.MaximumResidualDegrees:F3}; " +
+                        $"reason={solveConsistency.Reason}");
             capture?.Invoke(new TppaFreshDeterminationCapture(
                 determination,
                 Array.AsReadOnly((PlateSolveResult[])solves.Clone())));
@@ -3401,7 +3447,15 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 double searchRadiusIncrementOnFailure,
                 IProgress<ApplicationStatus> progress,
                 CancellationToken token) =>
-            SolveCore(context, searchRadiusIncrementOnFailure, progress, token, null);
+            SolveCore(context, searchRadiusIncrementOnFailure, progress, token, null, null);
+
+        private Task<PlateSolveResult> SolveWithLedger(
+                TPAPAVM context,
+                double searchRadiusIncrementOnFailure,
+                IProgress<ApplicationStatus> progress,
+                CancellationToken token,
+                ICollection<TppaSolvedPointing> solvedPointings) =>
+            SolveCore(context, searchRadiusIncrementOnFailure, progress, token, null, solvedPointings);
 
         private Task<PlateSolveResult> SolveVerificationPoint(
                 TPAPAVM context,
@@ -3409,14 +3463,15 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 IProgress<ApplicationStatus> progress,
                 CancellationToken token,
                 Guid diagnosticRunId) =>
-            SolveCore(context, searchRadiusIncrementOnFailure, progress, token, diagnosticRunId);
+            SolveCore(context, searchRadiusIncrementOnFailure, progress, token, diagnosticRunId, null);
 
         private async Task<PlateSolveResult> SolveCore(
                 TPAPAVM context,
                 double searchRadiusIncrementOnFailure,
                 IProgress<ApplicationStatus> progress,
                 CancellationToken token,
-                Guid? diagnosticRunId) {
+                Guid? diagnosticRunId,
+                ICollection<TppaSolvedPointing> solvedPointings) {
             var retryPolicy = TppaSolveRetryPolicy.FieldDefault;
             PlateSolveResult result = new PlateSolveResult { Success = false };
             double usedSearchRadius = SearchRadius;
@@ -3573,6 +3628,16 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         SolvedDeclinationDegrees: result.Coordinates?.Dec,
                         FailureKind: solverException != null ? "solver-exception" : result.Success ? null : "solve-unsuccessful",
                         FailureMessage: solverException?.Message).ToJson());
+
+                    if (result.Success && requestedCoordinates != null && result.Coordinates != null) {
+                        solvedPointings?.Add(new TppaSolvedPointing(
+                            attempt,
+                            usedSearchRadius,
+                            requestedCoordinates.RADegrees,
+                            requestedCoordinates.Dec,
+                            result.Coordinates.RADegrees,
+                            result.Coordinates.Dec));
+                    }
 
                     if (!result.Success) {
                         usedSearchRadius = Math.Min(180, usedSearchRadius + Math.Max(0, searchRadiusIncrementOnFailure));
