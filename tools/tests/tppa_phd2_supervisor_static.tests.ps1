@@ -37,6 +37,8 @@ Assert-Contains 'NINA sequence became terminal before a fresh TPPA determination
 Assert-Contains 'if ($Mode -eq "FreshMeasurement")' "supervisor must expose a one-result measurement-only mode"
 Assert-Contains 'FreshMeasurement mode requires -SequencePath' "measurement-only mode must require a known sequence"
 Assert-Contains 'FreshMeasurement mode armed. It will stop immediately after one fresh three-point result; no PHD2 capture is scheduled.' "measurement-only mode must explicitly deny PHD2 capture"
+Assert-Contains '$PlateSolveFailureBackoffMinutes = 0' "one-shot FreshMeasurement mode must not sleep through a cloud backoff"
+Assert-Contains '$script:LastWaitReason = "CloudRejected"' "a no-backoff cloud failure must be reported as rejected, not as a retry backoff"
 Assert-Contains '$lockPosition = $null' "strict mode must not swallow startup lock validation for an uninitialized coordinate"
 Assert-Contains '@("Stopped", "Looping") -notcontains $preState' "passive drift must refuse to disturb an active guiding state"
 Assert-Contains 'PHD2 drift capture attempt $attempt/$Phd2CaptureAttempts' "transient retries must be explicitly bounded and logged"

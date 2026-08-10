@@ -878,6 +878,10 @@ function Wait-NinaFreshDetermination {
         if (Test-NinaExplicitCloudFailure -SinceLocal $SinceLocal) {
             Log "Explicit cloud preflight failed; stopping this TPPA run before exhausting the normal solve-failure budget."
             Stop-NinaSequence -Base $Base
+            if ($PlateSolveFailureBackoffMinutes -le 0) {
+                $script:LastWaitReason = "CloudRejected"
+                return $null
+            }
             if (Wait-CloudBackoff -Minutes $PlateSolveFailureBackoffMinutes) {
                 $script:LastWaitReason = "CloudBackoff"
             } else {
@@ -1046,6 +1050,10 @@ if ($Mode -eq "FreshMeasurement") {
     }
 
     Assert-RecentSuccessfulAutofocus
+    # A one-shot measurement is evidence gathering, not a retry campaign. Return
+    # immediately after an explicit cloud/solve rejection so it cannot consume the
+    # field window in a backoff sleep.
+    $PlateSolveFailureBackoffMinutes = 0
     Log "FreshMeasurement mode armed. It will stop immediately after one fresh three-point result; no PHD2 capture is scheduled."
     Start-NinaSequence -Base $nina
     $started = Get-Date
