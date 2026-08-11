@@ -47,6 +47,24 @@ The calibration values persist for review, but route attestation is cleared at
 the start of every NINA session and after a UPAS connection/reset. It is a
 current-session motion check, not a long-lived configuration permission.
 
+## First Session With No ALT/Y Column
+
+Do not invent an ALT/Y value. A route with a fresh, trusted X column can begin
+with the existing bounded bootstrap path:
+
+1. Enter the measured X column, physical marker bounds, X/Y per-move limits,
+   and the current-session marker positions; attest the reviewed route.
+2. Obtain the two agreeing fresh TPPA determinations required before motion.
+3. Let TPPA issue its one bounded 20-unit Y bootstrap probe and wait for its
+   fresh three-point feedback.
+4. It may continue only when that response is non-regressing, materially
+   observable, independent of the X column, and conditioned. Otherwise the
+   run stops without a compensating guess or a further UPAS command.
+5. A qualified probe supplies a session-local 2x2 model for the remaining
+   bounded feedback moves. It is not silently promoted to a persistent field
+   calibration; preserve the run log and promote the measured values only
+   after reviewing their response and uncertainty.
+
 ## Five-Minute Contract
 
 The full-travel route is admitted only when
