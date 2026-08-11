@@ -145,3 +145,9 @@ field campaign proves the logical-command-to-marker sign, scale, and backlash
 reserve at both ends of each axis. Its purpose is to record whether a proposed
 first correction points inward or outward from the visually confirmed marker,
 not to bypass a hard-stop guard.
+
+When the calibrated full-travel planner produces a candidate, it emits one
+`TPPA_UPAS_SIGNED_FULL_TRAVEL_DIAGNOSTIC` record for the current configured
+marker start, physical scale, and logical-to-marker direction. The record is
+explicitly `authority=reporting-only`; it is field evidence for commissioning,
+not a movement authorization.

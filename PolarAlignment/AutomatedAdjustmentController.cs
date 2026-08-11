@@ -332,7 +332,9 @@ namespace NINA.Plugins.PolarAlignment {
             double maximumXUnitsPerMove,
             double maximumYUnitsPerMove,
             double physicalAzimuthDegreesPerXUnit,
-            double physicalAltitudeDegreesPerYUnit) {
+            double physicalAltitudeDegreesPerYUnit,
+            int physicalAzimuthCommandDirectionMultiplier = 1,
+            int physicalAltitudeCommandDirectionMultiplier = 1) {
             calibratedDirectFullTravelRoute = enabled && operatorConfirmed
                 ? new CalibratedDirectFullTravelRoute(
                     azimuthStartingPositionDegrees,
@@ -349,7 +351,9 @@ namespace NINA.Plugins.PolarAlignment {
                     maximumXUnitsPerMove,
                     maximumYUnitsPerMove,
                     physicalAzimuthDegreesPerXUnit,
-                    physicalAltitudeDegreesPerYUnit)
+                    physicalAltitudeDegreesPerYUnit,
+                    physicalAzimuthCommandDirectionMultiplier,
+                    physicalAltitudeCommandDirectionMultiplier)
                 : null;
             calibratedDirectAzimuthRoute = enabled && operatorConfirmed
                 ? new CalibratedDirectAzimuthRoute(
@@ -855,7 +859,30 @@ namespace NINA.Plugins.PolarAlignment {
             }
 
             plan = new AutomatedAdjustmentPlan(xMagnitude, yMagnitude, false, "Calibrated direct full-travel correction");
+            LogCalibratedDirectSignedEnvelopeDiagnostic(plan);
             return true;
+        }
+
+        private void LogCalibratedDirectSignedEnvelopeDiagnostic(AutomatedAdjustmentPlan plan) {
+            var azimuth = TppaSignedTravelEnvelopeDiagnostic.Evaluate(
+                calibratedDirectFullTravelRoute.AzimuthStartingPositionDegrees,
+                calibratedDirectFullTravelRoute.AzimuthMinimumDegrees,
+                calibratedDirectFullTravelRoute.AzimuthMaximumDegrees,
+                plan.XMagnitude,
+                Math.Abs(calibratedDirectFullTravelRoute.PhysicalAzimuthDegreesPerXUnit),
+                calibratedDirectFullTravelRoute.PhysicalAzimuthCommandDirectionMultiplier);
+            var altitude = TppaSignedTravelEnvelopeDiagnostic.Evaluate(
+                calibratedDirectFullTravelRoute.AltitudeStartingPositionDegrees,
+                calibratedDirectFullTravelRoute.AltitudeMinimumDegrees,
+                calibratedDirectFullTravelRoute.AltitudeMaximumDegrees,
+                plan.YMagnitude,
+                Math.Abs(calibratedDirectFullTravelRoute.PhysicalAltitudeDegreesPerYUnit),
+                calibratedDirectFullTravelRoute.PhysicalAltitudeCommandDirectionMultiplier);
+            Logger.Info(
+                $"TPPA_UPAS_SIGNED_FULL_TRAVEL_DIAGNOSTIC authority=reporting-only, X={Math.Round(plan.XMagnitude, 3)}, Y={Math.Round(plan.YMagnitude, 3)}, " +
+                $"azimuthInside={azimuth.IsInsideEnvelope}, azimuthProjected={Math.Round(azimuth.ProjectedPositionDegrees, 3)}, " +
+                $"altitudeInside={altitude.IsInsideEnvelope}, altitudeProjected={Math.Round(altitude.ProjectedPositionDegrees, 3)}. " +
+                "Existing travel guards remain authoritative.");
         }
 
         private bool TryCreateCalibratedDirectAzimuthPlan(
@@ -2057,7 +2084,9 @@ namespace NINA.Plugins.PolarAlignment {
                 double maximumXUnitsPerMove,
                 double maximumYUnitsPerMove,
                 double physicalAzimuthDegreesPerXUnit,
-                double physicalAltitudeDegreesPerYUnit) {
+                double physicalAltitudeDegreesPerYUnit,
+                int physicalAzimuthCommandDirectionMultiplier,
+                int physicalAltitudeCommandDirectionMultiplier) {
                 AzimuthStartingPositionDegrees = azimuthStartingPositionDegrees;
                 AzimuthMinimumDegrees = azimuthMinimumDegrees;
                 AzimuthMaximumDegrees = azimuthMaximumDegrees;
@@ -2069,6 +2098,8 @@ namespace NINA.Plugins.PolarAlignment {
                 MaximumYUnitsPerMove = maximumYUnitsPerMove;
                 PhysicalAzimuthDegreesPerXUnit = physicalAzimuthDegreesPerXUnit;
                 PhysicalAltitudeDegreesPerYUnit = physicalAltitudeDegreesPerYUnit;
+                PhysicalAzimuthCommandDirectionMultiplier = physicalAzimuthCommandDirectionMultiplier < 0 ? -1 : 1;
+                PhysicalAltitudeCommandDirectionMultiplier = physicalAltitudeCommandDirectionMultiplier < 0 ? -1 : 1;
             }
 
             public double AzimuthStartingPositionDegrees { get; }
@@ -2082,6 +2113,8 @@ namespace NINA.Plugins.PolarAlignment {
             public double MaximumYUnitsPerMove { get; }
             public double PhysicalAzimuthDegreesPerXUnit { get; }
             public double PhysicalAltitudeDegreesPerYUnit { get; }
+            public int PhysicalAzimuthCommandDirectionMultiplier { get; }
+            public int PhysicalAltitudeCommandDirectionMultiplier { get; }
         }
 
         private sealed class CalibratedDirectAzimuthRoute {
