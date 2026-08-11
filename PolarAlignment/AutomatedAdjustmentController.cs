@@ -205,6 +205,12 @@ namespace NINA.Plugins.PolarAlignment {
             && !IsProbeAxisExhausted(xAxis: false);
 
         /// <summary>
+        /// True only when the current session's bounded Y probe supplies a sufficiently
+        /// large and independent second response column for a coarse two-axis correction.
+        /// </summary>
+        public bool HasQualifiedSessionLocalYBootstrapResponse => HasQualifiedBootstrapYResponse();
+
+        /// <summary>
         /// True while the most recent automated azimuth action has not produced a
         /// mechanically trustworthy response yet. Completion logic uses this as a
         /// diagnostic signal while it validates a below-tolerance solve without moving.
@@ -522,6 +528,32 @@ namespace NINA.Plugins.PolarAlignment {
 
             currentObservation = latestObservation;
             hasObservation = true;
+        }
+
+        /// <summary>
+        /// A bounded Y bootstrap probe is identification, not a correction. A material
+        /// fresh regression therefore revokes its authority before it can train the model.
+        /// </summary>
+        public void AbortBoundedYBootstrapProbeAfterRegression(
+                double azimuthErrorDegrees,
+                double altitudeErrorDegrees) {
+            var latestObservation = new AutomatedAdjustmentObservation(
+                azimuthErrorDegrees,
+                altitudeErrorDegrees);
+            var pendingBootstrapPlan = pendingPlan;
+
+            if (pendingBootstrapPlan?.Plan.IsBoundedYBootstrapProbe != true) {
+                return;
+            }
+
+            pendingPlan = null;
+            currentObservation = latestObservation;
+            hasObservation = true;
+            AbortMotionAuthority(
+                "The bounded Y bootstrap probe materially regressed the fresh TPPA residual.",
+                pendingBootstrapPlan.Plan,
+                pendingBootstrapPlan.BeforeMoveObservation,
+                latestObservation);
         }
 
         /// <summary>

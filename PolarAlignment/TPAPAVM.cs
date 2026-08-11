@@ -78,6 +78,12 @@ namespace NINA.Plugins.PolarAlignment {
                 return automatedAdjustmentController.MayRequireCalibratedAltitudeBootstrapProbe;
             }
         }
+        internal bool HasQualifiedSessionLocalYBootstrapResponse {
+            get {
+                ConfigureAutomatedAdjustmentControllerForActiveSystem();
+                return automatedAdjustmentController.HasQualifiedSessionLocalYBootstrapResponse;
+            }
+        }
         internal bool LastAutomatedAdjustmentWasBoundedYBootstrapProbe { get; private set; }
 
         public void RebaseAutomatedAdjustmentToFreshDetermination() {
@@ -102,6 +108,18 @@ namespace NINA.Plugins.PolarAlignment {
             PersistAutomatedMotionAbortIfRequired();
             PersistUpasAzimuthResponseMemory();
             lastContinuousEstimateStable = true;
+        }
+
+        internal void AbortBoundedYBootstrapProbeAfterRegression() {
+            if (PolarErrorDetermination == null) {
+                return;
+            }
+
+            ConfigureAutomatedAdjustmentControllerForActiveSystem();
+            automatedAdjustmentController.AbortBoundedYBootstrapProbeAfterRegression(
+                PolarErrorDetermination.InitialMountAxisAzimuthError.Degree,
+                PolarErrorDetermination.InitialMountAxisAltitudeError.Degree);
+            PersistAutomatedMotionAbortIfRequired();
         }
 
         public void ActivateFirstStep() {
@@ -540,7 +558,12 @@ namespace NINA.Plugins.PolarAlignment {
                 executedY = plan.YMagnitude;
             }
 
-            automatedAdjustmentController.NoteSuccessfulExecution(new AutomatedAdjustmentPlan(executedX, executedY, plan.IsProbe, plan.Reason));
+            automatedAdjustmentController.NoteSuccessfulExecution(new AutomatedAdjustmentPlan(
+                executedX,
+                executedY,
+                plan.IsProbe,
+                plan.Reason,
+                plan.IsBoundedYBootstrapProbe));
             LastAutomatedAdjustmentWasBoundedYBootstrapProbe = plan.IsBoundedYBootstrapProbe;
             await CoreUtil.Wait(TimeSpan.FromSeconds(activeSystem.AutomatedAdjustmentSettleTime), token, progress, "Settling");
             LastAutomatedAdjustmentDecisionReason = $"Executed {plan.Reason}: X {Math.Round(executedX, 2)}, Y {Math.Round(executedY, 2)}.";

@@ -102,8 +102,8 @@ geometry or flexure, but they are not a paperwork admission gate.
    Each needs explicit command completion, configured settle, and a new fresh
    three-point result before another command can be considered. A cold direct
    route with no qualified Y response spends its first move on the bounded Y
-   probe. Only that successful bounded Y-bootstrap probe earns one additional
-   move, for a maximum of three total moves; it must not be inferred from a
+   probe. Only a bounded Y-bootstrap probe with a qualified fresh independent
+   response earns one additional move, for a maximum of three total moves; it must not be inferred from a
    remembered setting or granted to an ordinary X probe or correction.
 5. Finish only after two independent fresh determinations are at or below 3
    arcminutes total. If any response is implausible, inconsistent, or worse,

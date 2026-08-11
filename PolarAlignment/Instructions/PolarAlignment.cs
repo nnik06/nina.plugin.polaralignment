@@ -1612,11 +1612,8 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                 }
                                 if (moved && TPAPAVM.AutomatedAdjustmentRequiresFreshMeasurementFeedback) {
                                     freshFeedbackMoveCount++;
-                                    if (freshFeedbackMoveCount == 1
-                                        && TPAPAVM.LastAutomatedAdjustmentWasBoundedYBootstrapProbe) {
-                                        freshFeedbackMoveLimit = TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMovesAfterBoundedYBootstrapProbe;
-                                        Logger.Info("TPPA five-minute runtime earned a third UPAS move after the first successful bounded Y bootstrap probe.");
-                                    }
+                                    var boundedYBootstrapProbeAwaitingFeedback = freshFeedbackMoveCount == 1
+                                        && TPAPAVM.LastAutomatedAdjustmentWasBoundedYBootstrapProbe;
                                     Logger.Info("UPAS move completed. Measuring an independent fresh three-point response before allowing another automated move.");
                                     progress?.Report(new ApplicationStatus() { Status = "Measuring fresh three-point UPAS response" });
 
@@ -1667,6 +1664,37 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                     var responseDisposition = TppaPostMoveResponsePolicy.DispositionForMode(
                                         responseDecision,
                                         enforceFastRuntimeBudget);
+
+                                    if (boundedYBootstrapProbeAwaitingFeedback && enforceFastRuntimeBudget) {
+                                        if (responseDecision.Classification == TppaPostMoveResponseClassification.Regressed) {
+                                            TPAPAVM.AbortBoundedYBootstrapProbeAfterRegression();
+                                            throw new SequenceEntityFailedException(
+                                                "The bounded Y bootstrap probe materially regressed the fresh TPPA result. " +
+                                                "Automated UPAS motion is latched off without reversing or authorizing another move.");
+                                        }
+
+                                        // A probe need not reduce the error. Its authority is a fresh,
+                                        // non-regressing response that proves an independent Y column.
+                                        TPAPAVM.UpdateAutomatedAdjustmentFromFreshDetermination();
+                                        if (!TPAPAVM.HasQualifiedSessionLocalYBootstrapResponse) {
+                                            throw new SequenceEntityFailedException(
+                                                "The bounded Y bootstrap probe did not produce a qualified independent fresh response. " +
+                                                "The run stopped without authorizing another UPAS move.");
+                                        }
+
+                                        freshFeedbackMoveLimit = TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMovesAfterBoundedYBootstrapProbe;
+                                        Logger.Info("TPPA five-minute runtime earned a third UPAS move after a qualified bounded Y bootstrap response.");
+                                        if (responseDisposition.ContinueToStationaryConfirmation) {
+                                            Logger.Info("Fresh bounded Y bootstrap response is already within tolerance. Returning to the independent stationary confirmation.");
+                                            continue;
+                                        }
+
+                                        // The controller has already consumed this feedback; do not train it twice.
+                                        responseDisposition = new TppaPostMoveResponseDisposition(
+                                            UpdateController: false,
+                                            ContinueToStationaryConfirmation: false,
+                                            FailureMessage: null);
+                                    }
 
                                     if (enforceFastRuntimeBudget
                                             && responseDecision.CouldAuthorizeAnotherMove

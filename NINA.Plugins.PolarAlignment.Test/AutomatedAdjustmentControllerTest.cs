@@ -1590,6 +1590,33 @@ namespace NINA.Plugins.PolarAlignment.Test {
             controller.CreatePlan().Reason.Should().NotBe("Session-local conditioned coarse correction");
         }
 
+        [Test]
+        public void AutomatedAdjustmentController_LatchesOffMotionAfterRegressedBoundedYBootstrapProbe() {
+            var controller = CreateBootstrapController();
+            controller.UpdateObservation(5, -5);
+            var probe = controller.CreatePlan();
+            probe.IsBoundedYBootstrapProbe.Should().BeTrue();
+            controller.NoteSuccessfulExecution(probe);
+
+            controller.AbortBoundedYBootstrapProbeAfterRegression(5.5, -5);
+
+            controller.MotionAuthorityAborted.Should().BeTrue();
+            controller.CreatePlan().HasMovement.Should().BeFalse();
+            controller.CreatePlan().Reason.Should().Contain("latched off");
+        }
+
+        [Test]
+        public void AutomatedAdjustmentController_ReportsQualifiedBoundedYBootstrapOnlyAfterFreshIndependentResponse() {
+            var controller = CreateBootstrapController();
+            controller.UpdateObservation(5, -5);
+            controller.HasQualifiedSessionLocalYBootstrapResponse.Should().BeFalse();
+            var probe = controller.CreatePlan();
+            controller.NoteSuccessfulExecution(probe);
+            controller.UpdateObservation(5, -4.5);
+
+            controller.HasQualifiedSessionLocalYBootstrapResponse.Should().BeTrue();
+        }
+
         private static AutomatedAdjustmentController CreateBootstrapController() {
             var controller = new AutomatedAdjustmentController(useUpasEngagementController: true);
             controller.ConfigureCalibratedDirectFullTravelRoute(
