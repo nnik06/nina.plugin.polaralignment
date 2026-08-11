@@ -82,6 +82,23 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public void DirectFieldModeKeepsSupervisorProvenanceAuthoritiesOutsideItsMotionPath() {
+            var source = File.ReadAllText(Path.Combine(RepositoryRoot(), "PolarAlignment", "Instructions", "PolarAlignment.cs"));
+            var supervisorMode = source.IndexOf(
+                "var supervisorCampaignMode = enforceFastRuntimeBudget", StringComparison.Ordinal);
+            var supervisorBranch = source.IndexOf("if (supervisorCampaignMode) {", supervisorMode, StringComparison.Ordinal);
+            var physicalZero = source.IndexOf("RequireFreshPhysicalZeroAdmission", supervisorBranch, StringComparison.Ordinal);
+            var branchEnd = source.IndexOf("// The five-minute contract starts only after physical-zero admission.", supervisorBranch, StringComparison.Ordinal);
+
+            supervisorMode.Should().BeGreaterThanOrEqualTo(0);
+            supervisorBranch.Should().BeGreaterThan(supervisorMode);
+            physicalZero.Should().BeGreaterThan(supervisorBranch);
+            branchEnd.Should().BeGreaterThan(physicalZero);
+            source.Should().Contain("activeTppaCovarianceAuthority?.RepositoryHead ?? \"direct-field\"");
+            source.Should().Contain("activeTppaCadenceAuthority?.AuthorityId.ToString(\"D\") ?? \"direct-field\"");
+        }
+
+        [Test]
         public void InitialTotalErrorIsDefinedAsEuclideanHypotenuseOfComponents() {
             var source = File.ReadAllText(Path.Combine(RepositoryRoot(), "PolarAlignment", "TPAPAVM.cs"));
 
