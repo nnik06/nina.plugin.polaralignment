@@ -58,6 +58,22 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public void Evaluate_UsesTheConfiguredReverseDirectionForSignedHeadroom() {
+            var result = TppaDirectFullTravelRouteQualification.Evaluate(
+                true, true,
+                -5.2, -5.4, 5.4,
+                0, -5.4, 5.4,
+                0.5, 0,
+                0, 0.5,
+                81, 81,
+                0.5, 0.5,
+                24, 0,
+                physicalAzimuthCommandDirectionMultiplier: -1);
+
+            result.IsQualified.Should().BeTrue();
+        }
+
+        [Test]
         public void Evaluate_UsesPhysicalScaleRatherThanSkyResponseForSignedHeadroom() {
             var result = TppaDirectFullTravelRouteQualification.Evaluate(
                 true, true,
