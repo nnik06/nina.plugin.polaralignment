@@ -1429,6 +1429,46 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public void AutomatedAdjustmentController_LatchesMotionOffWhenClampLimitedRecoveryFreshResponseDisagrees() {
+            var controller = new AutomatedAdjustmentController(useUpasEngagementController: true);
+            controller.ConfigureCalibratedDirectFullTravelRoute(
+                enabled: true,
+                operatorConfirmed: true,
+                azimuthStartingPositionDegrees: 0,
+                azimuthMinimumDegrees: -5.4,
+                azimuthMaximumDegrees: 5.4,
+                altitudeStartingPositionDegrees: 0,
+                altitudeMinimumDegrees: -5.4,
+                altitudeMaximumDegrees: 5.4,
+                azimuthDeltaPerXUnitDegrees: 2.0 / 60.0,
+                azimuthDeltaPerYUnitDegrees: 0,
+                altitudeDeltaPerXUnitDegrees: 0,
+                altitudeDeltaPerYUnitDegrees: 2.0 / 60.0,
+                maximumXUnitsPerMove: 81,
+                maximumYUnitsPerMove: 75,
+                physicalAzimuthDegreesPerXUnit: 0.02,
+                physicalAltitudeDegreesPerYUnit: 0.02,
+                clampLimitedRecoveryEnabled: true,
+                relativeResponseUncertainty: 0.05);
+            controller.UpdateObservation(324.0 / 60.0, -300.0 / 60.0);
+
+            var plan = controller.CreatePlan();
+
+            plan.IsClampLimitedTravelRecovery.Should().BeTrue();
+            plan.Reason.Should().Contain("clamp-limited");
+            plan.XMagnitude.Should().BeApproximately(-81, 0.001);
+            plan.YMagnitude.Should().BeApproximately(75, 0.001);
+
+            controller.NoteSuccessfulExecution(plan);
+            // A growing residual is incompatible with the expected two-axis response.
+            controller.UpdateObservation(6.0, -5.5);
+
+            controller.MotionAuthorityAborted.Should().BeTrue();
+            controller.MotionAuthorityAbortReason.Should().Contain("clamp-limited recovery");
+            controller.CreatePlan().HasMovement.Should().BeFalse();
+        }
+
+        [Test]
         public void AutomatedAdjustmentController_BootstrapsYBeforeUsingAnIncompleteCalibratedAzimuthRoute() {
             var controller = new AutomatedAdjustmentController(useUpasEngagementController: true);
             controller.ConfigureCalibratedDirectFullTravelRoute(
