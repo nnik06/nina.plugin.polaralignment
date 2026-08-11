@@ -4,7 +4,16 @@ using NINA.Plugins.PolarAlignment.Avalon;
 
 namespace NINA.Plugins.PolarAlignment.Avalon {
     public partial class UniversalPolarAlignmentVM : UniversalPolarAlignmentBaseVM {
-        public UniversalPolarAlignmentVM(IProfileService profileService) : base(profileService) { }
+        public UniversalPolarAlignmentVM(IProfileService profileService) : base(profileService) {
+            // The response values can be reviewed across sessions, but their
+            // motion authority is valid only after the current session's
+            // marker and axis sense have been checked.
+            if (Properties.Settings.Default.AvalonDirectFullTravelRouteConfirmed) {
+                Properties.Settings.Default.AvalonDirectFullTravelRouteConfirmed = false;
+                CoreUtil.SaveSettings(Properties.Settings.Default);
+                Logger.Info("UPAS calibrated direct full-travel route attestation cleared for the new NINA session.");
+            }
+        }
 
         protected override string SystemName => "Avalon Polar Alignment System";
 

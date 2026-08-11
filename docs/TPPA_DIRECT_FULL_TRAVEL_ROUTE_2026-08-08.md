@@ -43,6 +43,10 @@ measurement. Editing any response, envelope, axis reversal, or current marker
 position clears that attestation automatically; the route then cannot qualify
 until it is reviewed again.
 
+The calibration values persist for review, but route attestation is cleared at
+the start of every NINA session and after a UPAS connection/reset. It is a
+current-session motion check, not a long-lived configuration permission.
+
 ## Five-Minute Contract
 
 The full-travel route is admitted only when
