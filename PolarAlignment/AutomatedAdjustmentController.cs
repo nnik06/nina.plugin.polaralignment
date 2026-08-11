@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using NINA.Core.Utility;
 
 namespace NINA.Plugins.PolarAlignment {
@@ -149,6 +150,10 @@ namespace NINA.Plugins.PolarAlignment {
         public bool UseUpasEngagementController { get; set; }
         private CalibratedDirectFullTravelRoute calibratedDirectFullTravelRoute;
         private CalibratedDirectAzimuthRoute calibratedDirectAzimuthRoute;
+        // A qualified X-only field calibration is enough to identify the X column. It is kept
+        // separate from observed samples so one fresh Y probe can complete the local 2x2 model
+        // without being mistaken for a second physical X movement.
+        private ResponseSample calibratedDirectAzimuthResponseSeed;
 
         public bool AzimuthTravelGuardEnabled { get; set; }
         public bool AzimuthTravelGuardConfirmed { get; set; }
@@ -327,6 +332,12 @@ namespace NINA.Plugins.PolarAlignment {
                     altitudeDeltaPerXUnitDegrees,
                     maximumXUnitsPerMove)
                 : null;
+            calibratedDirectAzimuthResponseSeed = calibratedDirectAzimuthRoute != null
+                                                  && HasPlausibleResponseColumn(
+                                                      azimuthDeltaPerXUnitDegrees,
+                                                      altitudeDeltaPerXUnitDegrees)
+                ? new ResponseSample(1, 0, azimuthDeltaPerXUnitDegrees, altitudeDeltaPerXUnitDegrees)
+                : null;
         }
 
         public bool CanExecuteAltitudeTravel(double yMagnitude, out string reason) {
@@ -501,28 +512,8 @@ namespace NINA.Plugins.PolarAlignment {
                 return ApplyAzimuthTravelGuard(calibratedPlan);
             }
 
-            if (TryCreateCalibratedDirectAzimuthPlan(currentObservation, out var calibratedAzimuthPlan)) {
-                return ApplyAzimuthTravelGuard(calibratedAzimuthPlan);
-            }
-
-            if (TryCreateXEngagementPlan(currentObservation, out var engagementPlan)) {
-                consecutiveUnsafeModelSkips = 0;
-                return ApplyAzimuthTravelGuard(engagementPlan);
-            }
-
-            if (TryCreateRememberedDominantAzimuthPlan(currentObservation, out var rememberedPlan)) {
-                consecutiveUnsafeModelSkips = 0;
-                return ApplyAzimuthTravelGuard(rememberedPlan);
-            }
-
-            if (TryCreateConfirmedDominantAzimuthPlan(currentObservation, out var dominantAzimuthPlan)) {
-                dominantAzimuthPlan = EnforceXReversalClearance(dominantAzimuthPlan);
-                if (ShouldDebounceXDirectionReversal(dominantAzimuthPlan, out var debouncePlan)) {
-                    return debouncePlan;
-                }
-
-                consecutiveUnsafeModelSkips = 0;
-                return ApplyAzimuthTravelGuard(dominantAzimuthPlan);
+            if (TryCreateCalibratedAltitudeBootstrapPlan(out var bootstrapPlan)) {
+                return ApplyAzimuthTravelGuard(bootstrapPlan);
             }
 
             if (TryBuildResponseModel(out var responseModel)) {
@@ -549,7 +540,72 @@ namespace NINA.Plugins.PolarAlignment {
                 return correctivePlan;
             }
 
+            if (TryCreateCalibratedDirectAzimuthPlan(currentObservation, out var calibratedAzimuthPlan)) {
+                return ApplyAzimuthTravelGuard(calibratedAzimuthPlan);
+            }
+
+            if (TryCreateXEngagementPlan(currentObservation, out var engagementPlan)) {
+                consecutiveUnsafeModelSkips = 0;
+                return ApplyAzimuthTravelGuard(engagementPlan);
+            }
+
+            if (TryCreateRememberedDominantAzimuthPlan(currentObservation, out var rememberedPlan)) {
+                consecutiveUnsafeModelSkips = 0;
+                return ApplyAzimuthTravelGuard(rememberedPlan);
+            }
+
+            if (TryCreateConfirmedDominantAzimuthPlan(currentObservation, out var dominantAzimuthPlan)) {
+                dominantAzimuthPlan = EnforceXReversalClearance(dominantAzimuthPlan);
+                if (ShouldDebounceXDirectionReversal(dominantAzimuthPlan, out var debouncePlan)) {
+                    return debouncePlan;
+                }
+
+                consecutiveUnsafeModelSkips = 0;
+                return ApplyAzimuthTravelGuard(dominantAzimuthPlan);
+            }
+
             return ApplyAzimuthTravelGuard(CreateProbePlan());
+        }
+
+        private bool TryCreateCalibratedAltitudeBootstrapPlan(out AutomatedAdjustmentPlan plan) {
+            plan = null;
+            if (calibratedDirectAzimuthResponseSeed == null
+                || HasObservedYResponse()
+                || HasPlausibleCalibratedFullTravelResponse()
+                || currentObservation == null
+                || currentObservation.TotalErrorDegrees < MinimumResidualForProbeDegrees
+                || IsProbeAxisExhausted(xAxis: false)) {
+                return false;
+            }
+
+            plan = new AutomatedAdjustmentPlan(
+                0,
+                GetProbeMagnitude(xAxis: false),
+                true,
+                "Probing altitude response using calibrated azimuth bootstrap");
+            return true;
+        }
+
+        private bool HasObservedYResponse() {
+            return samples.Any(sample => Math.Abs(sample.YMagnitude) > 0);
+        }
+
+        private bool HasPlausibleCalibratedFullTravelResponse() {
+            return calibratedDirectFullTravelRoute != null
+                   && HasPlausibleResponseColumn(
+                       calibratedDirectFullTravelRoute.ResponseModel.AzimuthDeltaPerXUnit,
+                       calibratedDirectFullTravelRoute.ResponseModel.AltitudeDeltaPerXUnit)
+                   && HasPlausibleResponseColumn(
+                       calibratedDirectFullTravelRoute.ResponseModel.AzimuthDeltaPerYUnit,
+                       calibratedDirectFullTravelRoute.ResponseModel.AltitudeDeltaPerYUnit);
+        }
+
+        private static bool HasPlausibleResponseColumn(double azimuthDeltaPerUnit, double altitudeDeltaPerUnit) {
+            var magnitude = Math.Sqrt(azimuthDeltaPerUnit * azimuthDeltaPerUnit
+                                      + altitudeDeltaPerUnit * altitudeDeltaPerUnit);
+            return double.IsFinite(magnitude)
+                   && magnitude >= MinimumAxisResponseDegreesPerUnit
+                   && magnitude <= MaximumSampleResponseDegreesPerUnit;
         }
 
         private bool TryCreateCalibratedDirectFullTravelPlan(
@@ -1599,7 +1655,10 @@ namespace NINA.Plugins.PolarAlignment {
         private bool TryBuildResponseModel(out ResponseModel responseModel) {
             responseModel = null;
 
-            if (samples.Count < 2) {
+            var identificationSamples = calibratedDirectAzimuthResponseSeed == null
+                ? samples.ToList()
+                : samples.Concat(new[] { calibratedDirectAzimuthResponseSeed }).ToList();
+            if (identificationSamples.Count < 2) {
                 return false;
             }
 
@@ -1611,7 +1670,7 @@ namespace NINA.Plugins.PolarAlignment {
             var altitudeB0 = 0.0;
             var altitudeB1 = 0.0;
 
-            foreach (var sample in samples) {
+            foreach (var sample in identificationSamples) {
                 s00 += sample.XMagnitude * sample.XMagnitude;
                 s01 += sample.XMagnitude * sample.YMagnitude;
                 s11 += sample.YMagnitude * sample.YMagnitude;

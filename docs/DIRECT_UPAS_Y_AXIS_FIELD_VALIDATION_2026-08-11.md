@@ -86,3 +86,17 @@ pwsh -NoProfile -File tools/summarize_tppa_upas_response.ps1 `
   -LogPath 'C:\Users\nnik0\AppData\Local\NINA\Logs\<nightly-log>.log' `
   -MinimumSamplesPerAxis 1
 ```
+# Calibrated-X Bootstrap Behavior
+
+When the direct full-travel route has a qualified X response column but no
+qualified Y column, the controller does not silently fall back to an
+X-only correction.  It first issues one normal, bounded Y probe.  The X
+column is retained in memory only as an identification seed; the Y column
+must still come from the fresh post-probe TPPA determination.  The existing
+rank and condition checks must accept the resulting 2x2 response model before
+any model-based correction is proposed.
+
+The bootstrap neither persists a Y response across sessions nor relaxes the
+normal per-move limits.  If the probe cannot be measured, or the matrix is
+singular/ill-conditioned, the route remains unqualified and no two-axis
+direct correction is authorized.

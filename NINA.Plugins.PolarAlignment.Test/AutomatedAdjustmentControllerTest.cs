@@ -1434,7 +1434,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
-        public void AutomatedAdjustmentController_UsesCalibratedAzimuthRouteWithoutMovingY() {
+        public void AutomatedAdjustmentController_BootstrapsYBeforeUsingAnIncompleteCalibratedAzimuthRoute() {
             var controller = new AutomatedAdjustmentController(useUpasEngagementController: true);
             controller.ConfigureCalibratedDirectFullTravelRoute(
                 enabled: true,
@@ -1458,9 +1458,48 @@ namespace NINA.Plugins.PolarAlignment.Test {
             var plan = controller.CreatePlan();
 
             plan.HasMovement.Should().BeTrue();
-            plan.Reason.Should().Contain("azimuth-only");
-            plan.XMagnitude.Should().BeNegative();
-            plan.YMagnitude.Should().Be(0);
+            plan.IsProbe.Should().BeTrue();
+            plan.Reason.Should().Contain("calibrated azimuth bootstrap");
+            plan.XMagnitude.Should().Be(0);
+            plan.YMagnitude.Should().BeGreaterThan(0);
+        }
+
+        [Test]
+        public void AutomatedAdjustmentController_UsesCalibratedXColumnToBootstrapOneAltitudeProbe() {
+            var controller = new AutomatedAdjustmentController(useUpasEngagementController: true);
+            controller.ConfigureCalibratedDirectFullTravelRoute(
+                enabled: true,
+                operatorConfirmed: true,
+                azimuthStartingPositionDegrees: 0,
+                azimuthMinimumDegrees: -5.4,
+                azimuthMaximumDegrees: 5.4,
+                altitudeStartingPositionDegrees: 0,
+                altitudeMinimumDegrees: -5.4,
+                altitudeMaximumDegrees: 5.4,
+                azimuthDeltaPerXUnitDegrees: 0.05,
+                azimuthDeltaPerYUnitDegrees: 0,
+                altitudeDeltaPerXUnitDegrees: 0,
+                altitudeDeltaPerYUnitDegrees: 0,
+                maximumXUnitsPerMove: 81,
+                maximumYUnitsPerMove: 81,
+                physicalAzimuthDegreesPerXUnit: 0.05,
+                physicalAltitudeDegreesPerYUnit: 0.05);
+            controller.UpdateObservation(5, -1);
+
+            var probe = controller.CreatePlan();
+
+            probe.IsProbe.Should().BeTrue();
+            probe.XMagnitude.Should().Be(0);
+            probe.YMagnitude.Should().BeGreaterThan(0);
+            probe.Reason.Should().Contain("calibrated azimuth bootstrap");
+
+            controller.NoteSuccessfulExecution(probe);
+            controller.UpdateObservation(5.02, -0.9);
+
+            controller.HasResponseModel.Should().BeTrue();
+            var correction = controller.CreatePlan();
+            correction.HasMovement.Should().BeTrue();
+            correction.Reason.Should().NotContain("azimuth-only");
         }
     }
 }
