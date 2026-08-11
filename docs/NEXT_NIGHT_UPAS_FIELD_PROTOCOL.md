@@ -110,6 +110,11 @@ diagnostics, and PHD2 drift studies are supplementary evidence. None is a
 precondition for this attended direct route. Travel limits, oversized-command
 refusal, settle, cancellation, and fresh feedback remain mandatory.
 
+Before enabling a wide two-axis route, run the dedicated
+[`DIRECT_UPAS_Y_AXIS_FIELD_VALIDATION_2026-08-11.md`](DIRECT_UPAS_Y_AXIS_FIELD_VALIDATION_2026-08-11.md)
+block. It obtains the missing directional ALT/Y response with an isolated
+photon-backed probe; an AZ/X calibration must never be extrapolated to ALT/Y.
+
 ## Measurement Qualification
 1. After the required settling dwell, run three no-motion fresh TPPA determinations on safe arc A with fixed settings and refraction state.
 2. Require the robust set gate to pass: component MAD at most 20 arcseconds and total-error MAD at most 10 arcseconds.
