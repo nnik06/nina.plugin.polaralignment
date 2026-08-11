@@ -4056,6 +4056,11 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             }
 
             var mount = telescopeMediator.GetInfo();
+            if (!mount.Connected) {
+                throw new SequenceEntityFailedException(
+                    "TPPA mount-motion envelope requires connected mount telemetry.");
+            }
+
             var envelope = CreateMountMotionEnvelope();
             var violation = envelope.Validate(mount.Azimuth, mount.Altitude);
             if (!string.IsNullOrWhiteSpace(violation)) {
