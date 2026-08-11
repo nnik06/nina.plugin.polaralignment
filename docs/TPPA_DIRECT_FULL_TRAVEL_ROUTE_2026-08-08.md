@@ -28,6 +28,21 @@ The direct route requires only information that protects a move:
 The P20/supervisor route can provide stronger versions of these facts, but is
 not the only route to them.
 
+## NINA Field Setup
+
+With automated Avalon adjustment enabled, the TPPA Avalon panel now exposes a
+**Calibrated full route** row. Before a direct full-travel run, enter and
+review the measured `AZ/X`, `AZ/Y`, `ALT/X`, and `ALT/Y` response matrix, the
+per-move `Max X`/`Max Y` command authority, and the physical AZ marker range.
+The regular AZ and ALT travel-guard settings remain the runtime motion limits.
+
+Enable the route and, when a clamp-limited recovery is intended, enter the
+measured relative response uncertainty and enable that recovery mode. Mark
+**Route attested** only after the displayed values match the current-session
+measurement. Editing any response, envelope, axis reversal, or current marker
+position clears that attestation automatically; the route then cannot qualify
+until it is reviewed again.
+
 ## Five-Minute Contract
 
 The full-travel route is admitted only when
@@ -70,8 +85,8 @@ report the last measured position/residual rather than infer success.
 
 ## Current Status
 
-The controller integration is present as of commit `c12a03a`, but it is
-disabled by default. Enabling it without a fresh 2x2 field calibration,
+The controller integration and NINA field panel are present as of commit
+`92c8564`, but the route is disabled by default. Enabling it without a fresh 2x2 field calibration,
 measured ALT/Y response, directional backlash evidence, and a stated response
 uncertainty is not a qualified use of the route. The nominal full-diagonal
 fixture reaches the 3-arcminute terminal target in two feedback moves and 230
