@@ -461,11 +461,12 @@ namespace NINA.Plugins.PolarAlignment {
                     if (ShouldSkipSampleForModel(pendingPlan.Plan, pendingPlan.BeforeMoveObservation)) {
                         Logger.Info($"Accepted automated polar-alignment movement but skipped model learning from a small X-only command. Command X={Math.Round(pendingPlan.Plan.XMagnitude, 3)}, response={Math.Round(responseMagnitude * 60.0, 3)}'");
                     } else {
-                        AddSample(new ResponseSample(pendingPlan.Plan.XMagnitude,
-                                                     pendingPlan.Plan.YMagnitude,
-                                                     deltaAzimuth,
-                                                     deltaAltitude));
-                        Logger.Info($"Accepted automated polar-alignment sample. Command X={Math.Round(pendingPlan.Plan.XMagnitude, 3)}, Y={Math.Round(pendingPlan.Plan.YMagnitude, 3)}, response={Math.Round(responseMagnitude * 60.0, 3)}'");
+                        var sample = new ResponseSample(pendingPlan.Plan.XMagnitude,
+                                                        pendingPlan.Plan.YMagnitude,
+                                                        deltaAzimuth,
+                                                        deltaAltitude);
+                        AddSample(sample);
+                        Logger.Info(BuildFreshResponseSampleLog(sample));
                     }
                     if (pendingPlan.Plan.IsProbe) {
                         ResetProbeRejectionCount(pendingPlan.Plan);
@@ -698,6 +699,33 @@ namespace NINA.Plugins.PolarAlignment {
             while (samples.Count > MaxSamples) {
                 samples.Dequeue();
             }
+        }
+
+        private string BuildFreshResponseSampleLog(ResponseSample sample) {
+            var xOnly = Math.Abs(sample.XMagnitude) > 1e-9 && Math.Abs(sample.YMagnitude) <= 1e-9;
+            var yOnly = Math.Abs(sample.YMagnitude) > 1e-9 && Math.Abs(sample.XMagnitude) <= 1e-9;
+            var axis = xOnly ? "X" : yOnly ? "Y" : "mixed";
+            var xAzimuthPerUnit = Math.Abs(sample.XMagnitude) > 1e-9
+                ? sample.AzimuthDeltaDegrees * 60.0 / sample.XMagnitude
+                : double.NaN;
+            var xAltitudePerUnit = Math.Abs(sample.XMagnitude) > 1e-9
+                ? sample.AltitudeDeltaDegrees * 60.0 / sample.XMagnitude
+                : double.NaN;
+            var yAzimuthPerUnit = Math.Abs(sample.YMagnitude) > 1e-9
+                ? sample.AzimuthDeltaDegrees * 60.0 / sample.YMagnitude
+                : double.NaN;
+            var yAltitudePerUnit = Math.Abs(sample.YMagnitude) > 1e-9
+                ? sample.AltitudeDeltaDegrees * 60.0 / sample.YMagnitude
+                : double.NaN;
+
+            return $"TPPA_UPAS_FRESH_RESPONSE_SAMPLE axis={axis}, X={Math.Round(sample.XMagnitude, 3)}, Y={Math.Round(sample.YMagnitude, 3)}, "
+                   + $"deltaAz={Math.Round(sample.AzimuthDeltaDegrees * 60.0, 3)}', deltaAlt={Math.Round(sample.AltitudeDeltaDegrees * 60.0, 3)}', "
+                   + $"xAzPerUnit={FormatResponse(xAzimuthPerUnit)}, xAltPerUnit={FormatResponse(xAltitudePerUnit)}, "
+                   + $"yAzPerUnit={FormatResponse(yAzimuthPerUnit)}, yAltPerUnit={FormatResponse(yAltitudePerUnit)}, samples={samples.Count}";
+        }
+
+        private static string FormatResponse(double value) {
+            return double.IsNaN(value) ? "n/a" : Math.Round(value, 4).ToString("0.####");
         }
 
         private AutomatedAdjustmentPlan ApplyAzimuthTravelGuard(AutomatedAdjustmentPlan plan) {
