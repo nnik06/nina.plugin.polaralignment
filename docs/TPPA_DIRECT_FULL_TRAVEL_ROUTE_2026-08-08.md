@@ -32,9 +32,17 @@ not the only route to them.
 
 The full-travel route is admitted only when
 `TppaDirectFullTravelFeasibilityPolicy` proves the current calibrated residual
-fits in at most two fresh-feedback moves and within 300 seconds. The current
-small direct caps cannot pass this check for a 5 degree traverse; that is an
-explicit, tested result rather than a timeout discovered on sky.
+fits in at most three fresh-feedback moves and within 300 seconds. The route
+accepts up to 324 arcminutes per axis and 458.205 arcminutes total only after
+its direct calibration is enabled and confirmed; ordinary direct operation
+remains limited to 120 arcminutes.
+
+For a qualified clamp-limited recovery, the response matrix must have condition
+number no greater than 5 and relative response uncertainty no greater than 10
+percent. Only an inverse-command axis within five percent of its hard command
+limit may consume that entire limit; an unsaturated companion axis remains
+damped at 0.65. This avoids turning a one-axis recovery into an unsafe
+whole-vector full-gain command.
 
 For each admitted move, the live controller must still:
 
@@ -46,7 +54,12 @@ For each admitted move, the live controller must still:
    cannot leave the reserve for its fresh feedback and terminal confirmation.
 3. Wait for the existing command completion, settle, and cancellation checks.
 4. Obtain a fresh three-point TPPA result before considering another move.
-5. End only after two independent fresh determinations are within 3 arcminutes.
+5. For a clamp-limited recovery, compare the first fresh result with the
+   predicted response. Each material predicted error component must have a
+   signed actual/predicted response ratio in [0.4, 1.6], and the actual
+   residual reduction must be at least 40 percent of the predicted reduction.
+   A failure latches automated motion off before another recovery move.
+6. End only after two independent fresh determinations are within 3 arcminutes.
 
 An unsuccessful response, inconsistent fresh solve, timeout, cancellation, or
 travel denial ends the automatic run without authorizing another move. It must
@@ -54,12 +67,12 @@ report the last measured position/residual rather than infer success.
 
 ## Current Status
 
-`TppaDirectFullTravelFeasibilityPolicy` is diagnostic-only as of commit
-`985909b`. It proves whether a proposed calibration/cap/timing combination is
-feasible, but it neither reads hardware nor changes the controller. The
-existing direct controller therefore remains limited to the demonstrated
-120-arcminute input and 20/16 command-unit behavior until a separately reviewed
-and explicitly enabled integration is complete.
+The controller integration is present as of commit `c12a03a`, but it is
+disabled by default. Enabling it without a fresh 2x2 field calibration,
+measured ALT/Y response, directional backlash evidence, and a stated response
+uncertainty is not a qualified use of the route. The nominal full-diagonal
+fixture reaches the 3-arcminute terminal target in two feedback moves and 230
+seconds; that is a software proof, not field validation.
 
 The separate supervisor remains the preferred route for unattended,
 machine-witnessed physical position and broad 2x2 calibration. Its incomplete
