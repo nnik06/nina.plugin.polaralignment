@@ -48,6 +48,11 @@ namespace NINA.Plugins.PolarAlignment.Test {
             source.Should().Contain("EvaluateBeforeFreshPair(");
             source.Should().Contain("InvalidateDirectPostMoveFeedback(\"a new direct UPAS move is about to execute\")");
             source.Should().Contain("InvalidateDirectPostMoveFeedback(\"the sequence was paused\")");
+            source.Should().Contain("directUpasMotionEpoch");
+            source.Should().Contain("directPostMoveFeedbackMotionEpoch == directUpasMotionEpoch");
+            source.Should().Contain("directPostMoveFeedbackMotionEpoch = directUpasMotionEpoch");
+            source.Should().Contain("directPostMoveFeedbackMotionEpoch = -1");
+            source.Should().Contain("too old or belongs to a previous motion epoch");
         }
 
         [Test]

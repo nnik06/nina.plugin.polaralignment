@@ -1181,6 +1181,8 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         : determination;
                     var directPostMoveFeedbackEligibleForReuse = false;
                     var directPostMoveFeedbackAge = new Stopwatch();
+                    var directUpasMotionEpoch = 0;
+                    var directPostMoveFeedbackMotionEpoch = -1;
                     void InvalidateDirectPostMoveFeedback(string reason) {
                         if (!directPostMoveFeedbackEligibleForReuse) {
                             return;
@@ -1188,6 +1190,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
 
                         directPostMoveFeedbackEligibleForReuse = false;
                         directPreMoveFreshDetermination = null;
+                        directPostMoveFeedbackMotionEpoch = -1;
                         directPostMoveFeedbackAge.Reset();
                         Logger.Info($"Discarding direct post-move feedback reuse eligibility: {reason}");
                     }
@@ -1465,6 +1468,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                         && TPAPAVM.ActiveAlignmentSystemVM?.DoAutomatedAdjustments == true) {
                                     var directFeedbackCanSeedAgreement = !supervisorCampaignMode
                                         && directPostMoveFeedbackEligibleForReuse
+                                        && directPostMoveFeedbackMotionEpoch == directUpasMotionEpoch
                                         && directPostMoveFeedbackAge.Elapsed.TotalSeconds
                                             <= TppaFastAlignmentExecutionBudget.DirectFeedbackReuseMaximumAgeSeconds;
                                     var moveDecision = supervisorCampaignMode
@@ -1570,6 +1574,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                     activeObservedDeterminations.Clear();
                                 } else {
                                     var directFeedbackCanSeedAgreement = directPostMoveFeedbackEligibleForReuse
+                                        && directPostMoveFeedbackMotionEpoch == directUpasMotionEpoch
                                         && directPostMoveFeedbackAge.Elapsed.TotalSeconds
                                             <= TppaFastAlignmentExecutionBudget.DirectFeedbackReuseMaximumAgeSeconds;
                                     PolarErrorDetermination firstDirectDetermination;
@@ -1577,7 +1582,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                         firstDirectDetermination = directPreMoveFreshDetermination;
                                         Logger.Info("Reusing the accepted, settled post-move fresh determination as the first member of the next direct movement agreement pair.");
                                     } else if (directPostMoveFeedbackEligibleForReuse) {
-                                        Logger.Info("The accepted post-move feedback is too old to reuse. Acquiring a new first fresh TPPA determination before direct field movement authority.");
+                                        Logger.Info("The accepted post-move feedback is too old or belongs to a previous motion epoch. Acquiring a new first fresh TPPA determination before direct field movement authority.");
                                         firstDirectDetermination = await MeasureFreshThreePointForActiveCampaign(
                                             TPAPAVM,
                                             automatedVerificationStartPointing,
@@ -1591,6 +1596,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                             true,
                                             "replacement pre-move direct determination");
                                         directPostMoveFeedbackEligibleForReuse = false;
+                                        directPostMoveFeedbackMotionEpoch = -1;
                                         directPostMoveFeedbackAge.Reset();
                                     } else {
                                         firstDirectDetermination = directPreMoveFreshDetermination
@@ -1675,6 +1681,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                             $"Reason: {TPAPAVM.LastAutomatedAdjustmentDecisionReason ?? "no reason was returned"}. " +
                                             "No further sky sweeps were started.");
                                     }
+                                    directUpasMotionEpoch++;
                                 }
                                 if (moved && TPAPAVM.AutomatedAdjustmentRequiresFreshMeasurementFeedback) {
                                     freshFeedbackMoveCount++;
@@ -1702,6 +1709,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                     if (!supervisorCampaignMode) {
                                         directPreMoveFreshDetermination = feedbackDetermination;
                                         directPostMoveFeedbackEligibleForReuse = true;
+                                        directPostMoveFeedbackMotionEpoch = directUpasMotionEpoch;
                                         directPostMoveFeedbackAge.Restart();
                                     }
                                     Logger.Info($"TPPA fresh post-move response: Az: {feedbackDetermination.InitialMountAxisAzimuthError}, " +
