@@ -1181,13 +1181,25 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         : determination;
                     var directPostMoveFeedbackEligibleForReuse = false;
                     var directPostMoveFeedbackAge = new Stopwatch();
+                    void InvalidateDirectPostMoveFeedback(string reason) {
+                        if (!directPostMoveFeedbackEligibleForReuse) {
+                            return;
+                        }
+
+                        directPostMoveFeedbackEligibleForReuse = false;
+                        directPreMoveFreshDetermination = null;
+                        directPostMoveFeedbackAge.Reset();
+                        Logger.Info($"Discarding direct post-move feedback reuse eligibility: {reason}");
+                    }
                     var freshFeedbackMoveCount = 0;
                     var freshFeedbackMoveLimit = TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMoves;
                     var maximumObservedFreshDeterminationSeconds = alignmentRuntime.Elapsed.TotalSeconds;
                     TppaPolarErrorVector? qualifiedFinalVector = null;
                     const int MaximumExtendedFreshFeedbackMoves = 18;
                     do {
-                        await WaitIfPaused(localCTS.Token, progress);
+                        if (await WaitIfPaused(localCTS.Token, progress)) {
+                            InvalidateDirectPostMoveFeedback("the sequence was paused");
+                        }
 
                         if (TPAPAVM.AutomatedAdjustmentRequiresFreshMeasurementFeedback
                             && Math.Abs(TPAPAVM.PolarErrorDetermination.InitialMountAxisTotalError.ArcMinutes) <= AlignmentTolerance) {
@@ -1650,7 +1662,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                         secondDirectDetermination.InitialMountAxisAzimuthError.ArcMinutes,
                                         secondDirectDetermination.InitialMountAxisAltitudeError.ArcMinutes,
                                         secondDirectDetermination.InitialMountAxisTotalError.ArcMinutes);
-                                    directPreMoveFreshDetermination = null;
+                                    InvalidateDirectPostMoveFeedback("a new direct UPAS move is about to execute");
                                     moved = executionPolicy.AllowActuatorMovement
                                         && await TppaFastActuatorAdmissionGate.ExecuteIfAuthorizedAsync(
                                             false,
@@ -2098,14 +2110,16 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             }
         }
 
-        private async Task WaitIfPaused(CancellationToken token, IProgress<ApplicationStatus> progress) {
-            if (IsPausing) {
+        private async Task<bool> WaitIfPaused(CancellationToken token, IProgress<ApplicationStatus> progress) {
+            var wasPaused = IsPausing;
+            if (wasPaused) {
                 IsPaused = true;
                 progress?.Report(GetStatus("Paused"));
                 await pauseTS.Token.WaitWhilePausedAsync(token);
                 progress?.Report(GetStatus(string.Empty));
                 IsPaused = false;
             }
+            return wasPaused;
         }
 
         public bool Northern {

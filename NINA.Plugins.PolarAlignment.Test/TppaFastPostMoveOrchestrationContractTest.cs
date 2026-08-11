@@ -46,6 +46,8 @@ namespace NINA.Plugins.PolarAlignment.Test {
             source.Should().Contain("DirectFeedbackReuseMaximumAgeSeconds");
             source.Should().Contain("Reusing the accepted, settled post-move fresh determination");
             source.Should().Contain("EvaluateBeforeFreshPair(");
+            source.Should().Contain("InvalidateDirectPostMoveFeedback(\"a new direct UPAS move is about to execute\")");
+            source.Should().Contain("InvalidateDirectPostMoveFeedback(\"the sequence was paused\")");
         }
 
         [Test]
