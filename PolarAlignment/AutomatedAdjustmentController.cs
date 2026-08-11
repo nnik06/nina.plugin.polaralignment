@@ -110,6 +110,9 @@ namespace NINA.Plugins.PolarAlignment {
         /// model is treated as stale and discarded.
         /// </summary>
         private const double ModelResetWorseningFactor = 1.05;
+        private const double SessionCoarseValidationImprovementFactor = 0.80;
+        private const double MinimumSessionCoarseBootstrapResponseDegrees = 0.10;
+        private const double MaximumSessionCoarseConditionNumber = 8.0;
         /// <summary>
         /// Maximum number of recent identification samples retained in the local model.
         /// </summary>
@@ -154,6 +157,7 @@ namespace NINA.Plugins.PolarAlignment {
         // separate from observed samples so one fresh Y probe can complete the local 2x2 model
         // without being mistaken for a second physical X movement.
         private ResponseSample calibratedDirectAzimuthResponseSeed;
+        private bool sessionLocalCoarseFrozen;
 
         public bool AzimuthTravelGuardEnabled { get; set; }
         public bool AzimuthTravelGuardConfirmed { get; set; }
@@ -196,6 +200,7 @@ namespace NINA.Plugins.PolarAlignment {
         /// </summary>
         public void Reset() {
             samples.Clear();
+            sessionLocalCoarseFrozen = false;
             currentObservation = null;
             pendingPlan = null;
             consecutiveUnsafeModelSkips = 0;
@@ -468,6 +473,12 @@ namespace NINA.Plugins.PolarAlignment {
                     samples.Clear();
                     consecutiveUnsafeModelSkips = 0;
                     ResetAcquisitionState(preserveLearnedDirection: true);
+                } else if (IsSessionLocalCoarsePlan(pendingPlan.Plan)
+                           && latestObservation.TotalErrorDegrees
+                               > pendingPlan.BeforeMoveObservation.TotalErrorDegrees
+                                   * SessionCoarseValidationImprovementFactor) {
+                    Logger.Warning("Session-local coarse UPAS correction did not reduce the fresh TPPA residual by the required 20 percent; freezing coarse authority and returning to bounded correction.");
+                    sessionLocalCoarseFrozen = true;
                 } else {
                     consecutiveUnsafeModelSkips = 0;
                     if (ShouldSkipSampleForModel(pendingPlan.Plan, pendingPlan.BeforeMoveObservation)) {
@@ -514,6 +525,10 @@ namespace NINA.Plugins.PolarAlignment {
 
             if (TryCreateCalibratedAltitudeBootstrapPlan(out var bootstrapPlan)) {
                 return ApplyAzimuthTravelGuard(bootstrapPlan);
+            }
+
+            if (TryCreateSessionLocalCoarsePlan(out var sessionLocalCoarsePlan)) {
+                return ApplyAzimuthTravelGuard(sessionLocalCoarsePlan);
             }
 
             if (TryBuildResponseModel(out var responseModel)) {
@@ -588,6 +603,109 @@ namespace NINA.Plugins.PolarAlignment {
 
         private static double GetCalibratedAltitudeBootstrapMagnitude() {
             return TppaDirectBootstrapRouteQualification.BootstrapYProbeUnits;
+        }
+
+        private bool TryCreateSessionLocalCoarsePlan(out AutomatedAdjustmentPlan plan) {
+            plan = null;
+            if (sessionLocalCoarseFrozen
+                || calibratedDirectFullTravelRoute == null
+                || !HasQualifiedBootstrapYResponse()
+                || !TryBuildResponseModel(out var responseModel)
+                || !TrySolveLeastSquaresCommand(responseModel, currentObservation, out var rawX, out var rawY)) {
+                return false;
+            }
+
+            var xMagnitude = NormalizeMagnitude(
+                rawX * ConfirmedXCorrectionGain,
+                calibratedDirectFullTravelRoute.MaximumXUnitsPerMove);
+            var yMagnitude = NormalizeMagnitude(
+                rawY * ConfirmedXCorrectionGain,
+                calibratedDirectFullTravelRoute.MaximumYUnitsPerMove);
+            if (Math.Abs(xMagnitude) < MinimumMoveMagnitude && Math.Abs(yMagnitude) < MinimumMoveMagnitude) {
+                return false;
+            }
+
+            var predictedAzimuth = currentObservation.AzimuthErrorDegrees
+                                   + responseModel.AzimuthDeltaPerXUnit * xMagnitude
+                                   + responseModel.AzimuthDeltaPerYUnit * yMagnitude;
+            var predictedAltitude = currentObservation.AltitudeErrorDegrees
+                                    + responseModel.AltitudeDeltaPerXUnit * xMagnitude
+                                    + responseModel.AltitudeDeltaPerYUnit * yMagnitude;
+            if (CalculateGuardedErrorCost(currentObservation, predictedAzimuth, predictedAltitude)
+                >= CalculateGuardedErrorCost(currentObservation, currentObservation.AzimuthErrorDegrees, currentObservation.AltitudeErrorDegrees)
+                    * MinimumExpectedImprovementCostFactor) {
+                return false;
+            }
+
+            plan = new AutomatedAdjustmentPlan(
+                xMagnitude,
+                yMagnitude,
+                false,
+                "Session-local conditioned coarse correction");
+            return true;
+        }
+
+        private bool HasQualifiedBootstrapYResponse() {
+            if (calibratedDirectAzimuthResponseSeed == null) {
+                return false;
+            }
+
+            foreach (var sample in samples) {
+                if (Math.Abs(sample.XMagnitude) > 1e-9
+                    || Math.Abs(sample.YMagnitude) < TppaDirectBootstrapRouteQualification.BootstrapYProbeUnits) {
+                    continue;
+                }
+
+                var yMagnitude = Math.Sqrt(sample.AzimuthDeltaDegrees * sample.AzimuthDeltaDegrees
+                                           + sample.AltitudeDeltaDegrees * sample.AltitudeDeltaDegrees);
+                if (yMagnitude < MinimumSessionCoarseBootstrapResponseDegrees) {
+                    Logger.Warning($"Rejected session-local coarse authority: the Y bootstrap response was only {Math.Round(yMagnitude * 60.0, 3)} arcmin.");
+                    return false;
+                }
+
+                var xMagnitude = Math.Sqrt(
+                    calibratedDirectAzimuthResponseSeed.AzimuthDeltaDegrees * calibratedDirectAzimuthResponseSeed.AzimuthDeltaDegrees
+                    + calibratedDirectAzimuthResponseSeed.AltitudeDeltaDegrees * calibratedDirectAzimuthResponseSeed.AltitudeDeltaDegrees);
+                var determinant = calibratedDirectAzimuthResponseSeed.AzimuthDeltaDegrees * (sample.AltitudeDeltaDegrees / sample.YMagnitude)
+                                  - (sample.AzimuthDeltaDegrees / sample.YMagnitude) * calibratedDirectAzimuthResponseSeed.AltitudeDeltaDegrees;
+                var yPerUnitMagnitude = yMagnitude / Math.Abs(sample.YMagnitude);
+                var sine = xMagnitude > 0 && yPerUnitMagnitude > 0
+                    ? Math.Abs(determinant) / (xMagnitude * yPerUnitMagnitude)
+                    : 0;
+                if (sine < 0.15 || CalculateResponseConditionNumber(
+                        calibratedDirectAzimuthResponseSeed.AzimuthDeltaDegrees,
+                        calibratedDirectAzimuthResponseSeed.AltitudeDeltaDegrees,
+                        sample.AzimuthDeltaDegrees / sample.YMagnitude,
+                        sample.AltitudeDeltaDegrees / sample.YMagnitude) > MaximumSessionCoarseConditionNumber) {
+                    Logger.Warning("Rejected session-local coarse authority: the fresh Y response is insufficiently independent of the trusted X response.");
+                    return false;
+                }
+
+                return true;
+            }
+
+            return false;
+        }
+
+        private static double CalculateResponseConditionNumber(
+            double azimuthDeltaPerXUnit,
+            double altitudeDeltaPerXUnit,
+            double azimuthDeltaPerYUnit,
+            double altitudeDeltaPerYUnit) {
+            var a = azimuthDeltaPerXUnit * azimuthDeltaPerXUnit + altitudeDeltaPerXUnit * altitudeDeltaPerXUnit;
+            var d = azimuthDeltaPerYUnit * azimuthDeltaPerYUnit + altitudeDeltaPerYUnit * altitudeDeltaPerYUnit;
+            var b = azimuthDeltaPerXUnit * azimuthDeltaPerYUnit + altitudeDeltaPerXUnit * altitudeDeltaPerYUnit;
+            var trace = a + d;
+            var discriminant = Math.Max(0, trace * trace - 4 * (a * d - b * b));
+            var largest = (trace + Math.Sqrt(discriminant)) / 2.0;
+            var smallest = (trace - Math.Sqrt(discriminant)) / 2.0;
+            return smallest > NormalEquationDamping && largest > 0
+                ? Math.Sqrt(largest / smallest)
+                : double.PositiveInfinity;
+        }
+
+        private static bool IsSessionLocalCoarsePlan(AutomatedAdjustmentPlan plan) {
+            return plan != null && string.Equals(plan.Reason, "Session-local conditioned coarse correction", StringComparison.Ordinal);
         }
 
         private bool HasObservedYResponse() {

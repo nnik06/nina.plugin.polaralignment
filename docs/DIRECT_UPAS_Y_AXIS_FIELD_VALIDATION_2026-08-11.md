@@ -109,3 +109,19 @@ bootstrap probe. This entry path authorizes only that observable, bounded Y
 probe. A single fresh Y observation must still clear its response and matrix
 conditioning gates before any model-based correction, and it does not by
 itself authorize a full-travel correction.
+
+## Session-Local Coarse Promotion
+
+After that one bounded Y probe, the controller may use the configured direct
+per-move limits only in the current session.  Promotion requires all of the
+following: a response of at least 6 arcminutes from the 20-unit probe, a Y
+response direction separated from the trusted X column (sine at least 0.15),
+and a response-matrix condition number no greater than 8.  The normal
+physical headroom and travel guards remain in force.
+
+The first promoted coarse correction is an experiment, not proof.  Its next
+independent fresh TPPA determination must reduce total error by at least 20
+percent.  Otherwise coarse authority freezes for the rest of the session and
+the controller returns to bounded correction.  This is intentionally
+session-local and remains field-unvalidated until a fresh X/Y photon campaign
+confirms the measured response matrix.

@@ -1501,5 +1501,89 @@ namespace NINA.Plugins.PolarAlignment.Test {
             correction.HasMovement.Should().BeTrue();
             correction.Reason.Should().NotContain("azimuth-only");
         }
+
+        [Test]
+        public void AutomatedAdjustmentController_PromotesStrongIndependentBootstrapToSessionLocalCoarseCorrection() {
+            var controller = CreateBootstrapController();
+            controller.UpdateObservation(5, -5);
+
+            var probe = controller.CreatePlan();
+            probe.IsProbe.Should().BeTrue();
+            probe.YMagnitude.Should().Be(TppaDirectBootstrapRouteQualification.BootstrapYProbeUnits);
+
+            controller.NoteSuccessfulExecution(probe);
+            controller.UpdateObservation(5, -4.5);
+
+            var coarse = controller.CreatePlan();
+            coarse.HasMovement.Should().BeTrue();
+            coarse.Reason.Should().Be("Session-local conditioned coarse correction");
+            Math.Abs(coarse.XMagnitude).Should().BeGreaterThan(8);
+            Math.Abs(coarse.YMagnitude).Should().BeGreaterThan(8);
+        }
+
+        [Test]
+        public void AutomatedAdjustmentController_FreezesSessionLocalCoarseAuthorityAfterWeakFreshImprovement() {
+            var controller = CreateBootstrapController();
+            controller.UpdateObservation(5, -5);
+            var probe = controller.CreatePlan();
+            controller.NoteSuccessfulExecution(probe);
+            controller.UpdateObservation(5, -4.5);
+
+            var coarse = controller.CreatePlan();
+            coarse.Reason.Should().Be("Session-local conditioned coarse correction");
+            controller.NoteSuccessfulExecution(coarse);
+            controller.UpdateObservation(4.9, -4.3);
+
+            controller.CreatePlan().Reason.Should().NotBe("Session-local conditioned coarse correction");
+        }
+
+        [Test]
+        public void AutomatedAdjustmentController_DoesNotPromoteWeakBootstrapYResponseToSessionLocalCoarseCorrection() {
+            var controller = CreateBootstrapController();
+            controller.UpdateObservation(5, -5);
+            var probe = controller.CreatePlan();
+            controller.NoteSuccessfulExecution(probe);
+
+            // The 20-unit probe changed the reported altitude by only 3 arcmin.
+            // That is deliberately below the six-arcmin coarse-promotion floor.
+            controller.UpdateObservation(5, -4.95);
+
+            controller.CreatePlan().Reason.Should().NotBe("Session-local conditioned coarse correction");
+        }
+
+        [Test]
+        public void AutomatedAdjustmentController_DoesNotPromoteCollinearBootstrapYResponseToSessionLocalCoarseCorrection() {
+            var controller = CreateBootstrapController();
+            controller.UpdateObservation(5, -5);
+            var probe = controller.CreatePlan();
+            controller.NoteSuccessfulExecution(probe);
+
+            // The Y probe is large, but it only reproduces the trusted X/AZ direction.
+            controller.UpdateObservation(5.5, -5);
+
+            controller.CreatePlan().Reason.Should().NotBe("Session-local conditioned coarse correction");
+        }
+
+        private static AutomatedAdjustmentController CreateBootstrapController() {
+            var controller = new AutomatedAdjustmentController(useUpasEngagementController: true);
+            controller.ConfigureCalibratedDirectFullTravelRoute(
+                enabled: true,
+                operatorConfirmed: true,
+                azimuthStartingPositionDegrees: 0,
+                azimuthMinimumDegrees: -5.4,
+                azimuthMaximumDegrees: 5.4,
+                altitudeStartingPositionDegrees: 0,
+                altitudeMinimumDegrees: -5.4,
+                altitudeMaximumDegrees: 5.4,
+                azimuthDeltaPerXUnitDegrees: 0.05,
+                azimuthDeltaPerYUnitDegrees: 0,
+                altitudeDeltaPerXUnitDegrees: 0,
+                altitudeDeltaPerYUnitDegrees: 0,
+                maximumXUnitsPerMove: 81,
+                maximumYUnitsPerMove: 81,
+                physicalAzimuthDegreesPerXUnit: 0.05,
+                physicalAltitudeDegreesPerYUnit: 0.05);
+            return controller;
+        }
     }
 }
