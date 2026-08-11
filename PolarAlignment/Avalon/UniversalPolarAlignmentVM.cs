@@ -136,7 +136,25 @@ namespace NINA.Plugins.PolarAlignment.Avalon {
         public bool AzimuthTravelGuardConfirmed {
             get => Properties.Settings.Default.AvalonAzimuthTravelGuardConfirmed;
             set {
+                if (value && !Properties.Settings.Default.AvalonAzimuthTravelGuardConfirmed) {
+                    Logger.Info(
+                        $"UPAS attended physical datum attested: axis=AZ, start={AzimuthStartingPositionDegrees:F3} deg, " +
+                        $"range=[{Properties.Settings.Default.AvalonAzimuthMinimumDegrees:F3}, {Properties.Settings.Default.AvalonAzimuthMaximumDegrees:F3}] deg, " +
+                        $"scale={AzimuthDegreesPerNudgeUnit:F6} deg/X-unit, source=operator-manual-entry.");
+                }
                 Properties.Settings.Default.AvalonAzimuthTravelGuardConfirmed = value;
+                CoreUtil.SaveSettings(Properties.Settings.Default);
+                RaisePropertyChanged();
+            }
+        }
+
+        public double AzimuthStartingPositionDegrees {
+            get => Properties.Settings.Default.AvalonAzimuthStartingPositionDegrees;
+            set {
+                if (Properties.Settings.Default.AvalonAzimuthStartingPositionDegrees != value) {
+                    InvalidateAzimuthTravelConfirmation();
+                }
+                Properties.Settings.Default.AvalonAzimuthStartingPositionDegrees = value;
                 CoreUtil.SaveSettings(Properties.Settings.Default);
                 RaisePropertyChanged();
             }
@@ -172,6 +190,12 @@ namespace NINA.Plugins.PolarAlignment.Avalon {
         public bool AltitudeTravelGuardConfirmed {
             get => Properties.Settings.Default.AvalonAltitudeTravelGuardConfirmed;
             set {
+                if (value && !Properties.Settings.Default.AvalonAltitudeTravelGuardConfirmed) {
+                    Logger.Info(
+                        $"UPAS attended physical datum attested: axis=ALT, start={AltitudeStartingPositionDegrees:F3} deg, " +
+                        $"range=[{AltitudeMinimumDegrees:F3}, {AltitudeMaximumDegrees:F3}] deg, " +
+                        $"scale={AltitudeDegreesPerNudgeUnit:F6} deg/Y-unit, source=operator-manual-entry.");
+                }
                 Properties.Settings.Default.AvalonAltitudeTravelGuardConfirmed = value;
                 CoreUtil.SaveSettings(Properties.Settings.Default);
                 RaisePropertyChanged();
@@ -229,10 +253,21 @@ namespace NINA.Plugins.PolarAlignment.Avalon {
 
         protected override void InvalidatePhysicalPositionConfirmation() {
             Logger.Warning(
-                $"Clearing UPAS visual-marker travel confirmations. " +
+                $"Invalidating UPAS attended physical datum after connection/reset state change. " +
                 $"Caller stack: {new System.Diagnostics.StackTrace(skipFrames: 1, fNeedFileInfo: true)}");
-            AzimuthTravelGuardConfirmed = false;
+            InvalidateAzimuthTravelConfirmation();
             InvalidateAltitudeTravelConfirmation();
+        }
+
+        private void InvalidateAzimuthTravelConfirmation() {
+            if (!Properties.Settings.Default.AvalonAzimuthTravelGuardConfirmed) {
+                return;
+            }
+
+            Logger.Warning("UPAS attended physical datum invalidated: axis=AZ. Re-attest the observed physical position before automated movement.");
+            Properties.Settings.Default.AvalonAzimuthTravelGuardConfirmed = false;
+            CoreUtil.SaveSettings(Properties.Settings.Default);
+            RaisePropertyChanged(nameof(AzimuthTravelGuardConfirmed));
         }
 
         private void InvalidateAltitudeTravelConfirmation() {
@@ -240,6 +275,7 @@ namespace NINA.Plugins.PolarAlignment.Avalon {
                 return;
             }
 
+            Logger.Warning("UPAS attended physical datum invalidated: axis=ALT. Re-attest the observed physical position before automated movement.");
             Properties.Settings.Default.AvalonAltitudeTravelGuardConfirmed = false;
             CoreUtil.SaveSettings(Properties.Settings.Default);
             RaisePropertyChanged(nameof(AltitudeTravelGuardConfirmed));

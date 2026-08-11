@@ -45,15 +45,16 @@
     <s:String x:Key="AutomatedAdjustmentSettleTimeToolTip">Number of seconds TPPA waits after each automated adjustment before continuing.</s:String>
     <s:String x:Key="UpasPreSeatAzimuthToolTip">When enabled for UPAS automated adjustment, TPPA sends one azimuth X move before the first plate solve to seat the mechanism in a known direction. This requires the UPAS visual-marker travel guard to be enabled and confirmed.</s:String>
     <s:String x:Key="UpasAzimuthPreSeatUnitsToolTip">Logical UPAS X nudge units used by the optional pre-seat move before the first plate solve.</s:String>
-    <s:String x:Key="UpasAzimuthTravelGuardToolTip">Enables a conservative run budget for automated UPAS azimuth X movement, based on the visual marker and scale rather than GRBL motor position.</s:String>
-    <s:String x:Key="UpasAzimuthTravelLimitToolTip">Maximum cumulative automated UPAS azimuth X travel allowed for this TPPA run, in estimated marker degrees from the visually checked starting position.</s:String>
-    <s:String x:Key="UpasAzimuthTravelConfirmToolTip">Confirms that you visually checked the UPAS azimuth marker and that the selected travel limit is safely available.</s:String>
+    <s:String x:Key="UpasAzimuthTravelGuardToolTip">Enables a conservative run budget for automated UPAS azimuth X movement, based on an operator-attested physical datum and scale rather than GRBL motor position.</s:String>
+    <s:String x:Key="UpasAzimuthStartToolTip">Observed physical AZ position at attestation. Factory center is 0 degrees.</s:String>
+    <s:String x:Key="UpasAzimuthTravelLimitToolTip">Maximum cumulative automated UPAS azimuth X travel allowed for this TPPA run, in estimated degrees from the observed starting position.</s:String>
+    <s:String x:Key="UpasAzimuthTravelConfirmToolTip">Attests that you have observed the current UPAS AZ position and confirmed the displayed start, limits, and travel headroom. Reconnects, resets, or datum changes clear this attestation.</s:String>
     <s:String x:Key="UpasAzimuthDegreesPerUnitToolTip">Estimated physical UPAS azimuth marker degrees per logical X nudge unit. Default 0.025 means 30 units consumes about 0.75 degrees of travel budget.</s:String>
-    <s:String x:Key="UpasAltitudeTravelGuardToolTip">Enables a conservative physical-envelope guard for automated UPAS altitude Y movement. It uses the visually checked marker, never GRBL MPos.</s:String>
-    <s:String x:Key="UpasAltitudeStartToolTip">Physical altitude-marker position at visual confirmation. Factory center is 0 degrees.</s:String>
+    <s:String x:Key="UpasAltitudeTravelGuardToolTip">Enables a conservative physical-envelope guard for automated UPAS altitude Y movement. It uses an operator-attested physical datum, never GRBL MPos.</s:String>
+    <s:String x:Key="UpasAltitudeStartToolTip">Observed physical ALT position at attestation. Factory center is 0 degrees.</s:String>
     <s:String x:Key="UpasAltitudeMinimumToolTip">Lowest permitted physical altitude-marker position. Keep the default -5 degrees away from the -6 degree hard stop.</s:String>
     <s:String x:Key="UpasAltitudeMaximumToolTip">Highest permitted physical altitude-marker position. Keep the default +5 degrees away from the +6 degree hard stop.</s:String>
-    <s:String x:Key="UpasAltitudeTravelConfirmToolTip">Confirms the physical ALT marker was visually checked after this UPAS connection. Reconnects and ALT scale/direction changes clear this confirmation.</s:String>
+    <s:String x:Key="UpasAltitudeTravelConfirmToolTip">Attests that you have observed the current UPAS ALT position and confirmed the displayed start and limits. Reconnects, resets, and ALT scale/direction changes clear this attestation.</s:String>
     <s:String x:Key="UpasAltitudeDegreesPerUnitToolTip">Estimated physical ALT degrees per logical Y unit. With gear ratio 22 and about 0.001 degree per raw unit, use 0.022.</s:String>
     <s:String x:Key="ResetSettingsToolTip">Shows a confirmation dialog and then resets the TPPA plugin settings to their default values.</s:String>
     <s:String x:Key="AlignmentSystemConnectToolTip">Creates the selected hardware system, scans available serial ports for a matching device, and starts status polling.</s:String>
@@ -2045,10 +2046,22 @@
                             <TextBlock
                                 Margin="0,0,4,0"
                                 VerticalAlignment="Center"
+                                Text="Start"
+                                ToolTip="{StaticResource UpasAzimuthStartToolTip}" />
+                            <ninactrl:UnitTextBox
+                                MinWidth="52"
+                                Margin="0,0,12,0"
+                                VerticalAlignment="Center"
+                                Text="{Binding UniversalPolarAlignmentVM.AzimuthStartingPositionDegrees}"
+                                ToolTip="{StaticResource UpasAzimuthStartToolTip}"
+                                Unit="deg" />
+                            <TextBlock
+                                Margin="0,0,4,0"
+                                VerticalAlignment="Center"
                                 Text="Limit"
                                 ToolTip="{StaticResource UpasAzimuthTravelLimitToolTip}" />
                             <ninactrl:UnitTextBox
-                                MinWidth="58"
+                                MinWidth="52"
                                 Margin="0,0,12,0"
                                 VerticalAlignment="Center"
                                 Text="{Binding UniversalPolarAlignmentVM.AzimuthTravelLimitDegrees}"
@@ -2057,7 +2070,7 @@
                             <TextBlock
                                 Margin="0,0,4,0"
                                 VerticalAlignment="Center"
-                                Text="Marker checked"
+                                Text="AZ attested"
                                 ToolTip="{StaticResource UpasAzimuthTravelConfirmToolTip}" />
                             <CheckBox
                                 Margin="0,0,12,0"
@@ -2126,7 +2139,7 @@
                             <TextBlock
                                 Margin="0,0,4,0"
                                 VerticalAlignment="Center"
-                                Text="Marker checked"
+                                Text="ALT attested"
                                 ToolTip="{StaticResource UpasAltitudeTravelConfirmToolTip}" />
                             <CheckBox
                                 Margin="0,0,8,0"
