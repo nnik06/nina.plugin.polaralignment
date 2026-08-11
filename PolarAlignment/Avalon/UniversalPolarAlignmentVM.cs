@@ -32,6 +32,9 @@ namespace NINA.Plugins.PolarAlignment.Avalon {
             get => Properties.Settings.Default.AvalonXGearRatio;
             set {
                 if (value < 1) { value = 1; }
+                if (Properties.Settings.Default.AvalonXGearRatio != value) {
+                    InvalidateDirectFullTravelConfirmation();
+                }
                 Properties.Settings.Default.AvalonXGearRatio = value;
                 if (upa != null) { upa.XGearRatio = value; }
                 CoreUtil.SaveSettings(Properties.Settings.Default);
@@ -54,6 +57,7 @@ namespace NINA.Plugins.PolarAlignment.Avalon {
             set {
                 if (Properties.Settings.Default.AvalonYGearRatio != value) {
                     InvalidateAltitudeTravelConfirmation();
+                    InvalidateDirectFullTravelConfirmation();
                 }
                 if (value < 1) { value = 1; }
                 Properties.Settings.Default.AvalonYGearRatio = value;
@@ -179,7 +183,11 @@ namespace NINA.Plugins.PolarAlignment.Avalon {
         public double AzimuthDegreesPerNudgeUnit {
             get => Properties.Settings.Default.AvalonAzimuthDegreesPerNudgeUnit;
             set {
-                Properties.Settings.Default.AvalonAzimuthDegreesPerNudgeUnit = value <= 0 ? 0.025 : value;
+                var normalized = value <= 0 ? 0.025 : value;
+                if (Properties.Settings.Default.AvalonAzimuthDegreesPerNudgeUnit != normalized) {
+                    InvalidateDirectFullTravelConfirmation();
+                }
+                Properties.Settings.Default.AvalonAzimuthDegreesPerNudgeUnit = normalized;
                 CoreUtil.SaveSettings(Properties.Settings.Default);
                 RaisePropertyChanged();
             }
@@ -351,6 +359,7 @@ namespace NINA.Plugins.PolarAlignment.Avalon {
                 $"Caller stack: {new System.Diagnostics.StackTrace(skipFrames: 1, fNeedFileInfo: true)}");
             InvalidateAzimuthTravelConfirmation();
             InvalidateAltitudeTravelConfirmation();
+            InvalidateDirectFullTravelConfirmation();
         }
 
         private void InvalidateAzimuthTravelConfirmation() {
