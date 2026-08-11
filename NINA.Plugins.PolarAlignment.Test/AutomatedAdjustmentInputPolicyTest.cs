@@ -55,7 +55,8 @@ namespace NINA.Plugins.PolarAlignment.Test {
             unqualified.IsEligible.Should().BeFalse();
             unqualified.Reason.Should().Contain("120'");
             qualified.IsEligible.Should().BeTrue();
-            qualified.Reason.Should().Contain("supervisor coarse-correction");
+            qualified.Reason.Should().Contain("calibrated direct full-travel");
+            qualified.Reason.Should().NotContain("supervisor");
         }
 
         [Test]

@@ -6,10 +6,10 @@ namespace NINA.Plugins.PolarAlignment {
         string Reason);
 
     internal static class AutomatedAdjustmentInputPolicy {
-        // Direct alignment stays in the demonstrated 120' envelope until a
-        // calibrated, signed mechanical-position authority can map a sky error
-        // to remaining UPAS travel. A sky-frame error is not a hardware axis
-        // position, so the +/-5.4 degree field envelope remains supervisor-only.
+        // Ordinary direct alignment stays in the demonstrated 120' envelope.
+        // A separately qualified calibrated full-travel route may admit the
+        // physical +/-5.4 degree envelope; it does not require the external
+        // supervisor campaign or its provenance paperwork.
         public const double MaximumInitialErrorArcMinutes = 120.0;
         public const double MaximumFieldInitialAxisErrorArcMinutes = 324.0;
         public const double MaximumFieldInitialTotalErrorArcMinutes = 458.205195;
@@ -40,7 +40,7 @@ namespace NINA.Plugins.PolarAlignment {
             bool qualifiedDirectAzimuthRoute = false,
             bool qualifiedDirectBootstrapRoute = false) {
             if (qualifiedDirectFullTravelRoute) {
-                return EvaluateSupervisorCoarse(
+                return EvaluateCalibratedDirectFullTravel(
                     azimuthErrorArcMinutes,
                     altitudeErrorArcMinutes,
                     totalErrorArcMinutes);
@@ -95,6 +95,19 @@ namespace NINA.Plugins.PolarAlignment {
                 MaximumFieldInitialAxisErrorArcMinutes,
                 MaximumFieldInitialTotalErrorArcMinutes,
                 "supervisor coarse-correction");
+        }
+
+        public static AutomatedAdjustmentInputDecision EvaluateCalibratedDirectFullTravel(
+            double azimuthErrorArcMinutes,
+            double altitudeErrorArcMinutes,
+            double totalErrorArcMinutes) {
+            return EvaluateWithLimit(
+                azimuthErrorArcMinutes,
+                altitudeErrorArcMinutes,
+                totalErrorArcMinutes,
+                MaximumFieldInitialAxisErrorArcMinutes,
+                MaximumFieldInitialTotalErrorArcMinutes,
+                "calibrated direct full-travel");
         }
 
         private static AutomatedAdjustmentInputDecision EvaluateMixedDirectEnvelope(

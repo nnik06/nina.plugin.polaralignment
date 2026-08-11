@@ -151,3 +151,12 @@ When the calibrated full-travel planner produces a candidate, it emits one
 marker start, physical scale, and logical-to-marker direction. The record is
 explicitly `authority=reporting-only`; it is field evidence for commissioning,
 not a movement authorization.
+
+## Full-envelope input admission
+
+The calibrated direct full-travel route is the only direct TPPA path that
+admits a fresh error vector across the physical +/-5.4 degree envelope. Its
+input decision is intentionally independent of the optional supervisor
+campaign. The route still requires its measured 2x2 response, configured
+per-move bounds, and the normal motion guards; it does not make a sky-frame
+error into a marker-position claim.
