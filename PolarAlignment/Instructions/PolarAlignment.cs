@@ -577,6 +577,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             var enforceFastRuntimeBudget = EnforceFiveMinuteRuntimeBudget
                 && automatedAdjustmentsEnabled
                 && executionPolicy.AllowActuatorMovement;
+            var operationalTier = TppaOperationalAlignmentTierPolicy.Evaluate(AlignmentTolerance);
             var supervisorCampaignMode = enforceFastRuntimeBudget
                 && Properties.Settings.Default.RequireExternalUpasSupervisorForAutomatedMoves;
             if (supervisorCampaignMode) {
@@ -662,6 +663,9 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     ["settleSeconds"] = fastConfiguration.ResolvedSettleSeconds,
                     ["exposureSeconds"] = fastConfiguration.ExposureSeconds,
                     ["alignmentToleranceMinutes"] = AlignmentTolerance,
+                    ["operationalTier"] = operationalTier.Tier.ToString(),
+                    ["imagingReadyTarget"] = operationalTier.IsImagingReady,
+                    ["operationalCompletionClaim"] = operationalTier.CompletionClaim,
                     ["refractionAdjustmentEnabled"] = Properties.Settings.Default.RefractionAdjustment,
                     ["repositoryHead"] = activeTppaCovarianceAuthority?.RepositoryHead ?? "direct-field",
                     ["pluginAssemblySha256"] = activeTppaCovarianceAuthority?.PluginAssemblySha256 ?? "direct-field",
@@ -1808,7 +1812,10 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                             ["moveCount"] = freshFeedbackMoveCount,
                             ["finalAzimuthMinutes"] = finalVector.AzimuthMinutes,
                             ["finalAltitudeMinutes"] = finalVector.AltitudeMinutes,
-                            ["finalTotalMinutes"] = finalVector.TotalMinutes
+                            ["finalTotalMinutes"] = finalVector.TotalMinutes,
+                            ["operationalTier"] = operationalTier.Tier.ToString(),
+                            ["imagingReady"] = operationalTier.IsImagingReady,
+                            ["operationalCompletionClaim"] = operationalTier.CompletionClaim
                         }, terminal: true);
                         Logger.Info(
                             $"TPPA five-minute automated runtime contract completed in " +
