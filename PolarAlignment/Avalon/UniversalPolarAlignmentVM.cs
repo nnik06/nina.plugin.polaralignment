@@ -78,6 +78,7 @@ namespace NINA.Plugins.PolarAlignment.Avalon {
             set {
                 if (Properties.Settings.Default.AvalonReverseAzimuth != value) {
                     Properties.Settings.Default.AvalonRememberedAzimuthResponsePerUnit = 0;
+                    InvalidateDirectFullTravelConfirmation();
                 }
                 Properties.Settings.Default.AvalonReverseAzimuth = value;
                 CoreUtil.SaveSettings(Properties.Settings.Default);
@@ -90,6 +91,7 @@ namespace NINA.Plugins.PolarAlignment.Avalon {
             set {
                 if (Properties.Settings.Default.AvalonReverseAltitude != value) {
                     InvalidateAltitudeTravelConfirmation();
+                    InvalidateDirectFullTravelConfirmation();
                 }
                 Properties.Settings.Default.AvalonReverseAltitude = value;
                 CoreUtil.SaveSettings(Properties.Settings.Default);
@@ -153,6 +155,7 @@ namespace NINA.Plugins.PolarAlignment.Avalon {
             set {
                 if (Properties.Settings.Default.AvalonAzimuthStartingPositionDegrees != value) {
                     InvalidateAzimuthTravelConfirmation();
+                    InvalidateDirectFullTravelConfirmation();
                 }
                 Properties.Settings.Default.AvalonAzimuthStartingPositionDegrees = value;
                 CoreUtil.SaveSettings(Properties.Settings.Default);
@@ -163,7 +166,11 @@ namespace NINA.Plugins.PolarAlignment.Avalon {
         public double AzimuthTravelLimitDegrees {
             get => Properties.Settings.Default.AvalonAzimuthTravelLimitDegrees;
             set {
-                Properties.Settings.Default.AvalonAzimuthTravelLimitDegrees = value < 0 ? 0 : value;
+                var normalized = value < 0 ? 0 : value;
+                if (Properties.Settings.Default.AvalonAzimuthTravelLimitDegrees != normalized) {
+                    InvalidateDirectFullTravelConfirmation();
+                }
+                Properties.Settings.Default.AvalonAzimuthTravelLimitDegrees = normalized;
                 CoreUtil.SaveSettings(Properties.Settings.Default);
                 RaisePropertyChanged();
             }
@@ -207,6 +214,7 @@ namespace NINA.Plugins.PolarAlignment.Avalon {
             set {
                 if (Properties.Settings.Default.AvalonAltitudeStartingPositionDegrees != value) {
                     InvalidateAltitudeTravelConfirmation();
+                    InvalidateDirectFullTravelConfirmation();
                 }
                 Properties.Settings.Default.AvalonAltitudeStartingPositionDegrees = value;
                 CoreUtil.SaveSettings(Properties.Settings.Default);
@@ -219,6 +227,7 @@ namespace NINA.Plugins.PolarAlignment.Avalon {
             set {
                 if (Properties.Settings.Default.AvalonAltitudeMinimumDegrees != value) {
                     InvalidateAltitudeTravelConfirmation();
+                    InvalidateDirectFullTravelConfirmation();
                 }
                 Properties.Settings.Default.AvalonAltitudeMinimumDegrees = value;
                 CoreUtil.SaveSettings(Properties.Settings.Default);
@@ -231,6 +240,7 @@ namespace NINA.Plugins.PolarAlignment.Avalon {
             set {
                 if (Properties.Settings.Default.AvalonAltitudeMaximumDegrees != value) {
                     InvalidateAltitudeTravelConfirmation();
+                    InvalidateDirectFullTravelConfirmation();
                 }
                 Properties.Settings.Default.AvalonAltitudeMaximumDegrees = value;
                 CoreUtil.SaveSettings(Properties.Settings.Default);
@@ -244,11 +254,95 @@ namespace NINA.Plugins.PolarAlignment.Avalon {
                 var normalized = value <= 0 ? 0.022 : value;
                 if (Properties.Settings.Default.AvalonAltitudeDegreesPerNudgeUnit != normalized) {
                     InvalidateAltitudeTravelConfirmation();
+                    InvalidateDirectFullTravelConfirmation();
                 }
                 Properties.Settings.Default.AvalonAltitudeDegreesPerNudgeUnit = normalized;
                 CoreUtil.SaveSettings(Properties.Settings.Default);
                 RaisePropertyChanged();
             }
+        }
+
+        public bool DirectFullTravelRouteEnabled {
+            get => Properties.Settings.Default.AvalonDirectFullTravelRouteEnabled;
+            set {
+                Properties.Settings.Default.AvalonDirectFullTravelRouteEnabled = value;
+                CoreUtil.SaveSettings(Properties.Settings.Default);
+                RaisePropertyChanged();
+            }
+        }
+
+        public bool DirectFullTravelRouteConfirmed {
+            get => Properties.Settings.Default.AvalonDirectFullTravelRouteConfirmed;
+            set {
+                if (value && !Properties.Settings.Default.AvalonDirectFullTravelRouteConfirmed) {
+                    Logger.Info(
+                        "UPAS calibrated direct full-travel route attested: " +
+                        $"response=[[{CalibratedAzimuthDeltaPerXUnit:F6}, {CalibratedAzimuthDeltaPerYUnit:F6}], " +
+                        $"[{CalibratedAltitudeDeltaPerXUnit:F6}, {CalibratedAltitudeDeltaPerYUnit:F6}]] deg/unit, " +
+                        $"max=[{CalibratedMaximumXUnitsPerMove:F1}, {CalibratedMaximumYUnitsPerMove:F1}] units, " +
+                        $"relativeUncertainty={CalibratedResponseRelativeUncertainty:F3}, " +
+                        $"recovery={ClampLimitedRecoveryEnabled}.");
+                }
+                Properties.Settings.Default.AvalonDirectFullTravelRouteConfirmed = value;
+                CoreUtil.SaveSettings(Properties.Settings.Default);
+                RaisePropertyChanged();
+            }
+        }
+
+        public bool ClampLimitedRecoveryEnabled {
+            get => Properties.Settings.Default.AvalonClampLimitedRecoveryEnabled;
+            set {
+                SetDirectRouteSetting(nameof(Properties.Settings.Default.AvalonClampLimitedRecoveryEnabled), value);
+                RaisePropertyChanged();
+            }
+        }
+
+        public double CalibratedResponseRelativeUncertainty {
+            get => Properties.Settings.Default.AvalonCalibratedResponseRelativeUncertainty;
+            set {
+                SetDirectRouteSetting(nameof(Properties.Settings.Default.AvalonCalibratedResponseRelativeUncertainty), value);
+                RaisePropertyChanged();
+            }
+        }
+
+        public double CalibratedAzimuthDeltaPerXUnit {
+            get => Properties.Settings.Default.AvalonCalibratedAzimuthDeltaPerXUnit;
+            set => SetDirectRouteResponse(nameof(Properties.Settings.Default.AvalonCalibratedAzimuthDeltaPerXUnit), value, nameof(CalibratedAzimuthDeltaPerXUnit));
+        }
+
+        public double CalibratedAzimuthDeltaPerYUnit {
+            get => Properties.Settings.Default.AvalonCalibratedAzimuthDeltaPerYUnit;
+            set => SetDirectRouteResponse(nameof(Properties.Settings.Default.AvalonCalibratedAzimuthDeltaPerYUnit), value, nameof(CalibratedAzimuthDeltaPerYUnit));
+        }
+
+        public double CalibratedAltitudeDeltaPerXUnit {
+            get => Properties.Settings.Default.AvalonCalibratedAltitudeDeltaPerXUnit;
+            set => SetDirectRouteResponse(nameof(Properties.Settings.Default.AvalonCalibratedAltitudeDeltaPerXUnit), value, nameof(CalibratedAltitudeDeltaPerXUnit));
+        }
+
+        public double CalibratedAltitudeDeltaPerYUnit {
+            get => Properties.Settings.Default.AvalonCalibratedAltitudeDeltaPerYUnit;
+            set => SetDirectRouteResponse(nameof(Properties.Settings.Default.AvalonCalibratedAltitudeDeltaPerYUnit), value, nameof(CalibratedAltitudeDeltaPerYUnit));
+        }
+
+        public double CalibratedMaximumXUnitsPerMove {
+            get => Properties.Settings.Default.AvalonCalibratedMaximumXUnitsPerMove;
+            set => SetDirectRouteResponse(nameof(Properties.Settings.Default.AvalonCalibratedMaximumXUnitsPerMove), value, nameof(CalibratedMaximumXUnitsPerMove));
+        }
+
+        public double CalibratedMaximumYUnitsPerMove {
+            get => Properties.Settings.Default.AvalonCalibratedMaximumYUnitsPerMove;
+            set => SetDirectRouteResponse(nameof(Properties.Settings.Default.AvalonCalibratedMaximumYUnitsPerMove), value, nameof(CalibratedMaximumYUnitsPerMove));
+        }
+
+        public double DirectRouteAzimuthMinimumDegrees {
+            get => Properties.Settings.Default.AvalonAzimuthMinimumDegrees;
+            set => SetDirectRouteResponse(nameof(Properties.Settings.Default.AvalonAzimuthMinimumDegrees), value, nameof(DirectRouteAzimuthMinimumDegrees));
+        }
+
+        public double DirectRouteAzimuthMaximumDegrees {
+            get => Properties.Settings.Default.AvalonAzimuthMaximumDegrees;
+            set => SetDirectRouteResponse(nameof(Properties.Settings.Default.AvalonAzimuthMaximumDegrees), value, nameof(DirectRouteAzimuthMaximumDegrees));
         }
 
         protected override void InvalidatePhysicalPositionConfirmation() {
@@ -279,6 +373,30 @@ namespace NINA.Plugins.PolarAlignment.Avalon {
             Properties.Settings.Default.AvalonAltitudeTravelGuardConfirmed = false;
             CoreUtil.SaveSettings(Properties.Settings.Default);
             RaisePropertyChanged(nameof(AltitudeTravelGuardConfirmed));
+        }
+
+        private void SetDirectRouteSetting<T>(string name, T value) {
+            if (!Equals(Properties.Settings.Default[name], value)) {
+                InvalidateDirectFullTravelConfirmation();
+            }
+            Properties.Settings.Default[name] = value;
+            CoreUtil.SaveSettings(Properties.Settings.Default);
+        }
+
+        private void SetDirectRouteResponse(string name, double value, string propertyName) {
+            SetDirectRouteSetting(name, value);
+            RaisePropertyChanged(propertyName);
+        }
+
+        private void InvalidateDirectFullTravelConfirmation() {
+            if (!Properties.Settings.Default.AvalonDirectFullTravelRouteConfirmed) {
+                return;
+            }
+
+            Logger.Warning("UPAS calibrated direct full-travel route invalidated by a configuration change. Re-attest the measured response before automated movement.");
+            Properties.Settings.Default.AvalonDirectFullTravelRouteConfirmed = false;
+            CoreUtil.SaveSettings(Properties.Settings.Default);
+            RaisePropertyChanged(nameof(DirectFullTravelRouteConfirmed));
         }
     }
 }

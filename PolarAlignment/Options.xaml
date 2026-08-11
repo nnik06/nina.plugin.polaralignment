@@ -108,6 +108,7 @@
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
                         <TextBlock
                             VerticalAlignment="Center"
@@ -2183,6 +2184,56 @@
                                 ToolTip="{StaticResource UpasAzimuthPreSeatUnitsToolTip}"
                                 Unit="steps" />
                         </WrapPanel>
+                        <Grid Grid.Row="4" Margin="0,8,0,0">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <WrapPanel HorizontalAlignment="Center" Orientation="Horizontal">
+                                <TextBlock Margin="0,0,4,0" VerticalAlignment="Center" Text="Calibrated full route" />
+                                <CheckBox
+                                    Margin="0,0,12,0"
+                                    VerticalAlignment="Center"
+                                    IsChecked="{Binding UniversalPolarAlignmentVM.DirectFullTravelRouteEnabled}"
+                                    ToolTip="Allow the measured 2x2 UPAS response to qualify the direct full-travel route." />
+                                <TextBlock Margin="0,0,4,0" VerticalAlignment="Center" Text="Route attested" />
+                                <CheckBox
+                                    Margin="0,0,12,0"
+                                    VerticalAlignment="Center"
+                                    IsChecked="{Binding UniversalPolarAlignmentVM.DirectFullTravelRouteConfirmed}"
+                                    ToolTip="Attest the visible response matrix and move authority below. Any change clears this attestation." />
+                                <TextBlock Margin="0,0,4,0" VerticalAlignment="Center" Text="Clamp recovery" />
+                                <CheckBox
+                                    Margin="0,0,12,0"
+                                    VerticalAlignment="Center"
+                                    IsChecked="{Binding UniversalPolarAlignmentVM.ClampLimitedRecoveryEnabled}"
+                                    ToolTip="Permit the bounded recovery route only when the response uncertainty is qualified." />
+                                <TextBlock Margin="0,0,4,0" VerticalAlignment="Center" Text="Response uncertainty" />
+                                <ninactrl:UnitTextBox
+                                    MinWidth="58"
+                                    VerticalAlignment="Center"
+                                    Text="{Binding UniversalPolarAlignmentVM.CalibratedResponseRelativeUncertainty}"
+                                    ToolTip="Relative uncertainty of the measured 2x2 response; clamp recovery requires 0.10 or less." />
+                            </WrapPanel>
+                            <WrapPanel Grid.Row="1" Margin="0,5,0,0" HorizontalAlignment="Center" Orientation="Horizontal">
+                                <TextBlock Margin="0,0,4,0" VerticalAlignment="Center" Text="AZ/X" />
+                                <ninactrl:UnitTextBox MinWidth="60" Margin="0,0,8,0" Text="{Binding UniversalPolarAlignmentVM.CalibratedAzimuthDeltaPerXUnit}" ToolTip="Measured AZ error change per X command unit, degrees/unit." />
+                                <TextBlock Margin="0,0,4,0" VerticalAlignment="Center" Text="AZ/Y" />
+                                <ninactrl:UnitTextBox MinWidth="60" Margin="0,0,8,0" Text="{Binding UniversalPolarAlignmentVM.CalibratedAzimuthDeltaPerYUnit}" ToolTip="Measured AZ error change per Y command unit, degrees/unit." />
+                                <TextBlock Margin="0,0,4,0" VerticalAlignment="Center" Text="ALT/X" />
+                                <ninactrl:UnitTextBox MinWidth="60" Margin="0,0,8,0" Text="{Binding UniversalPolarAlignmentVM.CalibratedAltitudeDeltaPerXUnit}" ToolTip="Measured ALT error change per X command unit, degrees/unit." />
+                                <TextBlock Margin="0,0,4,0" VerticalAlignment="Center" Text="ALT/Y" />
+                                <ninactrl:UnitTextBox MinWidth="60" Margin="0,0,8,0" Text="{Binding UniversalPolarAlignmentVM.CalibratedAltitudeDeltaPerYUnit}" ToolTip="Measured ALT error change per Y command unit, degrees/unit." />
+                                <TextBlock Margin="0,0,4,0" VerticalAlignment="Center" Text="AZ min" />
+                                <ninactrl:UnitTextBox MinWidth="52" Margin="0,0,8,0" Text="{Binding UniversalPolarAlignmentVM.DirectRouteAzimuthMinimumDegrees}" ToolTip="Lower physical AZ marker bound used by the calibrated direct route." Unit="deg" />
+                                <TextBlock Margin="0,0,4,0" VerticalAlignment="Center" Text="AZ max" />
+                                <ninactrl:UnitTextBox MinWidth="52" Margin="0,0,8,0" Text="{Binding UniversalPolarAlignmentVM.DirectRouteAzimuthMaximumDegrees}" ToolTip="Upper physical AZ marker bound used by the calibrated direct route." Unit="deg" />
+                                <TextBlock Margin="0,0,4,0" VerticalAlignment="Center" Text="Max X" />
+                                <ninactrl:UnitTextBox MinWidth="52" Margin="0,0,8,0" Text="{Binding UniversalPolarAlignmentVM.CalibratedMaximumXUnitsPerMove}" ToolTip="Maximum measured-safe X command magnitude per move." Unit="steps" />
+                                <TextBlock Margin="0,0,4,0" VerticalAlignment="Center" Text="Max Y" />
+                                <ninactrl:UnitTextBox MinWidth="52" Text="{Binding UniversalPolarAlignmentVM.CalibratedMaximumYUnitsPerMove}" ToolTip="Maximum measured-safe Y command magnitude per move." Unit="steps" />
+                            </WrapPanel>
+                        </Grid>
                     </Grid>
                 </Grid>
             </GroupBox>
