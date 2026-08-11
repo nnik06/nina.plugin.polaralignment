@@ -858,12 +858,25 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
 
                     if (!ManualMode) {
                         if (!StartFromCurrentPosition) {
+                            var initialPointing = ToEquatorialCoordinates(Coordinates.Coordinates);
+                            EnsureAutomatedMountDestinationEnvelopeSafe(
+                                initialPointing,
+                                "initial");
+                            EnsureAutomatedThreePointEnvelopeSafe(
+                                initialPointing,
+                                TargetDistance,
+                                EastDirection);
                             Logger.Info($"Slewing to initial position {Coordinates.Coordinates}");
                             SetTrackingSidereal(true);
                             await telescopeMediator.SlewToCoordinatesAsync(Coordinates.Coordinates, localCTS.Token);
                         } else {
                             Logger.Info($"Starting from current position {telescopeMediator.GetCurrentPosition()}");
                         }
+
+                        EnsureAutomatedThreePointEnvelopeSafe(
+                            telescopeMediator.GetCurrentPosition(),
+                            TargetDistance,
+                            EastDirection);
 
                     } else {
                         if (telescopeMediator.GetInfo().Connected) {
@@ -3356,8 +3369,12 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 if (!ManualMode && automatedVerificationStartPointing != null) {
                     Logger.Info($"Slewing to the original first measurement pointing {automatedVerificationStartPointing} so verification repeats the same mount arc and direction.");
                     progress?.Report(new ApplicationStatus() { Status = "Returning to first three-point measurement position" });
+                    EnsureAutomatedMountDestinationEnvelopeSafe(
+                        automatedVerificationStartPointing,
+                        "return-to-first-measurement");
                     SetTrackingSidereal(true);
                     await telescopeMediator.SlewToCoordinatesAsync(automatedVerificationStartPointing, token);
+                    EnsureMountMotionEnvelope();
                     if (domeMediator.GetInfo().Connected) {
                         await domeMediator.WaitForDomeSynchronization(token);
                     }
@@ -3407,8 +3424,12 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         var returnFieldStopwatch = Stopwatch.StartNew();
                         Logger.Info($"Returning to the pre-verification correction pointing {correctionPointing}.");
                         progress?.Report(new ApplicationStatus() { Status = "Returning to correction pointing" });
+                        EnsureAutomatedMountDestinationEnvelopeSafe(
+                            correctionPointing,
+                            "return-to-correction");
                         SetTrackingSidereal(true);
                         await telescopeMediator.SlewToCoordinatesAsync(correctionPointing, token);
+                        EnsureMountMotionEnvelope();
                         if (domeMediator.GetInfo().Connected) {
                             await domeMediator.WaitForDomeSynchronization(token);
                         }
@@ -4002,15 +4023,12 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
 
         private void EnsureMountMotionEnvelope() {
             if (!MountMotionEnvelopeEnabled) {
-                return;
+                throw new SequenceEntityFailedException(
+                    "Automated TPPA RA-axis movement requires an explicitly enabled mount-motion envelope.");
             }
 
             var mount = telescopeMediator.GetInfo();
-            var envelope = new TppaMountMotionEnvelope(
-                MountMotionMinimumAltitudeDegrees,
-                MountMotionMaximumAltitudeDegrees,
-                MountMotionAzimuthStartDegrees,
-                MountMotionAzimuthEndDegrees);
+            var envelope = CreateMountMotionEnvelope();
             var violation = envelope.Validate(mount.Azimuth, mount.Altitude);
             if (!string.IsNullOrWhiteSpace(violation)) {
                 throw new InvalidOperationException(
@@ -4018,54 +4036,115 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             }
         }
 
-        private void EnsureAutomatedNextPointEnvelopeSafe(
+        private TppaMountMotionEnvelope CreateMountMotionEnvelope() => new(
+            MountMotionMinimumAltitudeDegrees,
+            MountMotionMaximumAltitudeDegrees,
+            MountMotionAzimuthStartDegrees,
+            MountMotionAzimuthEndDegrees);
+
+        private void EnsureAutomatedThreePointEnvelopeSafe(
                 Coordinates currentPointing,
                 double legDistanceDegrees,
                 bool eastDirection) {
-            if (!MountMotionEnvelopeEnabled) {
-                return;
-            }
-
             var plan = TppaVerificationWaypointPlan.Create(
                 currentPointing,
                 legDistanceDegrees,
                 eastDirection);
+            EnsureAutomatedMountDestinationsEnvelopeSafe(plan.Forward, "three-point");
+        }
+
+        private void EnsureAutomatedMountDestinationEnvelopeSafe(
+                Coordinates destination,
+                string destinationName) {
+            EnsureAutomatedMountDestinationsEnvelopeSafe(
+                new[] { destination },
+                destinationName);
+        }
+
+        private void EnsureAutomatedMountDestinationEnvelopeSafe(
+                TopocentricCoordinates destination,
+                string destinationName) {
+            if (destination == null) {
+                throw new SequenceEntityFailedException(
+                    $"Automated TPPA {destinationName} preflight has an unavailable destination.");
+            }
+
+            EnsureAutomatedMountDestinationEnvelopeSafe(
+                ToEquatorialCoordinates(destination),
+                destinationName);
+        }
+
+        private Coordinates ToEquatorialCoordinates(TopocentricCoordinates destination) {
             var refraction = RefractionParameters.GetRefractionParameters(weatherDataMediator.GetInfo());
-            var nextWaypoint = plan.Forward[1];
-            var horizontal = nextWaypoint.Transform(
-                Latitude,
-                Longitude,
-                Elevation,
+            return destination.Transform(
+                Epoch.J2000,
                 refraction.PressureHPa,
                 refraction.Temperature,
                 refraction.RelativeHumidity,
-                refraction.Wavelength,
-                DateTime.UtcNow);
-            var samples = new[] {
-                new TppaArcEnvelopeSample(
-                    "next",
+                refraction.Wavelength);
+        }
+
+        private void EnsureAutomatedMountDestinationsEnvelopeSafe(
+                IReadOnlyList<Coordinates> destinations,
+                string operation) {
+            if (!MountMotionEnvelopeEnabled) {
+                throw new SequenceEntityFailedException(
+                    "Automated TPPA mount slews require an explicitly enabled mount-motion envelope.");
+            }
+
+            if (destinations == null || destinations.Count == 0) {
+                throw new SequenceEntityFailedException(
+                    $"Automated TPPA {operation} preflight has no predicted mount destinations.");
+            }
+
+            var refraction = RefractionParameters.GetRefractionParameters(weatherDataMediator.GetInfo());
+            var samples = destinations.Select((destination, index) => {
+                if (destination == null) {
+                    throw new SequenceEntityFailedException(
+                        $"Automated TPPA {operation} preflight has an unavailable destination.");
+                }
+
+                var horizontal = destination.Transform(
+                    Latitude,
+                    Longitude,
+                    Elevation,
+                    refraction.PressureHPa,
+                    refraction.Temperature,
+                    refraction.RelativeHumidity,
+                    refraction.Wavelength,
+                    DateTime.UtcNow);
+                return new TppaArcEnvelopeSample(
+                    $"{operation}-{index + 1}",
                     horizontal.Azimuth.Degree,
-                    horizontal.Altitude.Degree)
-            };
-            var envelope = new TppaMountMotionEnvelope(
-                MountMotionMinimumAltitudeDegrees,
-                MountMotionMaximumAltitudeDegrees,
-                MountMotionAzimuthStartDegrees,
-                MountMotionAzimuthEndDegrees);
+                    horizontal.Altitude.Degree);
+            }).ToArray();
             var result = TppaAutomatedArcEnvelopePolicy.Evaluate(
-                MountMotionEnvelopeEnabled,
-                envelope,
+                true,
+                CreateMountMotionEnvelope(),
                 samples);
             if (!result.IsSafe) {
                 throw new SequenceEntityFailedException(
-                $"Automated TPPA next-point slew rejected before RA-axis movement: {result.Reason}.");
+                    $"Automated TPPA {operation} slew rejected before mount movement: {result.Reason}.");
             }
 
             Logger.Info(
-                $"Automated TPPA next-point envelope preflight passed: " +
+                $"Automated TPPA {operation} envelope preflight passed: " +
                 string.Join("; ", samples.Select(sample =>
                     $"{sample.Name}=Az{sample.AzimuthDegrees:F2}/Alt{sample.AltitudeDegrees:F2}")) +
                 $"; {result.Reason}.");
+        }
+
+        private void EnsureAutomatedNextPointEnvelopeSafe(
+                Coordinates currentPointing,
+                double legDistanceDegrees,
+                bool eastDirection) {
+            var plan = TppaVerificationWaypointPlan.Create(
+                currentPointing,
+                legDistanceDegrees,
+                eastDirection);
+            EnsureAutomatedMountDestinationsEnvelopeSafe(
+                new[] { plan.Forward[1] },
+                "next-point");
         }
 
         public Angle Latitude {
@@ -4132,6 +4211,15 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             //Mount
             var telescope = telescopeMediator.GetInfo();
             if (!ManualMode) {
+                var envelope = CreateMountMotionEnvelope();
+                if (!MountMotionEnvelopeEnabled) {
+                    i.Add("Automated mount slews require an explicitly enabled mount-motion envelope.");
+                } else {
+                    var envelopeIssue = envelope.GetConfigurationIssue();
+                    if (!string.IsNullOrWhiteSpace(envelopeIssue)) {
+                        i.Add(envelopeIssue);
+                    }
+                }
                 if (!telescope.Connected) {
                     i.Add(Loc.Instance["LblTelescopeNotConnected"]);
                     i.Add("Switch to manual mode if no telescope connection is available");

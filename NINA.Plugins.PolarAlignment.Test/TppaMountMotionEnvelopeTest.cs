@@ -33,5 +33,12 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 .Validate(300, 40)
                 .Should().Contain("configured altitude envelope");
         }
+
+        [Test]
+        public void GetConfigurationIssue_RejectsInvalidConfigurationWithoutAProbePosition() {
+            new TppaMountMotionEnvelope(55, 25, 270, 10)
+                .GetConfigurationIssue()
+                .Should().Contain("configured altitude envelope");
+        }
     }
 }

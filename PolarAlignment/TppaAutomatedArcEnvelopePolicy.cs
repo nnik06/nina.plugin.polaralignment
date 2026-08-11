@@ -14,10 +14,10 @@ namespace NINA.Plugins.PolarAlignment {
     internal static class TppaAutomatedArcEnvelopePolicy {
         public static TppaAutomatedArcEnvelopeResult Evaluate(
                 bool envelopeEnabled,
-                TppaMountMotionEnvelope envelope,
-                IReadOnlyList<TppaArcEnvelopeSample> samples) {
+            TppaMountMotionEnvelope envelope,
+            IReadOnlyList<TppaArcEnvelopeSample> samples) {
             if (!envelopeEnabled) {
-                return new(true, "mount-motion envelope is disabled");
+                return new(false, "automated mount slews require an explicitly enabled mount-motion envelope");
             }
 
             if (samples == null || samples.Count == 0) {

@@ -7,10 +7,7 @@ namespace NINA.Plugins.PolarAlignment {
         double AzimuthStartDegrees,
         double AzimuthEndDegrees) {
 
-        public string Validate(double azimuthDegrees, double altitudeDegrees) {
-            if (!double.IsFinite(azimuthDegrees) || !double.IsFinite(altitudeDegrees)) {
-                return "mount position is not finite";
-            }
+        public string GetConfigurationIssue() {
             if (!double.IsFinite(MinimumAltitudeDegrees)
                     || !double.IsFinite(MaximumAltitudeDegrees)
                     || MinimumAltitudeDegrees < -90
@@ -20,6 +17,18 @@ namespace NINA.Plugins.PolarAlignment {
             }
             if (!double.IsFinite(AzimuthStartDegrees) || !double.IsFinite(AzimuthEndDegrees)) {
                 return "configured azimuth envelope is invalid";
+            }
+
+            return string.Empty;
+        }
+
+        public string Validate(double azimuthDegrees, double altitudeDegrees) {
+            if (!double.IsFinite(azimuthDegrees) || !double.IsFinite(altitudeDegrees)) {
+                return "mount position is not finite";
+            }
+            var configurationIssue = GetConfigurationIssue();
+            if (!string.IsNullOrWhiteSpace(configurationIssue)) {
+                return configurationIssue;
             }
 
             if (altitudeDegrees < MinimumAltitudeDegrees || altitudeDegrees > MaximumAltitudeDegrees) {
