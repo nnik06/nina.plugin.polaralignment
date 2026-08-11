@@ -2205,6 +2205,17 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             Logger.Info(
                 $"TPPA drift-validation selected-direction preflight passed for {selectedDirection}: {selectedPreflight.Reason}.");
 
+            EnsureVerificationOnlySlewDestinationSafe(plannedPointA);
+            var requestedDriftWaypointPlan = TppaVerificationWaypointPlan.Create(
+                plannedPointA,
+                TargetDistance,
+                EastDirection);
+            foreach (var waypoint in requestedDriftWaypointPlan.Forward) {
+                EnsureVerificationOnlySlewDestinationSafe(waypoint);
+            }
+            Logger.Info(
+                "TPPA drift-validation requested A/B/C trajectory preflight passed before initial slew.");
+
             Coordinates pointA = null;
             TppaVerificationWaypointPlan driftWaypointPlan = null;
             var pointAPierSide = NINA.Core.Enum.PierSide.pierUnknown;
@@ -2237,6 +2248,12 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                             } else {
                                 Logger.Info(
                                     $"Using current telescope pointing as drift-validation position A: {telescopeMediator.GetCurrentPosition()}.");
+                                EnsureVerificationOnlyActualPositionSafe(
+                                    "drift-validation current-position start");
+                            }
+                            if (!StartFromCurrentPosition) {
+                                EnsureVerificationOnlyActualPositionSafe(
+                                    "drift-validation initial A slew");
                             }
                             SetTrackingSidereal(true);
                             var initialTrackingConfirmed = false;
