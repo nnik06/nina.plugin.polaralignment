@@ -137,3 +137,11 @@ motion make controller-coordinate rollback unsafe.  Attended recovery must
 re-establish the physical datum and re-qualify the response model before a new
 automation run.  This remains field-unvalidated until a fresh X/Y photon
 campaign confirms the measured response matrix.
+# Signed full-envelope diagnostics
+
+The direct full-travel route still keeps its existing conservative bidirectional
+admission gate. `TppaSignedTravelEnvelopeDiagnostic` is reporting-only until a
+field campaign proves the logical-command-to-marker sign, scale, and backlash
+reserve at both ends of each axis. Its purpose is to record whether a proposed
+first correction points inward or outward from the visually confirmed marker,
+not to bypass a hard-stop guard.
