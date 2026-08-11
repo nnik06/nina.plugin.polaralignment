@@ -98,9 +98,12 @@ geometry or flexure, but they are not a paperwork admission gate.
    response must be measured independently; never substitute the X response.
 3. Collect two fresh three-point TPPA determinations. They must agree closely
    enough to steer a correction and must fit the five-minute feasibility policy.
-4. Permit at most two headroom-clamped corrective moves. Each needs explicit
-   command completion, configured settle, and a new fresh three-point result
-   before another command can be considered.
+4. Permit at most two headroom-clamped UPAS moves in the five-minute contract.
+   Each needs explicit command completion, configured settle, and a new fresh
+   three-point result before another command can be considered. A cold direct
+   route with no qualified Y response spends its first move on the bounded Y
+   probe, so it has only one model-based correction remaining; it must not be
+   described as a two-correction run.
 5. Finish only after two independent fresh determinations are at or below 3
    arcminutes total. If any response is implausible, inconsistent, or worse,
    stop automatic correction with the last fresh residual preserved.
@@ -114,6 +117,13 @@ Before enabling a wide two-axis route, run the dedicated
 [`DIRECT_UPAS_Y_AXIS_FIELD_VALIDATION_2026-08-11.md`](DIRECT_UPAS_Y_AXIS_FIELD_VALIDATION_2026-08-11.md)
 block. It obtains the missing directional ALT/Y response with an isolated
 photon-backed probe; an AZ/X calibration must never be extrapolated to ALT/Y.
+
+For the two-correction five-minute production route, complete that Y-response
+qualification before starting the timed alignment. The runtime budget counts
+all physical UPAS moves, including probes, and reserves a fresh result after
+each move plus the terminal verify-only determination. The cold-route
+probe-plus-one-correction path remains a valid guarded calibration trial, not
+evidence that the production two-correction contract was exercised.
 
 ## Measurement Qualification
 1. After the required settling dwell, run three no-motion fresh TPPA determinations on safe arc A with fixed settings and refraction state.
