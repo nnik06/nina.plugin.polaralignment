@@ -1522,7 +1522,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
-        public void AutomatedAdjustmentController_FreezesSessionLocalCoarseAuthorityAfterWeakFreshImprovement() {
+        public void AutomatedAdjustmentController_LatchesOffAllMotionAfterWeakSessionLocalCoarseFeedback() {
             var controller = CreateBootstrapController();
             controller.UpdateObservation(5, -5);
             var probe = controller.CreatePlan();
@@ -1534,7 +1534,29 @@ namespace NINA.Plugins.PolarAlignment.Test {
             controller.NoteSuccessfulExecution(coarse);
             controller.UpdateObservation(4.9, -4.3);
 
-            controller.CreatePlan().Reason.Should().NotBe("Session-local conditioned coarse correction");
+            controller.MotionAuthorityAborted.Should().BeTrue();
+            controller.CreatePlan().HasMovement.Should().BeFalse();
+            controller.CreatePlan().Reason.Should().Contain("latched off");
+
+            controller.Reset();
+            controller.UpdateObservation(5, -5);
+            controller.CreatePlan().HasMovement.Should().BeFalse();
+        }
+
+        [Test]
+        public void AutomatedAdjustmentController_LatchesOffAllMotionWhenSessionLocalCoarseExecutionIsUnverified() {
+            var controller = CreateBootstrapController();
+            controller.UpdateObservation(5, -5);
+            var probe = controller.CreatePlan();
+            controller.NoteSuccessfulExecution(probe);
+            controller.UpdateObservation(5, -4.5);
+
+            var coarse = controller.CreatePlan();
+            coarse.Reason.Should().Be("Session-local conditioned coarse correction");
+            controller.NoteFailedExecution(coarse);
+
+            controller.MotionAuthorityAborted.Should().BeTrue();
+            controller.CreatePlan().HasMovement.Should().BeFalse();
         }
 
         [Test]

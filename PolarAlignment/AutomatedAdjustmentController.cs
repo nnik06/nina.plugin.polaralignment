@@ -158,6 +158,8 @@ namespace NINA.Plugins.PolarAlignment {
         // without being mistaken for a second physical X movement.
         private ResponseSample calibratedDirectAzimuthResponseSeed;
         private bool sessionLocalCoarseFrozen;
+        private bool motionAuthorityAborted;
+        private string motionAuthorityAbortReason;
 
         public bool AzimuthTravelGuardEnabled { get; set; }
         public bool AzimuthTravelGuardConfirmed { get; set; }
@@ -185,6 +187,14 @@ namespace NINA.Plugins.PolarAlignment {
         }
 
         public bool HasRememberedXAzimuthResponse => rememberedXAzimuthDeltaPerUnit.HasValue;
+
+        /// <summary>
+        /// True after a failed promoted coarse correction revokes automated UPAS motion
+        /// for this controller instance.
+        /// </summary>
+        public bool MotionAuthorityAborted => motionAuthorityAborted;
+
+        public string MotionAuthorityAbortReason => motionAuthorityAbortReason;
 
         /// <summary>
         /// True while the most recent automated azimuth action has not produced a
@@ -449,7 +459,16 @@ namespace NINA.Plugins.PolarAlignment {
                                                  + pendingPlan.Plan.YMagnitude * pendingPlan.Plan.YMagnitude);
                 var responsePerUnit = commandMagnitude > 0 ? responseMagnitude / commandMagnitude : 0;
 
-                if (ShouldRejectDominantAzimuthXSample(latestObservation, out var dominantAzimuthRejectionReason, out var countAsProbeRejection)) {
+                if (IsSessionLocalCoarsePlan(pendingPlan.Plan)
+                    && latestObservation.TotalErrorDegrees
+                        > pendingPlan.BeforeMoveObservation.TotalErrorDegrees
+                            * SessionCoarseValidationImprovementFactor) {
+                    AbortMotionAuthority(
+                        "The first session-local coarse correction did not reduce the fresh TPPA residual by the required 20 percent.",
+                        pendingPlan.Plan,
+                        pendingPlan.BeforeMoveObservation,
+                        latestObservation);
+                } else if (ShouldRejectDominantAzimuthXSample(latestObservation, out var dominantAzimuthRejectionReason, out var countAsProbeRejection)) {
                     Logger.Warning(dominantAzimuthRejectionReason);
                     samples.Clear();
                     consecutiveUnsafeModelSkips = 0;
@@ -473,12 +492,6 @@ namespace NINA.Plugins.PolarAlignment {
                     samples.Clear();
                     consecutiveUnsafeModelSkips = 0;
                     ResetAcquisitionState(preserveLearnedDirection: true);
-                } else if (IsSessionLocalCoarsePlan(pendingPlan.Plan)
-                           && latestObservation.TotalErrorDegrees
-                               > pendingPlan.BeforeMoveObservation.TotalErrorDegrees
-                                   * SessionCoarseValidationImprovementFactor) {
-                    Logger.Warning("Session-local coarse UPAS correction did not reduce the fresh TPPA residual by the required 20 percent; freezing coarse authority and returning to bounded correction.");
-                    sessionLocalCoarseFrozen = true;
                 } else {
                     consecutiveUnsafeModelSkips = 0;
                     if (ShouldSkipSampleForModel(pendingPlan.Plan, pendingPlan.BeforeMoveObservation)) {
@@ -511,6 +524,11 @@ namespace NINA.Plugins.PolarAlignment {
         /// move that is predicted to reduce the residual error norm.
         /// </summary>
         public AutomatedAdjustmentPlan CreatePlan() {
+            if (motionAuthorityAborted) {
+                return AutomatedAdjustmentPlan.Skip(motionAuthorityAbortReason
+                                                    ?? "Automated UPAS motion is latched off pending attended recovery.");
+            }
+
             if (!hasObservation) {
                 return AutomatedAdjustmentPlan.Skip("No continuous error measurement is available yet.");
             }
@@ -705,7 +723,34 @@ namespace NINA.Plugins.PolarAlignment {
         }
 
         private static bool IsSessionLocalCoarsePlan(AutomatedAdjustmentPlan plan) {
-            return plan != null && string.Equals(plan.Reason, "Session-local conditioned coarse correction", StringComparison.Ordinal);
+            return plan?.Reason?.StartsWith("Session-local conditioned coarse correction", StringComparison.Ordinal) == true;
+        }
+
+        private void AbortMotionAuthority(string reason,
+                                          AutomatedAdjustmentPlan plan,
+                                          AutomatedAdjustmentObservation before,
+                                          AutomatedAdjustmentObservation after) {
+            if (motionAuthorityAborted) {
+                return;
+            }
+
+            motionAuthorityAborted = true;
+            sessionLocalCoarseFrozen = true;
+            motionAuthorityAbortReason = $"Automated UPAS motion is latched off pending attended recovery. {reason}";
+            samples.Clear();
+            consecutiveUnsafeModelSkips = 0;
+            ResetAcquisitionState(preserveLearnedDirection: true);
+
+            var beforeTotal = before == null
+                ? "n/a"
+                : Math.Round(before.TotalErrorDegrees * 60.0, 3).ToString(CultureInfo.InvariantCulture);
+            var afterTotal = after == null
+                ? "n/a"
+                : Math.Round(after.TotalErrorDegrees * 60.0, 3).ToString(CultureInfo.InvariantCulture);
+            Logger.Error(
+                $"TPPA_UPAS_MOTION_ABORT reason='{reason}', X={Math.Round(plan?.XMagnitude ?? 0, 3)}, Y={Math.Round(plan?.YMagnitude ?? 0, 3)}, " +
+                $"beforeTotalArcmin={beforeTotal}, afterTotalArcmin={afterTotal}. " +
+                "No inverse, bounded, probe, or pre-seat motion is authorized by this controller instance.");
         }
 
         private bool HasObservedYResponse() {
@@ -861,6 +906,14 @@ namespace NINA.Plugins.PolarAlignment {
 
             if (attemptedPlan == null) {
                 return;
+            }
+
+            if (IsSessionLocalCoarsePlan(attemptedPlan)) {
+                AbortMotionAuthority(
+                    "A session-local coarse UPAS command was not physically verified; actuator position is unknown pending attended recovery.",
+                    attemptedPlan,
+                    currentObservation,
+                    null);
             }
 
             if (Math.Abs(attemptedPlan.XMagnitude) > 0) {

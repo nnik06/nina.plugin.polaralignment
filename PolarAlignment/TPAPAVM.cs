@@ -92,6 +92,7 @@ namespace NINA.Plugins.PolarAlignment {
             ConfigureAutomatedAdjustmentControllerForActiveSystem();
             automatedAdjustmentController.UpdateObservation(PolarErrorDetermination.InitialMountAxisAzimuthError.Degree,
                                                              PolarErrorDetermination.InitialMountAxisAltitudeError.Degree);
+            PersistAutomatedMotionAbortIfRequired();
             PersistUpasAzimuthResponseMemory();
             lastContinuousEstimateStable = true;
         }
@@ -211,6 +212,7 @@ namespace NINA.Plugins.PolarAlignment {
                     PolarErrorDetermination.CurrentMountAxisTotalError = Angle.ByDegree(Accord.Math.Tools.Hypotenuse(estimate.AzimuthErrorDegrees, estimate.AltitudeErrorDegrees));
                     if (AutomatedAdjustmentFeedbackPolicy.AllowsContinuousFeedback(AutomatedAdjustmentRequiresFreshMeasurementFeedback)) {
                         automatedAdjustmentController.UpdateObservation(estimate.AzimuthErrorDegrees, estimate.AltitudeErrorDegrees);
+                        PersistAutomatedMotionAbortIfRequired();
                         PersistUpasAzimuthResponseMemory();
                     }
                     lastContinuousEstimateStable = true;
@@ -258,6 +260,15 @@ namespace NINA.Plugins.PolarAlignment {
                 IProgress<ApplicationStatus> progress,
                 CancellationToken token) {
             ConfigureAutomatedAdjustmentControllerForActiveSystem();
+
+            if (automatedAdjustmentController.MotionAuthorityAborted) {
+                PersistAutomatedMotionAbortIfRequired();
+                var reason = automatedAdjustmentController.MotionAuthorityAbortReason
+                             ?? "Automated UPAS motion is latched off pending attended recovery.";
+                Logger.Error($"Skipping UPAS azimuth pre-seat. {reason}");
+                progress?.Report(new ApplicationStatus() { Status = reason });
+                return;
+            }
 
             if (ActiveAlignmentSystemVM is not NINA.Plugins.PolarAlignment.Avalon.UniversalPolarAlignmentVM upas
                 || !upas.DoAutomatedAdjustments
@@ -417,6 +428,19 @@ namespace NINA.Plugins.PolarAlignment {
             Logger.Info($"Persisted UPAS azimuth response memory: Az/X={Math.Round(azimuthDeltaPerXUnit * 60.0, 4)}'/unit, ReverseAzimuth={Properties.Settings.Default.AvalonReverseAzimuth}.");
         }
 
+        private void PersistAutomatedMotionAbortIfRequired() {
+            if (!automatedAdjustmentController.MotionAuthorityAborted) {
+                return;
+            }
+
+            LastAutomatedAdjustmentDecisionReason = automatedAdjustmentController.MotionAuthorityAbortReason;
+            if (ActiveAlignmentSystemVM?.DoAutomatedAdjustments == true) {
+                ActiveAlignmentSystemVM.DoAutomatedAdjustments = false;
+            }
+
+            Logger.Error($"TPPA_UPAS_MOTION_ABORT_PERSISTED {LastAutomatedAdjustmentDecisionReason}");
+        }
+
         public string LastAutomatedAdjustmentDecisionReason { get; private set; }
 
         public async Task<bool> MoveCloser(IProgress<ApplicationStatus> progress, CancellationToken token) {
@@ -434,6 +458,7 @@ namespace NINA.Plugins.PolarAlignment {
             }
 
             ConfigureAutomatedAdjustmentControllerForActiveSystem();
+            PersistAutomatedMotionAbortIfRequired();
             var useContinuousErrorEstimator = UseContinuousErrorEstimator;
 
             if (useContinuousErrorEstimator
@@ -476,6 +501,7 @@ namespace NINA.Plugins.PolarAlignment {
                                                                                                    0,
                                                                                                    plan.IsProbe,
                                                                                                    $"{plan.Reason} (failed X move)"));
+                    PersistAutomatedMotionAbortIfRequired();
                     return false;
                 }
                 executedX = plan.XMagnitude;
@@ -490,6 +516,7 @@ namespace NINA.Plugins.PolarAlignment {
                                                                                                    plan.YMagnitude,
                                                                                                    plan.IsProbe,
                                                                                                    $"{plan.Reason} (failed Y move)"));
+                    PersistAutomatedMotionAbortIfRequired();
                     if (Math.Abs(executedX) > 0) {
                         automatedAdjustmentController.NoteSuccessfulExecution(new AutomatedAdjustmentPlan(executedX,
                                                                                                            0,
@@ -759,6 +786,7 @@ namespace NINA.Plugins.PolarAlignment {
                 PolarErrorDetermination.CurrentMountAxisTotalError = Angle.ByDegree(Accord.Math.Tools.Hypotenuse(altitudeErrorDegrees, azimuthErrorDegrees));
                 if (updateAutomatedAdjustmentController) {
                     automatedAdjustmentController.UpdateObservation(azimuthErrorDegrees, altitudeErrorDegrees);
+                    PersistAutomatedMotionAbortIfRequired();
                     PersistUpasAzimuthResponseMemory();
                 }
                 lastContinuousEstimateStable = true;

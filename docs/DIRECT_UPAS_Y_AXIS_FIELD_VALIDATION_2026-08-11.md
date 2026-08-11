@@ -121,7 +121,11 @@ physical headroom and travel guards remain in force.
 
 The first promoted coarse correction is an experiment, not proof.  Its next
 independent fresh TPPA determination must reduce total error by at least 20
-percent.  Otherwise coarse authority freezes for the rest of the session and
-the controller returns to bounded correction.  This is intentionally
-session-local and remains field-unvalidated until a fresh X/Y photon campaign
-confirms the measured response matrix.
+percent.  Otherwise the controller latches off every automated UPAS movement
+path for its lifetime, persists `DoAutomatedAdjustments = false`, retains the
+travel accounting, and records the before/after TPPA evidence.  It never
+issues an inverse or a bounded follow-up move: backlash and unobserved lost
+motion make controller-coordinate rollback unsafe.  Attended recovery must
+re-establish the physical datum and re-qualify the response model before a new
+automation run.  This remains field-unvalidated until a fresh X/Y photon
+campaign confirms the measured response matrix.
