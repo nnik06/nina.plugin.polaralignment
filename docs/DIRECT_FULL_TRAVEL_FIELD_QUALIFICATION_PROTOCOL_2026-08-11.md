@@ -14,6 +14,25 @@ within the two-move contract. The configured full-envelope corner is therefore
 expected to be rejected until field evidence supports a different qualified
 route.
 
+## Operational Contract After Qualification
+
+Keep one measured 2x2 controller, with two separately named admission and exit
+policies. Never let a broad-travel result claim fine convergence.
+
+- **Fine closure:** may claim `FINE_CONFIRMED` only after two independent fresh
+  determinations are within 3 arcminutes. It is a five-minute operation.
+- **Bulk acquisition:** may claim `COARSE_AT_24` only after a fresh determination
+  is at or below 24 arcminutes. It may not emit a fine-alignment claim.
+- **Bulk-to-fine handoff:** requires a new fresh determination and a new fine
+  admission. It is not an inherited authorization from the bulk phase.
+- **Unqualified:** returns the exact failed predicate and stops. It must never
+  present a projected residual as a measured result.
+
+The current 0.65 controller leaves only a narrow mathematical margin at the
+24-arcminute handoff. Until response repeatability and backlash have been
+measured, use an internal aim below 15 arcminutes rather than treating 24
+arcminutes as a comfortable fine-route entry.
+
 ## Preconditions
 
 - The existing visual-marker, bridge, COM30, NINA, and fresh-determination
@@ -55,6 +74,9 @@ Do not expand authority from a single average. Require all of the following:
   systematic sign reversal, growth, or unmodelled deadband.
 - Every physical marker remains inside the configured envelope; controller
   MPos is evidence only, never a physical-position substitute after reset.
+- Capture the predicted-versus-measured residual after every move. A
+  projection is diagnostic only and cannot authorize the next command or a
+  terminal result.
 
 ## Decision
 
