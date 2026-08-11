@@ -42,6 +42,10 @@ namespace NINA.Plugins.PolarAlignment.Test {
             source.Should().Contain("The run stopped on fresh evidence without authorizing another move.");
             source.Should().Contain("maximumObservedFreshDeterminationSeconds = Math.Max(");
             source.Should().Contain("freshDeterminationStopwatch.Elapsed.TotalSeconds");
+            source.Should().Contain("directPostMoveFeedbackEligibleForReuse");
+            source.Should().Contain("DirectFeedbackReuseMaximumAgeSeconds");
+            source.Should().Contain("Reusing the accepted, settled post-move fresh determination");
+            source.Should().Contain("EvaluateBeforeFreshPair(");
         }
 
         [Test]

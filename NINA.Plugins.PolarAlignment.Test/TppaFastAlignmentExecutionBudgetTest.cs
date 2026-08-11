@@ -27,8 +27,8 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
-        public void FastContractCapsFreshFeedbackMovesAtTwo() {
-            TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMoves.Should().Be(2);
+        public void FastContractCapsFreshFeedbackMovesAtThree() {
+            TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMoves.Should().Be(3);
         }
 
         [TestCase(0.0)]
@@ -52,18 +52,18 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
-        public void SlowInitialDeterminationCannotFundTwoMoveContract() {
+        public void SlowInitialDeterminationCannotFundThreeMoveContract() {
             var result = TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
                 TimeSpan.FromSeconds(60),
                 observedFreshDeterminationSeconds: 60,
                 completedMoves: 0);
 
             result.CanStart.Should().BeFalse(result.Reason);
-            result.RequiredReserveSeconds.Should().Be(255);
+            result.RequiredReserveSeconds.Should().Be(345);
         }
 
         [Test]
-        public void SlowCadenceCannotClaimAFullTwoMoveContract() {
+        public void SlowCadenceCannotClaimAFullThreeMoveContract() {
             var result = TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
                 TimeSpan.FromSeconds(90),
                 observedFreshDeterminationSeconds: 85,
@@ -71,35 +71,35 @@ namespace NINA.Plugins.PolarAlignment.Test {
 
             result.CanStart.Should().BeFalse(result.Reason);
             result.RemainingSeconds.Should().Be(210);
-            result.RequiredReserveSeconds.Should().Be(300);
+            result.RequiredReserveSeconds.Should().Be(405);
         }
 
         [Test]
-        public void TwoMovePlanNeedsBothResponsesAndTerminalConfirmation() {
+        public void ThreeMovePlanNeedsEveryResponseAndTerminalConfirmation() {
             var result = TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
-                TimeSpan.FromSeconds(150),
+                TimeSpan.FromSeconds(95),
                 observedFreshDeterminationSeconds: 35,
                 completedMoves: 0,
                 qualifiedFreshDeterminationReserveSeconds:
                     TppaFastAlignmentExecutionBudget.DirectFieldFreshDeterminationReserveSeconds);
 
             result.CanStart.Should().BeTrue(result.Reason);
-            result.RemainingSeconds.Should().Be(150);
-            result.RequiredReserveSeconds.Should().Be(150);
+            result.RemainingSeconds.Should().Be(205);
+            result.RequiredReserveSeconds.Should().Be(205);
         }
 
         [Test]
         public void RejectsMoveBeyondDynamicCadenceBoundary() {
             var result = TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
-                TimeSpan.FromSeconds(150.001),
+                TimeSpan.FromSeconds(94.997),
                 observedFreshDeterminationSeconds: 35.001,
                 completedMoves: 0,
                 qualifiedFreshDeterminationReserveSeconds:
                     TppaFastAlignmentExecutionBudget.DirectFieldFreshDeterminationReserveSeconds);
 
             result.CanStart.Should().BeFalse();
-            result.RemainingSeconds.Should().BeApproximately(149.999, 0.0001);
-            result.RequiredReserveSeconds.Should().BeApproximately(150.003, 0.0001);
+            result.RemainingSeconds.Should().BeApproximately(205.003, 0.0001);
+            result.RequiredReserveSeconds.Should().BeApproximately(205.004, 0.0001);
         }
 
         [Test]
@@ -107,7 +107,8 @@ namespace NINA.Plugins.PolarAlignment.Test {
             var result = TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
                 TimeSpan.FromSeconds(130),
                 observedFreshDeterminationSeconds: 70,
-                completedMoves: 1);
+                completedMoves: 1,
+                maximumFreshFeedbackMoves: 2);
 
             result.CanStart.Should().BeTrue(result.Reason);
             result.RemainingSeconds.Should().Be(170);
@@ -119,53 +120,62 @@ namespace NINA.Plugins.PolarAlignment.Test {
             var result = TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
                 TimeSpan.FromSeconds(140),
                 observedFreshDeterminationSeconds: 80,
-                completedMoves: 1);
+                completedMoves: 1,
+                maximumFreshFeedbackMoves: 2);
 
             result.CanStart.Should().BeFalse(result.Reason);
             result.RequiredReserveSeconds.Should().Be(185);
         }
 
         [Test]
-        public void DirectFieldPlanCanFundTwoFreshFeedbackMovesAtMeasuredCadence() {
+        public void DirectFieldPlanCanFundThreeFreshFeedbackMovesWhenPostMoveFeedbackSeedsLaterAgreements() {
             var beforeFirstAgreement = TppaFastAlignmentExecutionBudget.EvaluateBeforeFreshAgreement(
                 TimeSpan.FromSeconds(35),
                 observedFreshDeterminationSeconds: 35,
                 completedMoves: 0,
                 qualifiedFreshDeterminationReserveSeconds:
-                    TppaFastAlignmentExecutionBudget.DirectFieldFreshDeterminationReserveSeconds);
+                    TppaFastAlignmentExecutionBudget.DirectFieldFreshDeterminationReserveSeconds,
+                maximumFreshFeedbackMoves:
+                    TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMoves);
             var beforeFirstMove = TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
                 TimeSpan.FromSeconds(70),
                 observedFreshDeterminationSeconds: 35,
                 completedMoves: 0,
                 qualifiedFreshDeterminationReserveSeconds:
-                    TppaFastAlignmentExecutionBudget.DirectFieldFreshDeterminationReserveSeconds);
-            var beforeSecondAgreement = TppaFastAlignmentExecutionBudget.EvaluateBeforeFreshAgreement(
+                    TppaFastAlignmentExecutionBudget.DirectFieldFreshDeterminationReserveSeconds,
+                maximumFreshFeedbackMoves:
+                    TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMoves);
+            var beforeSecondMove = TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
                 TimeSpan.FromSeconds(120),
                 observedFreshDeterminationSeconds: 35,
                 completedMoves: 1,
                 qualifiedFreshDeterminationReserveSeconds:
-                    TppaFastAlignmentExecutionBudget.DirectFieldFreshDeterminationReserveSeconds);
-            var beforeSecondMove = TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
-                TimeSpan.FromSeconds(155),
+                    TppaFastAlignmentExecutionBudget.DirectFieldFreshDeterminationReserveSeconds,
+                maximumFreshFeedbackMoves:
+                    TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMoves);
+            var beforeThirdMove = TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
+                TimeSpan.FromSeconds(170),
                 observedFreshDeterminationSeconds: 35,
-                completedMoves: 1,
+                completedMoves: 2,
                 qualifiedFreshDeterminationReserveSeconds:
-                    TppaFastAlignmentExecutionBudget.DirectFieldFreshDeterminationReserveSeconds);
+                    TppaFastAlignmentExecutionBudget.DirectFieldFreshDeterminationReserveSeconds,
+                maximumFreshFeedbackMoves:
+                    TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMoves);
 
             beforeFirstAgreement.CanStart.Should().BeTrue(beforeFirstAgreement.Reason);
             beforeFirstMove.CanStart.Should().BeTrue(beforeFirstMove.Reason);
-            beforeSecondAgreement.CanStart.Should().BeTrue(beforeSecondAgreement.Reason);
             beforeSecondMove.CanStart.Should().BeTrue(beforeSecondMove.Reason);
-            beforeFirstAgreement.RequiredReserveSeconds.Should().Be(190);
-            beforeFirstMove.RequiredReserveSeconds.Should().Be(150);
-            beforeSecondAgreement.RequiredReserveSeconds.Should().Be(135);
-            beforeSecondMove.RequiredReserveSeconds.Should().Be(95);
+            beforeThirdMove.CanStart.Should().BeTrue(beforeThirdMove.Reason);
+            beforeFirstAgreement.RequiredReserveSeconds.Should().Be(245);
+            beforeFirstMove.RequiredReserveSeconds.Should().Be(205);
+            beforeSecondMove.RequiredReserveSeconds.Should().Be(150);
+            beforeThirdMove.RequiredReserveSeconds.Should().Be(95);
         }
 
         [Test]
-        public void ThirdMoveCannotBeEvaluated() {
+        public void FourthMoveCannotBeEvaluated() {
             var action = () => TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
-                TimeSpan.FromSeconds(150), 70, completedMoves: 2);
+                TimeSpan.FromSeconds(150), 70, completedMoves: 3);
 
             action.Should().Throw<ArgumentOutOfRangeException>();
         }
@@ -193,6 +203,19 @@ namespace NINA.Plugins.PolarAlignment.Test {
             firstMove.RequiredReserveSeconds.Should().Be(205);
             thirdMove.CanStart.Should().BeTrue(thirdMove.Reason);
             thirdMove.RequiredReserveSeconds.Should().Be(95);
+        }
+
+        [Test]
+        public void ExpiredPostMoveFeedbackFallsBackToTwoNewFreshDeterminations() {
+            var result = TppaFastAlignmentExecutionBudget.EvaluateBeforeFreshPair(
+                TimeSpan.FromSeconds(35),
+                observedFreshDeterminationSeconds: 35,
+                completedMoves: 0,
+                qualifiedFreshDeterminationReserveSeconds:
+                    TppaFastAlignmentExecutionBudget.DirectFieldFreshDeterminationReserveSeconds);
+
+            result.RequiredReserveSeconds.Should().Be(285);
+            result.CanStart.Should().BeFalse(result.Reason);
         }
 
         [Test]
@@ -280,7 +303,8 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 TimeSpan.FromSeconds(100),
                 observedFreshDeterminationSeconds: 35,
                 completedMoves: 0,
-                qualifiedFreshDeterminationReserveSeconds: 45);
+                qualifiedFreshDeterminationReserveSeconds: 45,
+                maximumFreshFeedbackMoves: 2);
 
             configuration.IsEligible.Should().BeTrue(configuration.Reason);
             movement.CanStart.Should().BeTrue(movement.Reason);

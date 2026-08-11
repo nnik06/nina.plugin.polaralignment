@@ -1179,6 +1179,8 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     PolarErrorDetermination directPreMoveFreshDetermination = supervisorCampaignMode
                         ? null
                         : determination;
+                    var directPostMoveFeedbackEligibleForReuse = false;
+                    var directPostMoveFeedbackAge = new Stopwatch();
                     var freshFeedbackMoveCount = 0;
                     var freshFeedbackMoveLimit = TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMoves;
                     var maximumObservedFreshDeterminationSeconds = alignmentRuntime.Elapsed.TotalSeconds;
@@ -1449,6 +1451,10 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                 if (enforceFastRuntimeBudget
                                         && executionPolicy.AllowActuatorMovement
                                         && TPAPAVM.ActiveAlignmentSystemVM?.DoAutomatedAdjustments == true) {
+                                    var directFeedbackCanSeedAgreement = !supervisorCampaignMode
+                                        && directPostMoveFeedbackEligibleForReuse
+                                        && directPostMoveFeedbackAge.Elapsed.TotalSeconds
+                                            <= TppaFastAlignmentExecutionBudget.DirectFeedbackReuseMaximumAgeSeconds;
                                     var moveDecision = supervisorCampaignMode
                                         ? TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
                                             alignmentRuntime.Elapsed,
@@ -1456,12 +1462,26 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                             freshFeedbackMoveCount,
                                             qualifiedFreshDeterminationReserveSeconds,
                                             maximumFreshFeedbackMoves: freshFeedbackMoveLimit)
-                                        : TppaFastAlignmentExecutionBudget.EvaluateBeforeFreshAgreement(
-                                        alignmentRuntime.Elapsed,
-                                        maximumObservedFreshDeterminationSeconds,
-                                        freshFeedbackMoveCount,
-                                        qualifiedFreshDeterminationReserveSeconds,
-                                        maximumFreshFeedbackMoves: freshFeedbackMoveLimit);
+                                        : directFeedbackCanSeedAgreement
+                                            ? TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
+                                                alignmentRuntime.Elapsed,
+                                                maximumObservedFreshDeterminationSeconds,
+                                                freshFeedbackMoveCount,
+                                                qualifiedFreshDeterminationReserveSeconds,
+                                                maximumFreshFeedbackMoves: freshFeedbackMoveLimit)
+                                            : directPostMoveFeedbackEligibleForReuse
+                                                ? TppaFastAlignmentExecutionBudget.EvaluateBeforeFreshPair(
+                                                    alignmentRuntime.Elapsed,
+                                                    maximumObservedFreshDeterminationSeconds,
+                                                    freshFeedbackMoveCount,
+                                                    qualifiedFreshDeterminationReserveSeconds,
+                                                    maximumFreshFeedbackMoves: freshFeedbackMoveLimit)
+                                                : TppaFastAlignmentExecutionBudget.EvaluateBeforeFreshAgreement(
+                                                    alignmentRuntime.Elapsed,
+                                                    maximumObservedFreshDeterminationSeconds,
+                                                    freshFeedbackMoveCount,
+                                                    qualifiedFreshDeterminationReserveSeconds,
+                                                    maximumFreshFeedbackMoves: freshFeedbackMoveLimit);
                                     Logger.Info(
                                         $"TPPA_FAST_RUNTIME_BUDGET operation=bounded UPAS move {freshFeedbackMoveCount + 1}, independent fresh response, and terminal verify-only determination; " +
                                         $"elapsedSeconds={moveDecision.ElapsedSeconds:F1}; remainingSeconds={moveDecision.RemainingSeconds:F1}; " +
@@ -1537,9 +1557,34 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                         localCTS.Token);
                                     activeObservedDeterminations.Clear();
                                 } else {
-                                    var firstDirectDetermination = directPreMoveFreshDetermination
-                                        ?? TPAPAVM.PolarErrorDetermination;
-                                    Logger.Info("Acquiring a second independent fresh TPPA determination before direct field movement authority.");
+                                    var directFeedbackCanSeedAgreement = directPostMoveFeedbackEligibleForReuse
+                                        && directPostMoveFeedbackAge.Elapsed.TotalSeconds
+                                            <= TppaFastAlignmentExecutionBudget.DirectFeedbackReuseMaximumAgeSeconds;
+                                    PolarErrorDetermination firstDirectDetermination;
+                                    if (directFeedbackCanSeedAgreement) {
+                                        firstDirectDetermination = directPreMoveFreshDetermination;
+                                        Logger.Info("Reusing the accepted, settled post-move fresh determination as the first member of the next direct movement agreement pair.");
+                                    } else if (directPostMoveFeedbackEligibleForReuse) {
+                                        Logger.Info("The accepted post-move feedback is too old to reuse. Acquiring a new first fresh TPPA determination before direct field movement authority.");
+                                        firstDirectDetermination = await MeasureFreshThreePointForActiveCampaign(
+                                            TPAPAVM,
+                                            automatedVerificationStartPointing,
+                                            automatedVerificationEastDirection,
+                                            progress,
+                                            localCTS.Token);
+                                        TPAPAVM.PolarErrorDetermination = firstDirectDetermination;
+                                        BindFreshGeometryQualification(
+                                            TPAPAVM,
+                                            firstDirectDetermination,
+                                            true,
+                                            "replacement pre-move direct determination");
+                                        directPostMoveFeedbackEligibleForReuse = false;
+                                        directPostMoveFeedbackAge.Reset();
+                                    } else {
+                                        firstDirectDetermination = directPreMoveFreshDetermination
+                                            ?? TPAPAVM.PolarErrorDetermination;
+                                    }
+                                    Logger.Info("Acquiring an independent fresh TPPA determination before direct field movement authority.");
                                     var directFreshStopwatch = Stopwatch.StartNew();
                                     var secondDirectDetermination = await MeasureFreshThreePointForActiveCampaign(
                                         TPAPAVM,
@@ -1637,14 +1682,16 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                         maximumObservedFreshDeterminationSeconds,
                                         freshDeterminationStopwatch.Elapsed.TotalSeconds);
                                     TPAPAVM.PolarErrorDetermination = feedbackDetermination;
-                                    if (!supervisorCampaignMode) {
-                                        directPreMoveFreshDetermination = feedbackDetermination;
-                                    }
                                     BindFreshGeometryQualification(
                                         TPAPAVM,
                                         feedbackDetermination,
                                         executionPolicy.AllowActuatorMovement && automatedAdjustmentsEnabled,
                                         "post-move fresh feedback");
+                                    if (!supervisorCampaignMode) {
+                                        directPreMoveFreshDetermination = feedbackDetermination;
+                                        directPostMoveFeedbackEligibleForReuse = true;
+                                        directPostMoveFeedbackAge.Restart();
+                                    }
                                     Logger.Info($"TPPA fresh post-move response: Az: {feedbackDetermination.InitialMountAxisAzimuthError}, " +
                                                 $"Alt: {feedbackDetermination.InitialMountAxisAltitudeError}, Tot: {feedbackDetermination.InitialMountAxisTotalError}");
                                     var postMoveFreshVector = TppaPolarErrorVector.FromMinutes(

@@ -16,8 +16,14 @@ namespace NINA.Plugins.PolarAlignment {
         string Reason);
 
     internal static class TppaFastAlignmentExecutionBudget {
-        public const int MaximumFreshFeedbackMoves = 2;
-        public const int MaximumFreshFeedbackMovesAfterBoundedYBootstrapProbe = 3;
+        // The first direct move requires an initial fresh pair. Subsequent
+        // moves may reuse their accepted, settled post-move feedback as the
+        // first member of the next fresh agreement pair. This leaves time for
+        // three bounded moves, their independent responses, and a final
+        // stationary confirmation inside the five-minute contract.
+        public const int MaximumFreshFeedbackMoves = 3;
+        public const int MaximumFreshFeedbackMovesAfterBoundedYBootstrapProbe =
+            MaximumFreshFeedbackMoves;
 
         public const double MaximumRuntimeSeconds = 300;
         public const double MinimumQualifiedInitialTotalMinutes = 0;
@@ -32,6 +38,9 @@ namespace NINA.Plugins.PolarAlignment {
         // the observed cadence is slower, the five-minute planner uses that
         // measured duration and declines iterations that no longer fit.
         public const double DirectFieldFreshDeterminationReserveSeconds = 40;
+        // A direct post-move feedback sample is eligible only for the next
+        // agreement pair. A pause or delay falls back to two new samples.
+        public const double DirectFeedbackReuseMaximumAgeSeconds = 75;
         public const double ObservedCadenceSlackSeconds = 5;
         // Initial admission remains retry-capable before any actuator movement.
         public const double FreshDeterminationRetryReserveSeconds = 125;
@@ -111,8 +120,8 @@ namespace NINA.Plugins.PolarAlignment {
             if (elapsed < TimeSpan.Zero) {
                 throw new ArgumentOutOfRangeException(nameof(elapsed));
             }
-            if (maximumFreshFeedbackMoves != MaximumFreshFeedbackMoves
-                    && maximumFreshFeedbackMoves != MaximumFreshFeedbackMovesAfterBoundedYBootstrapProbe) {
+            if (maximumFreshFeedbackMoves < 2
+                    || maximumFreshFeedbackMoves > MaximumFreshFeedbackMoves) {
                 throw new ArgumentOutOfRangeException(nameof(maximumFreshFeedbackMoves));
             }
             if (completedMoves < 0 || completedMoves >= maximumFreshFeedbackMoves) {
@@ -167,6 +176,29 @@ namespace NINA.Plugins.PolarAlignment {
             return Evaluate(
                 elapsed,
                 moveDecision.RequiredReserveSeconds + observedCadenceSeconds,
+                maximumRuntimeSeconds);
+        }
+
+        public static TppaFastAlignmentBudgetDecision EvaluateBeforeFreshPair(
+                TimeSpan elapsed,
+                double observedFreshDeterminationSeconds,
+                int completedMoves,
+                double qualifiedFreshDeterminationReserveSeconds = FreshDeterminationReserveSeconds,
+                double maximumRuntimeSeconds = MaximumRuntimeSeconds,
+                int maximumFreshFeedbackMoves = MaximumFreshFeedbackMoves) {
+            var agreementDecision = EvaluateBeforeFreshAgreement(
+                elapsed,
+                observedFreshDeterminationSeconds,
+                completedMoves,
+                qualifiedFreshDeterminationReserveSeconds,
+                maximumRuntimeSeconds,
+                maximumFreshFeedbackMoves);
+            var observedCadenceSeconds = ResolveObservedCadenceSeconds(
+                observedFreshDeterminationSeconds,
+                qualifiedFreshDeterminationReserveSeconds);
+            return Evaluate(
+                elapsed,
+                agreementDecision.RequiredReserveSeconds + observedCadenceSeconds,
                 maximumRuntimeSeconds);
         }
 
