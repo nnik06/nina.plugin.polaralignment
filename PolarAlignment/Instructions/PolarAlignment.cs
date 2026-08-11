@@ -2229,6 +2229,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         case 0:
                             if (!StartFromCurrentPosition) {
                                 Logger.Info($"Slewing to drift-validation position A {Coordinates.Coordinates}.");
+                                EnsureVerificationOnlySlewDestinationSafe(Coordinates.Coordinates);
                                 SetTrackingSidereal(true);
                                 await telescopeMediator.SlewToCoordinatesAsync(
                                     Coordinates.Coordinates,
@@ -3973,6 +3974,11 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 Coordinates equatorialDestination,
                 double destinationAzimuthDegrees,
                 double destinationAltitudeDegrees) {
+            if (!MountMotionEnvelopeEnabled) {
+                throw new SequenceEntityFailedException(
+                    "Verification-only mount slews require an explicitly enabled mount-motion envelope.");
+            }
+
             var mountInfo = telescopeMediator.GetInfo();
             var currentPierSide = mountInfo.SideOfPier;
             var destinationPierSide = telescopeMediator.DestinationSideOfPier(equatorialDestination);
@@ -3999,6 +4005,11 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
         }
 
         private void EnsureVerificationOnlyActualPositionSafe(string operation) {
+            if (!MountMotionEnvelopeEnabled) {
+                throw new SequenceEntityFailedException(
+                    "Verification-only mount slews require an explicitly enabled mount-motion envelope.");
+            }
+
             var mount = telescopeMediator.GetInfo();
             var envelope = new TppaMountMotionEnvelope(
                 MountMotionMinimumAltitudeDegrees,

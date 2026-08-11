@@ -117,6 +117,20 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public void VerificationSlewRejectsDisabledEnvelope() {
+            var result = VerificationOnlySlewSafetyPolicy.Evaluate(
+                false,
+                BalconyEnvelope,
+                315.0,
+                30.0,
+                PierSide.pierEast,
+                PierSide.pierEast);
+
+            result.IsSafe.Should().BeFalse();
+            result.Reason.Should().Contain("not explicitly enabled");
+        }
+
+        [Test]
         public void VerificationSlewRejectsKnownPierSideChange() {
             var result = VerificationOnlySlewSafetyPolicy.Evaluate(
                 true,
@@ -225,6 +239,20 @@ namespace NINA.Plugins.PolarAlignment.Test {
 
             result.IsSafe.Should().BeFalse();
             result.Reason.Should().Contain("not finite");
+        }
+
+        [Test]
+        public void PostSlewTelemetryRejectsDisabledEnvelope() {
+            var result = VerificationOnlySlewSafetyPolicy.EvaluateActualTelemetry(
+                false,
+                BalconyEnvelope,
+                true,
+                false,
+                315.0,
+                30.0);
+
+            result.IsSafe.Should().BeFalse();
+            result.Reason.Should().Contain("not explicitly enabled");
         }
     }
 }

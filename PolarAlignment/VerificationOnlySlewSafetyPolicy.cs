@@ -11,13 +11,15 @@ namespace NINA.Plugins.PolarAlignment {
             double destinationAltitudeDegrees,
             PierSide currentPierSide,
             PierSide destinationPierSide) {
-            if (envelopeEnabled) {
-                var envelopeFailure = envelope.Validate(
-                    destinationAzimuthDegrees,
-                    destinationAltitudeDegrees);
-                if (!string.IsNullOrEmpty(envelopeFailure)) {
-                    return new(false, envelopeFailure);
-                }
+            if (!envelopeEnabled) {
+                return new(false, "mount-motion envelope is not explicitly enabled");
+            }
+
+            var envelopeFailure = envelope.Validate(
+                destinationAzimuthDegrees,
+                destinationAltitudeDegrees);
+            if (!string.IsNullOrEmpty(envelopeFailure)) {
+                return new(false, envelopeFailure);
             }
 
             if (currentPierSide == PierSide.pierUnknown || destinationPierSide == PierSide.pierUnknown) {
@@ -55,9 +57,7 @@ namespace NINA.Plugins.PolarAlignment {
             }
 
             if (!envelopeEnabled) {
-                return new(
-                    true,
-                    $"stationary post-slew telemetry accepted at Az={actualAzimuthDegrees:F2} deg, Alt={actualAltitudeDegrees:F2} deg");
+                return new(false, "mount-motion envelope is not explicitly enabled");
             }
 
             var envelopeFailure = envelope.Validate(actualAzimuthDegrees, actualAltitudeDegrees);
