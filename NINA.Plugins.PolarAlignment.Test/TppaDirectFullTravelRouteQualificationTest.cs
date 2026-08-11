@@ -62,8 +62,8 @@ namespace NINA.Plugins.PolarAlignment.Test {
             var result = Evaluate(enabled: true, confirmed: true, azimuthMinutes: 300, altitudeMinutes: -300);
 
             result.IsQualified.Should().BeFalse();
-            result.Feasibility.RequiredMoveCount.Should().Be(3);
-            result.Reason.Should().Contain("requires 3 fresh-feedback moves");
+            result.Feasibility.RequiredMoveCount.Should().Be(4);
+            result.Reason.Should().Contain("requires 4 fresh-feedback moves");
         }
 
         [Test]

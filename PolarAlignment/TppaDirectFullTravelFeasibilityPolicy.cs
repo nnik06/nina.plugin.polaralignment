@@ -15,7 +15,12 @@ namespace NINA.Plugins.PolarAlignment {
     /// travel, settle, cancellation, and fresh-determination gates for every move.
     /// </summary>
     internal static class TppaDirectFullTravelFeasibilityPolicy {
-        internal const int MaximumFeedbackMoves = 2;
+        // Keep the full-travel feasibility model aligned with the direct
+        // runtime contract: the first move consumes an initial fresh pair and
+        // later moves reuse accepted fresh feedback as their first agreement
+        // sample, allowing three bounded feedback moves in five minutes.
+        internal const int MaximumFeedbackMoves =
+            TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMoves;
         internal const double MaximumAxisErrorMinutes = 324.0;
         internal const double MaximumTotalErrorMinutes = 458.205195;
         internal const double MaximumTerminalErrorMinutes = 3.0;

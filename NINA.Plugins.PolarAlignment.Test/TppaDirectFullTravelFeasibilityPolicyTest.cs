@@ -20,7 +20,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
-        public void Evaluate_RejectsCalibratedTwoMoveFullEnvelopeRouteWhenDampedRuntimeCannotConverge() {
+        public void Evaluate_RejectsCalibratedThreeMoveFullEnvelopeRouteWhenDampedRuntimeCannotConverge() {
             var result = Evaluate(
                 azimuthMinutes: 324,
                 altitudeMinutes: -300,
@@ -32,9 +32,9 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 maximumYUnits: 75);
 
             result.IsFeasible.Should().BeFalse();
-            result.RequiredMoveCount.Should().Be(3);
-            result.RequiredRuntimeSeconds.Should().BeApproximately(285, 0.001);
-            result.Reason.Should().Contain("requires 3 fresh-feedback moves");
+            result.RequiredMoveCount.Should().Be(4);
+            result.RequiredRuntimeSeconds.Should().BeApproximately(340, 0.001);
+            result.Reason.Should().Contain("requires 4 fresh-feedback moves");
         }
 
         [Test]
