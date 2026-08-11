@@ -37,8 +37,16 @@ namespace NINA.Plugins.PolarAlignment {
             double totalErrorArcMinutes,
             bool supervisorCoarseRoute,
             bool qualifiedDirectFullTravelRoute,
-            bool qualifiedDirectAzimuthRoute = false) {
+            bool qualifiedDirectAzimuthRoute = false,
+            bool qualifiedDirectBootstrapRoute = false) {
             if (qualifiedDirectFullTravelRoute) {
+                return EvaluateSupervisorCoarse(
+                    azimuthErrorArcMinutes,
+                    altitudeErrorArcMinutes,
+                    totalErrorArcMinutes);
+            }
+
+            if (qualifiedDirectBootstrapRoute) {
                 return EvaluateSupervisorCoarse(
                     azimuthErrorArcMinutes,
                     altitudeErrorArcMinutes,

@@ -580,10 +580,14 @@ namespace NINA.Plugins.PolarAlignment {
 
             plan = new AutomatedAdjustmentPlan(
                 0,
-                GetProbeMagnitude(xAxis: false),
+                GetCalibratedAltitudeBootstrapMagnitude(),
                 true,
                 "Probing altitude response using calibrated azimuth bootstrap");
             return true;
+        }
+
+        private static double GetCalibratedAltitudeBootstrapMagnitude() {
+            return TppaDirectBootstrapRouteQualification.BootstrapYProbeUnits;
         }
 
         private bool HasObservedYResponse() {

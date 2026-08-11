@@ -1104,17 +1104,35 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                             Properties.Settings.Default.AvalonCalibratedMaximumXUnitsPerMove,
                             determination.InitialMountAxisAzimuthError.ArcMinutes,
                             determination.InitialMountAxisAltitudeError.ArcMinutes);
+                        var directBootstrapQualification = TppaDirectBootstrapRouteQualification.Evaluate(
+                            Properties.Settings.Default.AvalonDirectFullTravelRouteEnabled,
+                            Properties.Settings.Default.AvalonDirectFullTravelRouteConfirmed,
+                            Properties.Settings.Default.AvalonAzimuthStartingPositionDegrees,
+                            Properties.Settings.Default.AvalonAzimuthMinimumDegrees,
+                            Properties.Settings.Default.AvalonAzimuthMaximumDegrees,
+                            Properties.Settings.Default.AvalonAltitudeStartingPositionDegrees,
+                            Properties.Settings.Default.AvalonAltitudeMinimumDegrees,
+                            Properties.Settings.Default.AvalonAltitudeMaximumDegrees,
+                            Properties.Settings.Default.AvalonCalibratedAzimuthDeltaPerXUnit,
+                            Properties.Settings.Default.AvalonCalibratedAltitudeDeltaPerXUnit,
+                            Properties.Settings.Default.AvalonCalibratedMaximumYUnitsPerMove,
+                            Properties.Settings.Default.AvalonAltitudeDegreesPerNudgeUnit);
                         Logger.Info(
                             $"TPPA calibrated direct full-travel qualification: " +
                             $"{(directFullTravelQualification.IsQualified ? "PASS" : "FAIL")}; " +
                             $"{directFullTravelQualification.Reason}.");
+                        Logger.Info(
+                            $"TPPA calibrated direct Y-bootstrap qualification: " +
+                            $"{(directBootstrapQualification.IsQualified ? "PASS" : "FAIL")}; " +
+                            $"{directBootstrapQualification.Reason}.");
                         var inputDecision = AutomatedAdjustmentInputPolicy.EvaluateForRoute(
                             determination.InitialMountAxisAzimuthError.ArcMinutes,
                             determination.InitialMountAxisAltitudeError.ArcMinutes,
                             determination.InitialMountAxisTotalError.ArcMinutes,
                             supervisorCoarseRoute: supervisorCampaignMode,
                             qualifiedDirectFullTravelRoute: directFullTravelQualification.IsQualified,
-                            qualifiedDirectAzimuthRoute: directAzimuthQualification.IsQualified);
+                            qualifiedDirectAzimuthRoute: directAzimuthQualification.IsQualified,
+                            qualifiedDirectBootstrapRoute: directBootstrapQualification.IsQualified);
                         Logger.Info(
                             $"TPPA automated-adjustment input qualification: " +
                             $"{(inputDecision.IsEligible ? "PASS" : "FAIL")}; {inputDecision.Reason}.");

@@ -100,3 +100,12 @@ The bootstrap neither persists a Y response across sessions nor relaxes the
 normal per-move limits.  If the probe cannot be measured, or the matrix is
 singular/ill-conditioned, the route remains unqualified and no two-axis
 direct correction is authorized.
+# Wide-Envelope Bootstrap Admission
+
+The full +/-5.4-degree input envelope may be admitted for a direct field run
+only when the configured X column is plausible and both visual-marker axes
+have valid configured positions with two-sided ALT headroom for the 20-unit
+bootstrap probe. This entry path authorizes only that observable, bounded Y
+probe. A single fresh Y observation must still clear its response and matrix
+conditioning gates before any model-based correction, and it does not by
+itself authorize a full-travel correction.

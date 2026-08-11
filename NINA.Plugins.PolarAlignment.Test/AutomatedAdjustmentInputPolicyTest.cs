@@ -74,6 +74,22 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public void RouteSelectorAdmitsWideAltitudeForQualifiedBootstrapOnly() {
+            var denied = AutomatedAdjustmentInputPolicy.EvaluateForRoute(
+                0.0, 300.0, 300.0, supervisorCoarseRoute: false,
+                qualifiedDirectFullTravelRoute: false, qualifiedDirectAzimuthRoute: true);
+            var admitted = AutomatedAdjustmentInputPolicy.EvaluateForRoute(
+                0.0, 300.0, 300.0, supervisorCoarseRoute: false,
+                qualifiedDirectFullTravelRoute: false, qualifiedDirectAzimuthRoute: true,
+                qualifiedDirectBootstrapRoute: true);
+
+            denied.IsEligible.Should().BeFalse();
+            denied.Reason.Should().Contain("ALT <= 120'");
+            admitted.IsEligible.Should().BeTrue();
+            admitted.Reason.Should().Contain("supervisor coarse-correction");
+        }
+
+        [Test]
         public void SupervisorCoarseRouteAcceptsFullFieldEnvelope() {
             var decision = AutomatedAdjustmentInputPolicy.EvaluateSupervisorCoarse(
                 324.0, -324.0, 458.205195);

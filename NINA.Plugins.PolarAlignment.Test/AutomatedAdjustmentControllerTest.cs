@@ -1461,7 +1461,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
             plan.IsProbe.Should().BeTrue();
             plan.Reason.Should().Contain("calibrated azimuth bootstrap");
             plan.XMagnitude.Should().Be(0);
-            plan.YMagnitude.Should().BeGreaterThan(0);
+            plan.YMagnitude.Should().Be(TppaDirectBootstrapRouteQualification.BootstrapYProbeUnits);
         }
 
         [Test]
@@ -1490,7 +1490,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
 
             probe.IsProbe.Should().BeTrue();
             probe.XMagnitude.Should().Be(0);
-            probe.YMagnitude.Should().BeGreaterThan(0);
+            probe.YMagnitude.Should().Be(TppaDirectBootstrapRouteQualification.BootstrapYProbeUnits);
             probe.Reason.Should().Contain("calibrated azimuth bootstrap");
 
             controller.NoteSuccessfulExecution(probe);
