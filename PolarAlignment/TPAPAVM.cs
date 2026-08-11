@@ -399,7 +399,9 @@ namespace NINA.Plugins.PolarAlignment {
                 Properties.Settings.Default.AvalonAzimuthDegreesPerNudgeUnit,
                 Properties.Settings.Default.AvalonAltitudeDegreesPerNudgeUnit,
                 Properties.Settings.Default.AvalonReverseAzimuth ? -1 : 1,
-                Properties.Settings.Default.AvalonReverseAltitude ? -1 : 1);
+                Properties.Settings.Default.AvalonReverseAltitude ? -1 : 1,
+                Properties.Settings.Default.AvalonClampLimitedRecoveryEnabled,
+                Properties.Settings.Default.AvalonCalibratedResponseRelativeUncertainty);
 
             if (useUpasController) {
                 Logger.Info(

@@ -18,6 +18,22 @@ namespace NINA.Plugins.PolarAlignment.Properties {
 
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("False")]
+        public bool AvalonClampLimitedRecoveryEnabled {
+            get => ((bool)this[nameof(AvalonClampLimitedRecoveryEnabled)]);
+            set => this[nameof(AvalonClampLimitedRecoveryEnabled)] = value;
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("1")]
+        public double AvalonCalibratedResponseRelativeUncertainty {
+            get => ((double)this[nameof(AvalonCalibratedResponseRelativeUncertainty)]);
+            set => this[nameof(AvalonCalibratedResponseRelativeUncertainty)] = value;
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
         [global::System.Configuration.DefaultSettingValueAttribute("0")]
         public double AvalonAzimuthStartingPositionDegrees {
             get => ((double)this[nameof(AvalonAzimuthStartingPositionDegrees)]);

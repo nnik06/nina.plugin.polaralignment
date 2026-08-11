@@ -38,6 +38,25 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public void Evaluate_AdmitsQualifiedClampLimitedRecoveryWhenItConvergesWithinBudget() {
+            var result = TppaDirectFullTravelFeasibilityPolicy.Evaluate(
+                324, -300,
+                2.0 / 60.0, 0,
+                0, 2.0 / 60.0,
+                81, 75,
+                initialAgreementSeconds: 80,
+                perMoveFreshFeedbackSeconds: 40,
+                terminalConfirmationSeconds: 40,
+                perMoveOverheadSeconds: 15,
+                clampLimitedRecoveryEnabled: true,
+                relativeResponseUncertainty: 0.05);
+
+            result.IsFeasible.Should().BeTrue();
+            result.RequiredMoveCount.Should().Be(2);
+            result.RequiredRuntimeSeconds.Should().BeApproximately(230, 0.001);
+        }
+
+        [Test]
         public void Evaluate_RejectsRouteThatFitsMoveCountButExceedsRuntime() {
             var result = TppaDirectFullTravelFeasibilityPolicy.Evaluate(
                 3, 3, 1, 0, 0, 1, 100, 100,

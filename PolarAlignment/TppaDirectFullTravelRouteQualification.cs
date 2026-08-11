@@ -23,7 +23,9 @@ namespace NINA.Plugins.PolarAlignment {
             double physicalAzimuthDegreesPerXUnit,
             double physicalAltitudeDegreesPerYUnit,
             double azimuthErrorMinutes,
-            double altitudeErrorMinutes) {
+            double altitudeErrorMinutes,
+            bool clampLimitedRecoveryEnabled = false,
+            double relativeResponseUncertainty = double.PositiveInfinity) {
             if (!enabled || !operatorConfirmed) {
                 return Deny("the calibrated direct full-travel route is not enabled and operator-confirmed");
             }
@@ -71,7 +73,9 @@ namespace NINA.Plugins.PolarAlignment {
                 initialAgreementSeconds: 80,
                 perMoveFreshFeedbackSeconds: 40,
                 terminalConfirmationSeconds: 40,
-                perMoveOverheadSeconds: 15);
+                perMoveOverheadSeconds: 15,
+                clampLimitedRecoveryEnabled: clampLimitedRecoveryEnabled,
+                relativeResponseUncertainty: relativeResponseUncertainty);
 
             if (!feasibility.IsFeasible) {
                 return new(false, feasibility, feasibility.Reason);

@@ -134,6 +134,12 @@
     <Setting Name="AvalonDirectFullTravelRouteConfirmed" Type="System.Boolean" Scope="User">
       <Value Profile="(Default)">False</Value>
     </Setting>
+    <Setting Name="AvalonClampLimitedRecoveryEnabled" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">False</Value>
+    </Setting>
+    <Setting Name="AvalonCalibratedResponseRelativeUncertainty" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">1</Value>
+    </Setting>
     <Setting Name="AvalonAzimuthStartingPositionDegrees" Type="System.Double" Scope="User">
       <Value Profile="(Default)">0</Value>
     </Setting>

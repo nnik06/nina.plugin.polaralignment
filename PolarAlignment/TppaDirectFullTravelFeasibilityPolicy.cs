@@ -40,7 +40,9 @@ namespace NINA.Plugins.PolarAlignment {
             double perMoveFreshFeedbackSeconds,
             double terminalConfirmationSeconds,
             double perMoveOverheadSeconds,
-            double maximumRuntimeSeconds = TppaFastAlignmentExecutionBudget.MaximumRuntimeSeconds) {
+            double maximumRuntimeSeconds = TppaFastAlignmentExecutionBudget.MaximumRuntimeSeconds,
+            bool clampLimitedRecoveryEnabled = false,
+            double relativeResponseUncertainty = double.PositiveInfinity) {
             if (!AreFinite(
                     azimuthErrorMinutes,
                     altitudeErrorMinutes,
@@ -93,6 +95,8 @@ namespace NINA.Plugins.PolarAlignment {
                         altitudeResidualDegrees,
                         maximumXUnitsPerMove,
                         maximumYUnitsPerMove,
+                        clampLimitedRecoveryEnabled,
+                        relativeResponseUncertainty,
                         out var xMagnitude,
                         out var yMagnitude)) {
                     return Deny("the measured 2x2 response cannot produce a bounded direct correction");
@@ -166,6 +170,8 @@ namespace NINA.Plugins.PolarAlignment {
             double altitudeErrorDegrees,
             double maximumXUnits,
             double maximumYUnits,
+            bool clampLimitedRecoveryEnabled,
+            double relativeResponseUncertainty,
             out double xMagnitude,
             out double yMagnitude) {
             var m00 = azimuthDeltaPerXUnit * azimuthDeltaPerXUnit
@@ -189,9 +195,35 @@ namespace NINA.Plugins.PolarAlignment {
 
             var rawX = ((rhs0 * m11) - (rhs1 * m01)) / determinant;
             var rawY = ((m00 * rhs1) - (m01 * rhs0)) / determinant;
-            xMagnitude = Clamp(rawX * ConfirmedCorrectionGain, maximumXUnits);
-            yMagnitude = Clamp(rawY * ConfirmedCorrectionGain, maximumYUnits);
+            var recovery = clampLimitedRecoveryEnabled
+                ? TppaClampLimitedRecoveryPolicy.Evaluate(
+                    rawX,
+                    rawY,
+                    maximumXUnits,
+                    maximumYUnits,
+                    CalculateConditionNumber(
+                        azimuthDeltaPerXUnit,
+                        altitudeDeltaPerXUnit,
+                        azimuthDeltaPerYUnit,
+                        altitudeDeltaPerYUnit),
+                    relativeResponseUncertainty)
+                : null;
+            xMagnitude = recovery?.IsEligible == true
+                ? recovery.XUnits
+                : Clamp(rawX * ConfirmedCorrectionGain, maximumXUnits);
+            yMagnitude = recovery?.IsEligible == true
+                ? recovery.YUnits
+                : Clamp(rawY * ConfirmedCorrectionGain, maximumYUnits);
             return true;
+        }
+
+        private static double CalculateConditionNumber(double ax, double ay, double bx, double by) {
+            var trace = ax * ax + ay * ay + bx * bx + by * by;
+            var determinant = ax * by - ay * bx;
+            var discriminant = Math.Sqrt(Math.Max(0, trace * trace - 4 * determinant * determinant));
+            var minimumEigenvalue = (trace - discriminant) / 2;
+            var maximumEigenvalue = (trace + discriminant) / 2;
+            return minimumEigenvalue <= 0 ? double.PositiveInfinity : Math.Sqrt(maximumEigenvalue / minimumEigenvalue);
         }
 
         private static double Clamp(double magnitude, double maximumMagnitude) {

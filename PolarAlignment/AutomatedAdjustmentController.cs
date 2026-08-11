@@ -334,7 +334,9 @@ namespace NINA.Plugins.PolarAlignment {
             double physicalAzimuthDegreesPerXUnit,
             double physicalAltitudeDegreesPerYUnit,
             int physicalAzimuthCommandDirectionMultiplier = 1,
-            int physicalAltitudeCommandDirectionMultiplier = 1) {
+            int physicalAltitudeCommandDirectionMultiplier = 1,
+            bool clampLimitedRecoveryEnabled = false,
+            double relativeResponseUncertainty = double.PositiveInfinity) {
             calibratedDirectFullTravelRoute = enabled && operatorConfirmed
                 ? new CalibratedDirectFullTravelRoute(
                     azimuthStartingPositionDegrees,
@@ -353,7 +355,9 @@ namespace NINA.Plugins.PolarAlignment {
                     physicalAzimuthDegreesPerXUnit,
                     physicalAltitudeDegreesPerYUnit,
                     physicalAzimuthCommandDirectionMultiplier,
-                    physicalAltitudeCommandDirectionMultiplier)
+                    physicalAltitudeCommandDirectionMultiplier,
+                    clampLimitedRecoveryEnabled,
+                    relativeResponseUncertainty)
                 : null;
             calibratedDirectAzimuthRoute = enabled && operatorConfirmed
                 ? new CalibratedDirectAzimuthRoute(
@@ -477,7 +481,20 @@ namespace NINA.Plugins.PolarAlignment {
                                                  + pendingPlan.Plan.YMagnitude * pendingPlan.Plan.YMagnitude);
                 var responsePerUnit = commandMagnitude > 0 ? responseMagnitude / commandMagnitude : 0;
 
-                if (IsSessionLocalCoarsePlan(pendingPlan.Plan)
+                if (pendingPlan.Plan.IsClampLimitedTravelRecovery
+                    && !PassesClampLimitedRecoveryResponseGate(
+                        pendingPlan.Plan,
+                        pendingPlan.BeforeMoveObservation,
+                        latestObservation,
+                        deltaAzimuth,
+                        deltaAltitude,
+                        out var recoveryFailure)) {
+                    AbortMotionAuthority(
+                        recoveryFailure,
+                        pendingPlan.Plan,
+                        pendingPlan.BeforeMoveObservation,
+                        latestObservation);
+                } else if (IsSessionLocalCoarsePlan(pendingPlan.Plan)
                     && latestObservation.TotalErrorDegrees
                         > pendingPlan.BeforeMoveObservation.TotalErrorDegrees
                             * SessionCoarseValidationImprovementFactor) {
@@ -532,6 +549,46 @@ namespace NINA.Plugins.PolarAlignment {
 
             currentObservation = latestObservation;
             hasObservation = true;
+        }
+
+        private static bool PassesClampLimitedRecoveryResponseGate(
+            AutomatedAdjustmentPlan plan,
+            AutomatedAdjustmentObservation before,
+            AutomatedAdjustmentObservation after,
+            double actualAzimuthDelta,
+            double actualAltitudeDelta,
+            out string reason) {
+            var predictedAzimuth = plan.ExpectedAzimuthDeltaDegrees;
+            var predictedAltitude = plan.ExpectedAltitudeDeltaDegrees;
+            var predictedReduction = before.TotalErrorDegrees
+                                     - Math.Sqrt(
+                                         Math.Pow(before.AzimuthErrorDegrees + predictedAzimuth, 2)
+                                         + Math.Pow(before.AltitudeErrorDegrees + predictedAltitude, 2));
+            var actualReduction = before.TotalErrorDegrees - after.TotalErrorDegrees;
+            if (predictedReduction <= 0
+                || actualReduction < predictedReduction * 0.40) {
+                reason = "The clamp-limited recovery did not deliver at least 40 percent of its model-predicted fresh residual reduction.";
+                return false;
+            }
+
+            if (!HasCompatibleResponseComponent(predictedAzimuth, actualAzimuthDelta)
+                || !HasCompatibleResponseComponent(predictedAltitude, actualAltitudeDelta)) {
+                reason = "The clamp-limited recovery fresh response was inconsistent with the calibrated model.";
+                return false;
+            }
+
+            reason = null;
+            return true;
+        }
+
+        private static bool HasCompatibleResponseComponent(double predicted, double actual) {
+            const double minimumComparableDegrees = 5.0 / 60.0;
+            if (Math.Abs(predicted) < minimumComparableDegrees) {
+                return Math.Sign(predicted) == 0 || Math.Sign(actual) == 0 || Math.Sign(predicted) == Math.Sign(actual);
+            }
+
+            var ratio = actual / predicted;
+            return ratio >= 0.40 && ratio <= 1.60;
         }
 
         /// <summary>
@@ -841,7 +898,9 @@ namespace NINA.Plugins.PolarAlignment {
                 calibratedDirectFullTravelRoute.PhysicalAzimuthDegreesPerXUnit,
                 calibratedDirectFullTravelRoute.PhysicalAltitudeDegreesPerYUnit,
                 observation.AzimuthErrorDegrees * 60.0,
-                observation.AltitudeErrorDegrees * 60.0);
+                observation.AltitudeErrorDegrees * 60.0,
+                calibratedDirectFullTravelRoute.ClampLimitedRecoveryEnabled,
+                calibratedDirectFullTravelRoute.RelativeResponseUncertainty);
             if (!qualification.IsQualified) {
                 Logger.Info($"Calibrated direct full-travel route is not eligible: {qualification.Reason}.");
                 return false;
@@ -852,13 +911,41 @@ namespace NINA.Plugins.PolarAlignment {
                 return false;
             }
 
-            var xMagnitude = NormalizeMagnitude(rawX * ConfirmedXCorrectionGain, calibratedDirectFullTravelRoute.MaximumXUnitsPerMove);
-            var yMagnitude = NormalizeMagnitude(rawY * ConfirmedXCorrectionGain, calibratedDirectFullTravelRoute.MaximumYUnitsPerMove);
+            var recovery = calibratedDirectFullTravelRoute.ClampLimitedRecoveryEnabled
+                ? TppaClampLimitedRecoveryPolicy.Evaluate(
+                    rawX,
+                    rawY,
+                    calibratedDirectFullTravelRoute.MaximumXUnitsPerMove,
+                    calibratedDirectFullTravelRoute.MaximumYUnitsPerMove,
+                    CalculateResponseConditionNumber(
+                        calibratedDirectFullTravelRoute.ResponseModel.AzimuthDeltaPerXUnit,
+                        calibratedDirectFullTravelRoute.ResponseModel.AltitudeDeltaPerXUnit,
+                        calibratedDirectFullTravelRoute.ResponseModel.AzimuthDeltaPerYUnit,
+                        calibratedDirectFullTravelRoute.ResponseModel.AltitudeDeltaPerYUnit),
+                    calibratedDirectFullTravelRoute.RelativeResponseUncertainty)
+                : null;
+            var xMagnitude = recovery?.IsEligible == true
+                ? recovery.XUnits
+                : NormalizeMagnitude(rawX * ConfirmedXCorrectionGain, calibratedDirectFullTravelRoute.MaximumXUnitsPerMove);
+            var yMagnitude = recovery?.IsEligible == true
+                ? recovery.YUnits
+                : NormalizeMagnitude(rawY * ConfirmedXCorrectionGain, calibratedDirectFullTravelRoute.MaximumYUnitsPerMove);
             if (Math.Abs(xMagnitude) < MinimumMoveMagnitude && Math.Abs(yMagnitude) < MinimumMoveMagnitude) {
                 return false;
             }
 
-            plan = new AutomatedAdjustmentPlan(xMagnitude, yMagnitude, false, "Calibrated direct full-travel correction");
+            var expectedAzimuthDelta = calibratedDirectFullTravelRoute.ResponseModel.AzimuthDeltaPerXUnit * xMagnitude
+                                       + calibratedDirectFullTravelRoute.ResponseModel.AzimuthDeltaPerYUnit * yMagnitude;
+            var expectedAltitudeDelta = calibratedDirectFullTravelRoute.ResponseModel.AltitudeDeltaPerXUnit * xMagnitude
+                                        + calibratedDirectFullTravelRoute.ResponseModel.AltitudeDeltaPerYUnit * yMagnitude;
+            plan = new AutomatedAdjustmentPlan(
+                xMagnitude,
+                yMagnitude,
+                false,
+                recovery?.IsEligible == true ? "Calibrated clamp-limited full-travel recovery" : "Calibrated direct full-travel correction",
+                isClampLimitedTravelRecovery: recovery?.IsEligible == true,
+                expectedAzimuthDeltaDegrees: expectedAzimuthDelta,
+                expectedAltitudeDeltaDegrees: expectedAltitudeDelta);
             LogCalibratedDirectSignedEnvelopeDiagnostic(plan);
             return true;
         }
@@ -2086,7 +2173,9 @@ namespace NINA.Plugins.PolarAlignment {
                 double physicalAzimuthDegreesPerXUnit,
                 double physicalAltitudeDegreesPerYUnit,
                 int physicalAzimuthCommandDirectionMultiplier,
-                int physicalAltitudeCommandDirectionMultiplier) {
+                int physicalAltitudeCommandDirectionMultiplier,
+                bool clampLimitedRecoveryEnabled,
+                double relativeResponseUncertainty) {
                 AzimuthStartingPositionDegrees = azimuthStartingPositionDegrees;
                 AzimuthMinimumDegrees = azimuthMinimumDegrees;
                 AzimuthMaximumDegrees = azimuthMaximumDegrees;
@@ -2100,6 +2189,8 @@ namespace NINA.Plugins.PolarAlignment {
                 PhysicalAltitudeDegreesPerYUnit = physicalAltitudeDegreesPerYUnit;
                 PhysicalAzimuthCommandDirectionMultiplier = physicalAzimuthCommandDirectionMultiplier < 0 ? -1 : 1;
                 PhysicalAltitudeCommandDirectionMultiplier = physicalAltitudeCommandDirectionMultiplier < 0 ? -1 : 1;
+                ClampLimitedRecoveryEnabled = clampLimitedRecoveryEnabled;
+                RelativeResponseUncertainty = relativeResponseUncertainty;
             }
 
             public double AzimuthStartingPositionDegrees { get; }
@@ -2115,6 +2206,8 @@ namespace NINA.Plugins.PolarAlignment {
             public double PhysicalAltitudeDegreesPerYUnit { get; }
             public int PhysicalAzimuthCommandDirectionMultiplier { get; }
             public int PhysicalAltitudeCommandDirectionMultiplier { get; }
+            public bool ClampLimitedRecoveryEnabled { get; }
+            public double RelativeResponseUncertainty { get; }
         }
 
         private sealed class CalibratedDirectAzimuthRoute {
@@ -2150,18 +2243,27 @@ namespace NINA.Plugins.PolarAlignment {
                                        double yMagnitude,
                                        bool isProbe,
                                        string reason,
-                                       bool isBoundedYBootstrapProbe = false) {
+                                       bool isBoundedYBootstrapProbe = false,
+                                       bool isClampLimitedTravelRecovery = false,
+                                       double expectedAzimuthDeltaDegrees = 0,
+                                       double expectedAltitudeDeltaDegrees = 0) {
             XMagnitude = xMagnitude;
             YMagnitude = yMagnitude;
             IsProbe = isProbe;
             Reason = reason;
             IsBoundedYBootstrapProbe = isBoundedYBootstrapProbe;
+            IsClampLimitedTravelRecovery = isClampLimitedTravelRecovery;
+            ExpectedAzimuthDeltaDegrees = expectedAzimuthDeltaDegrees;
+            ExpectedAltitudeDeltaDegrees = expectedAltitudeDeltaDegrees;
         }
 
         public double XMagnitude { get; }
         public double YMagnitude { get; }
         public bool IsProbe { get; }
         public bool IsBoundedYBootstrapProbe { get; }
+        public bool IsClampLimitedTravelRecovery { get; }
+        public double ExpectedAzimuthDeltaDegrees { get; }
+        public double ExpectedAltitudeDeltaDegrees { get; }
         public string Reason { get; }
         public bool HasMovement => Math.Abs(XMagnitude) > 0 || Math.Abs(YMagnitude) > 0;
 

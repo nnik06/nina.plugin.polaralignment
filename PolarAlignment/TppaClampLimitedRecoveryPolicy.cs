@@ -17,6 +17,7 @@ namespace NINA.Plugins.PolarAlignment {
         public const double MaximumResponseConditionNumber = 5.0;
         public const double MaximumRelativeResponseUncertainty = 0.10;
         public const double DampedCorrectionGain = 0.65;
+        public const double ClampEngagementFraction = 0.95;
 
         public static TppaClampLimitedRecoveryCommand Evaluate(
             double rawXUnits,
@@ -38,8 +39,11 @@ namespace NINA.Plugins.PolarAlignment {
                 return Deny("the field response model is not qualified for clamp-limited recovery");
             }
 
-            var clampLimitedX = Math.Abs(rawXUnits) >= maximumXUnits;
-            var clampLimitedY = Math.Abs(rawYUnits) >= maximumYUnits;
+            // The inverse uses a small numerical damping term. Treat an axis that is within
+            // five percent of its hard maximum as clamp-limited so the feasibility model and
+            // runtime do not disagree at the recovery boundary.
+            var clampLimitedX = Math.Abs(rawXUnits) >= maximumXUnits * ClampEngagementFraction;
+            var clampLimitedY = Math.Abs(rawYUnits) >= maximumYUnits * ClampEngagementFraction;
             if (!clampLimitedX && !clampLimitedY) {
                 return Deny("no inverse-command axis is clamp-limited");
             }
