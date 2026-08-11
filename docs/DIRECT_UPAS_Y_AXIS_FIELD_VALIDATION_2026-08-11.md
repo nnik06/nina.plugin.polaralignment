@@ -77,3 +77,12 @@ evidence available at the time, solver diagnostics, DLL hash, elapsed time,
 and the accept/reject decision. These records are the input for enabling a
 measured 2x2 response model and for tracking the required four-of-five
 operational reliability demonstration.
+
+After the run, use the read-only helper below to produce a signed response
+summary. It is diagnostic only; it cannot enable motion or alter settings.
+
+```powershell
+pwsh -NoProfile -File tools/summarize_tppa_upas_response.ps1 `
+  -LogPath 'C:\Users\nnik0\AppData\Local\NINA\Logs\<nightly-log>.log' `
+  -MinimumSamplesPerAxis 1
+```

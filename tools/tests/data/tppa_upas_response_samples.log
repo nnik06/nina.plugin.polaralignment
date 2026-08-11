@@ -1,0 +1,4 @@
+2026-08-11T20:00:00|INFO|AutomatedAdjustmentController|UpdateObservation|TPPA_UPAS_FRESH_RESPONSE_SAMPLE axis=X, X=10, Y=0, deltaAz=20', deltaAlt=2', xAzPerUnit=2, xAltPerUnit=0.2, yAzPerUnit=n/a, yAltPerUnit=n/a, samples=1
+2026-08-11T20:01:00|INFO|AutomatedAdjustmentController|UpdateObservation|TPPA_UPAS_FRESH_RESPONSE_SAMPLE axis=X, X=-10, Y=0, deltaAz=-20', deltaAlt=-2', xAzPerUnit=2, xAltPerUnit=0.2, yAzPerUnit=n/a, yAltPerUnit=n/a, samples=2
+2026-08-11T20:02:00|INFO|AutomatedAdjustmentController|UpdateObservation|TPPA_UPAS_FRESH_RESPONSE_SAMPLE axis=Y, X=0, Y=8, deltaAz=4', deltaAlt=16', xAzPerUnit=n/a, xAltPerUnit=n/a, yAzPerUnit=0.5, yAltPerUnit=2, samples=3
+2026-08-11T20:03:00|INFO|AutomatedAdjustmentController|UpdateObservation|TPPA_UPAS_FRESH_RESPONSE_SAMPLE axis=mixed, X=4, Y=4, deltaAz=10', deltaAlt=10', xAzPerUnit=2.5, xAltPerUnit=2.5, yAzPerUnit=2.5, yAltPerUnit=2.5, samples=4
