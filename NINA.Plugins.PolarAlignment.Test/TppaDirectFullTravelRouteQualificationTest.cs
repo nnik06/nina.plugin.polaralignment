@@ -36,10 +36,25 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 0, 0.5,
                 81, 81,
                 0.5, 0.5,
-                24, 0);
+                -24, 0);
 
             result.IsQualified.Should().BeFalse();
             result.Reason.Should().Contain("headroom");
+        }
+
+        [Test]
+        public void Evaluate_AllowsAnInwardCorrectionFromThePositiveTravelEdge() {
+            var result = TppaDirectFullTravelRouteQualification.Evaluate(
+                true, true,
+                5.2, -5.4, 5.4,
+                0, -5.4, 5.4,
+                0.5, 0,
+                0, 0.5,
+                81, 81,
+                0.5, 0.5,
+                24, 0);
+
+            result.IsQualified.Should().BeTrue();
         }
 
         [Test]

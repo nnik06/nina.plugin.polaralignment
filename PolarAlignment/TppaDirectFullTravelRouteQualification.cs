@@ -25,7 +25,9 @@ namespace NINA.Plugins.PolarAlignment {
             double azimuthErrorMinutes,
             double altitudeErrorMinutes,
             bool clampLimitedRecoveryEnabled = false,
-            double relativeResponseUncertainty = double.PositiveInfinity) {
+            double relativeResponseUncertainty = double.PositiveInfinity,
+            int physicalAzimuthCommandDirectionMultiplier = 1,
+            int physicalAltitudeCommandDirectionMultiplier = 1) {
             if (!enabled || !operatorConfirmed) {
                 return Deny("the calibrated direct full-travel route is not enabled and operator-confirmed");
             }
@@ -86,13 +88,17 @@ namespace NINA.Plugins.PolarAlignment {
                     azimuthMinimumDegrees,
                     azimuthMaximumDegrees,
                     physicalAzimuthDegreesPerXUnit,
-                    feasibility.RequiredXUnits)
+                    feasibility.MinimumXDisplacementUnits,
+                    feasibility.MaximumXDisplacementUnits,
+                    physicalAzimuthCommandDirectionMultiplier)
                 || !HasSignedHeadroom(
                     altitudeStartingPositionDegrees,
                     altitudeMinimumDegrees,
                     altitudeMaximumDegrees,
                     physicalAltitudeDegreesPerYUnit,
-                    feasibility.RequiredYUnits)) {
+                    feasibility.MinimumYDisplacementUnits,
+                    feasibility.MaximumYDisplacementUnits,
+                    physicalAltitudeCommandDirectionMultiplier)) {
                 return new(false, feasibility, "the signed visual-marker travel envelope lacks required full-route headroom");
             }
 
@@ -107,9 +113,19 @@ namespace NINA.Plugins.PolarAlignment {
             return minimum < maximum && value >= minimum && value <= maximum;
         }
 
-        private static bool HasSignedHeadroom(double start, double minimum, double maximum, double degreesPerUnit, double requiredUnits) {
-            var displacement = Math.Abs(degreesPerUnit * requiredUnits);
-            return start - displacement >= minimum && start + displacement <= maximum;
+        private static bool HasSignedHeadroom(
+            double start,
+            double minimum,
+            double maximum,
+            double degreesPerUnit,
+            double minimumCommandUnits,
+            double maximumCommandUnits,
+            int commandDirectionMultiplier) {
+            var physicalDegreesPerUnit = degreesPerUnit * (commandDirectionMultiplier < 0 ? -1 : 1);
+            var projectedMinimum = start + physicalDegreesPerUnit * minimumCommandUnits;
+            var projectedMaximum = start + physicalDegreesPerUnit * maximumCommandUnits;
+            return Math.Min(projectedMinimum, projectedMaximum) >= minimum
+                   && Math.Max(projectedMinimum, projectedMaximum) <= maximum;
         }
 
         private static bool IsFinite(params double[] values) {

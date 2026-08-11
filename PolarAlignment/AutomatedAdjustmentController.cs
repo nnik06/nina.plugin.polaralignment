@@ -900,7 +900,9 @@ namespace NINA.Plugins.PolarAlignment {
                 observation.AzimuthErrorDegrees * 60.0,
                 observation.AltitudeErrorDegrees * 60.0,
                 calibratedDirectFullTravelRoute.ClampLimitedRecoveryEnabled,
-                calibratedDirectFullTravelRoute.RelativeResponseUncertainty);
+                calibratedDirectFullTravelRoute.RelativeResponseUncertainty,
+                calibratedDirectFullTravelRoute.PhysicalAzimuthCommandDirectionMultiplier,
+                calibratedDirectFullTravelRoute.PhysicalAltitudeCommandDirectionMultiplier);
             if (!qualification.IsQualified) {
                 Logger.Info($"Calibrated direct full-travel route is not eligible: {qualification.Reason}.");
                 return false;

@@ -7,7 +7,11 @@ namespace NINA.Plugins.PolarAlignment {
         double RequiredYUnits,
         int RequiredMoveCount,
         double RequiredRuntimeSeconds,
-        string Reason);
+        string Reason,
+        double MinimumXDisplacementUnits = 0,
+        double MaximumXDisplacementUnits = 0,
+        double MinimumYDisplacementUnits = 0,
+        double MaximumYDisplacementUnits = 0);
 
     /// <summary>
     /// Pure feasibility check for the attended direct full-travel route. It deliberately does
@@ -83,6 +87,12 @@ namespace NINA.Plugins.PolarAlignment {
             var altitudeResidualDegrees = altitudeErrorMinutes / 60.0;
             var requiredXUnits = 0.0;
             var requiredYUnits = 0.0;
+            var cumulativeXUnits = 0.0;
+            var cumulativeYUnits = 0.0;
+            var minimumXDisplacementUnits = 0.0;
+            var maximumXDisplacementUnits = 0.0;
+            var minimumYDisplacementUnits = 0.0;
+            var maximumYDisplacementUnits = 0.0;
             var requiredMoves = 0;
             while (ResidualMinutes(azimuthResidualDegrees, altitudeResidualDegrees) > MaximumTerminalErrorMinutes
                    && requiredMoves <= MaximumFeedbackMoves) {
@@ -109,6 +119,12 @@ namespace NINA.Plugins.PolarAlignment {
                                             + altitudeDeltaPerYUnitDegrees * yMagnitude;
                 requiredXUnits += Math.Abs(xMagnitude);
                 requiredYUnits += Math.Abs(yMagnitude);
+                cumulativeXUnits += xMagnitude;
+                cumulativeYUnits += yMagnitude;
+                minimumXDisplacementUnits = Math.Min(minimumXDisplacementUnits, cumulativeXUnits);
+                maximumXDisplacementUnits = Math.Max(maximumXDisplacementUnits, cumulativeXUnits);
+                minimumYDisplacementUnits = Math.Min(minimumYDisplacementUnits, cumulativeYUnits);
+                maximumYDisplacementUnits = Math.Max(maximumYDisplacementUnits, cumulativeYUnits);
                 requiredMoves++;
                 if (ResidualMinutes(azimuthResidualDegrees, altitudeResidualDegrees) >= priorResidualMinutes) {
                     return Deny("the calibrated damped controller does not reduce the fresh error vector");
@@ -125,7 +141,9 @@ namespace NINA.Plugins.PolarAlignment {
                     requiredYUnits,
                     requiredMoves,
                     requiredRuntimeSeconds,
-                    $"the calibrated damped controller requires {requiredMoves} fresh-feedback moves; the direct route permits at most {MaximumFeedbackMoves}");
+                    $"the calibrated damped controller requires {requiredMoves} fresh-feedback moves; the direct route permits at most {MaximumFeedbackMoves}",
+                    minimumXDisplacementUnits, maximumXDisplacementUnits,
+                    minimumYDisplacementUnits, maximumYDisplacementUnits);
             }
 
             if (ResidualMinutes(azimuthResidualDegrees, altitudeResidualDegrees) > MaximumTerminalErrorMinutes) {
@@ -135,7 +153,9 @@ namespace NINA.Plugins.PolarAlignment {
                     requiredYUnits,
                     requiredMoves,
                     requiredRuntimeSeconds,
-                    $"the calibrated damped controller cannot reach {MaximumTerminalErrorMinutes:F1} arcmin within {MaximumFeedbackMoves} fresh-feedback moves");
+                    $"the calibrated damped controller cannot reach {MaximumTerminalErrorMinutes:F1} arcmin within {MaximumFeedbackMoves} fresh-feedback moves",
+                    minimumXDisplacementUnits, maximumXDisplacementUnits,
+                    minimumYDisplacementUnits, maximumYDisplacementUnits);
             }
 
             if (requiredRuntimeSeconds > maximumRuntimeSeconds) {
@@ -145,7 +165,9 @@ namespace NINA.Plugins.PolarAlignment {
                     requiredYUnits,
                     requiredMoves,
                     requiredRuntimeSeconds,
-                    $"calibrated route requires {requiredRuntimeSeconds:F1}s, exceeding the {maximumRuntimeSeconds:F1}s runtime contract");
+                    $"calibrated route requires {requiredRuntimeSeconds:F1}s, exceeding the {maximumRuntimeSeconds:F1}s runtime contract",
+                    minimumXDisplacementUnits, maximumXDisplacementUnits,
+                    minimumYDisplacementUnits, maximumYDisplacementUnits);
             }
 
             return new(
@@ -154,7 +176,9 @@ namespace NINA.Plugins.PolarAlignment {
                 requiredYUnits,
                 requiredMoves,
                 requiredRuntimeSeconds,
-                "calibrated damped route reaches the terminal error target within the bounded feedback and runtime contract");
+                "calibrated damped route reaches the terminal error target within the bounded feedback and runtime contract",
+                minimumXDisplacementUnits, maximumXDisplacementUnits,
+                minimumYDisplacementUnits, maximumYDisplacementUnits);
         }
 
         private static TppaDirectFullTravelFeasibilityDecision Deny(string reason) {

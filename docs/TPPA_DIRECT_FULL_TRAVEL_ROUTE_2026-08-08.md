@@ -49,6 +49,9 @@ For each admitted move, the live controller must still:
 1. Derive the signed command from the current fresh TPPA residual and the
    directional measured response, then clamp it to the smaller of calibrated
    authority and physically remaining headroom.
+   Qualification evaluates the signed multi-move path, so an inward correction
+   from a marker near one travel edge is permitted while an outward path is
+   refused. It does not require artificial clearance in both directions.
 2. Refuse a command that exceeds headroom, has unknown response sign, relies on
    stale calibration, crosses an unverified reversal/deadband condition, or
    cannot leave the reserve for its fresh feedback and terminal confirmation.

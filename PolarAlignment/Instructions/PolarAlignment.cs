@@ -1106,7 +1106,9 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                             determination.InitialMountAxisAzimuthError.ArcMinutes,
                             determination.InitialMountAxisAltitudeError.ArcMinutes,
                             Properties.Settings.Default.AvalonClampLimitedRecoveryEnabled,
-                            Properties.Settings.Default.AvalonCalibratedResponseRelativeUncertainty);
+                            Properties.Settings.Default.AvalonCalibratedResponseRelativeUncertainty,
+                            Properties.Settings.Default.AvalonReverseAzimuth ? -1 : 1,
+                            Properties.Settings.Default.AvalonReverseAltitude ? -1 : 1);
                         var directAzimuthQualification = TppaDirectAxisRouteQualification.Evaluate(
                             Properties.Settings.Default.AvalonDirectFullTravelRouteEnabled,
                             Properties.Settings.Default.AvalonDirectFullTravelRouteConfirmed,
