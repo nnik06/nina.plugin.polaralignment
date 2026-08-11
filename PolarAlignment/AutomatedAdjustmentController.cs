@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using NINA.Core.Utility;
 
 namespace NINA.Plugins.PolarAlignment {
@@ -718,14 +719,18 @@ namespace NINA.Plugins.PolarAlignment {
                 ? sample.AltitudeDeltaDegrees * 60.0 / sample.YMagnitude
                 : double.NaN;
 
-            return $"TPPA_UPAS_FRESH_RESPONSE_SAMPLE axis={axis}, X={Math.Round(sample.XMagnitude, 3)}, Y={Math.Round(sample.YMagnitude, 3)}, "
-                   + $"deltaAz={Math.Round(sample.AzimuthDeltaDegrees * 60.0, 3)}', deltaAlt={Math.Round(sample.AltitudeDeltaDegrees * 60.0, 3)}', "
+            return $"TPPA_UPAS_FRESH_RESPONSE_SAMPLE axis={axis}, X={FormatTelemetry(sample.XMagnitude)}, Y={FormatTelemetry(sample.YMagnitude)}, "
+                   + $"deltaAz={FormatTelemetry(sample.AzimuthDeltaDegrees * 60.0)}', deltaAlt={FormatTelemetry(sample.AltitudeDeltaDegrees * 60.0)}', "
                    + $"xAzPerUnit={FormatResponse(xAzimuthPerUnit)}, xAltPerUnit={FormatResponse(xAltitudePerUnit)}, "
                    + $"yAzPerUnit={FormatResponse(yAzimuthPerUnit)}, yAltPerUnit={FormatResponse(yAltitudePerUnit)}, samples={samples.Count}";
         }
 
         private static string FormatResponse(double value) {
-            return double.IsNaN(value) ? "n/a" : Math.Round(value, 4).ToString("0.####");
+            return double.IsNaN(value) ? "n/a" : FormatTelemetry(value);
+        }
+
+        private static string FormatTelemetry(double value) {
+            return Math.Round(value, 4).ToString("0.####", CultureInfo.InvariantCulture);
         }
 
         private AutomatedAdjustmentPlan ApplyAzimuthTravelGuard(AutomatedAdjustmentPlan plan) {
