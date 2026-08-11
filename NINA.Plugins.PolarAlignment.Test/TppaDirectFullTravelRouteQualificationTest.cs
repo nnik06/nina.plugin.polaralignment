@@ -32,11 +32,11 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 true, true,
                 5.2, -5.4, 5.4,
                 0, -5.4, 5.4,
-                0.05, 0,
-                0, 0.05,
+                0.5, 0,
+                0, 0.5,
                 81, 81,
-                0.05, 0.05,
-                180, 0);
+                0.5, 0.5,
+                24, 0);
 
             result.IsQualified.Should().BeFalse();
             result.Reason.Should().Contain("headroom");
@@ -48,22 +48,31 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 true, true,
                 5.2, -5.4, 5.4,
                 0, -5.4, 5.4,
-                0.05, 0,
-                0, 0.05,
+                0.5, 0,
+                0, 0.5,
                 81, 81,
-                0.001, 0.05,
-                180, 0);
+                0.001, 0.5,
+                24, 0);
 
             result.IsQualified.Should().BeTrue();
         }
 
         [Test]
-        public void Evaluate_AcceptsAConfirmedTwoMoveRouteFromVisualZero() {
+        public void Evaluate_RejectsAFullEnvelopeRouteWhoseDampedRuntimeCannotConverge() {
             var result = Evaluate(enabled: true, confirmed: true, azimuthMinutes: 300, altitudeMinutes: -300);
+
+            result.IsQualified.Should().BeFalse();
+            result.Feasibility.RequiredMoveCount.Should().Be(3);
+            result.Reason.Should().Contain("requires 3 fresh-feedback moves");
+        }
+
+        [Test]
+        public void Evaluate_AcceptsAConfirmedNearFieldRouteThatTheDampedRuntimeCanConverge() {
+            var result = Evaluate(enabled: true, confirmed: true, azimuthMinutes: 17, altitudeMinutes: -17);
 
             result.IsQualified.Should().BeTrue();
             result.Feasibility.RequiredMoveCount.Should().Be(2);
-            result.Reason.Should().Contain("five-minute");
+            result.Reason.Should().Contain("five-minute feasibility");
         }
 
         private static TppaDirectFullTravelRouteQualification Evaluate(bool enabled, bool confirmed, double azimuthMinutes, double altitudeMinutes) {

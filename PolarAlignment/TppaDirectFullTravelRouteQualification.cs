@@ -62,8 +62,10 @@ namespace NINA.Plugins.PolarAlignment {
             var feasibility = TppaDirectFullTravelFeasibilityPolicy.Evaluate(
                 azimuthErrorMinutes,
                 altitudeErrorMinutes,
-                MaximumColumnMagnitudeMinutes(azimuthDeltaPerXUnitDegrees, altitudeDeltaPerXUnitDegrees),
-                MaximumColumnMagnitudeMinutes(azimuthDeltaPerYUnitDegrees, altitudeDeltaPerYUnitDegrees),
+                azimuthDeltaPerXUnitDegrees,
+                azimuthDeltaPerYUnitDegrees,
+                altitudeDeltaPerXUnitDegrees,
+                altitudeDeltaPerYUnitDegrees,
                 maximumXUnitsPerMove,
                 maximumYUnitsPerMove,
                 initialAgreementSeconds: 80,
@@ -104,10 +106,6 @@ namespace NINA.Plugins.PolarAlignment {
         private static bool HasSignedHeadroom(double start, double minimum, double maximum, double degreesPerUnit, double requiredUnits) {
             var displacement = Math.Abs(degreesPerUnit * requiredUnits);
             return start - displacement >= minimum && start + displacement <= maximum;
-        }
-
-        private static double MaximumColumnMagnitudeMinutes(double primaryDegreesPerUnit, double crossDegreesPerUnit) {
-            return Math.Sqrt(primaryDegreesPerUnit * primaryDegreesPerUnit + crossDegreesPerUnit * crossDegreesPerUnit) * 60.0;
         }
 
         private static bool IsFinite(params double[] values) {

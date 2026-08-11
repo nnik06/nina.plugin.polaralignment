@@ -1375,7 +1375,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
-        public void AutomatedAdjustmentController_UsesBoundedCalibratedDirectFullTravelCorrection() {
+        public void AutomatedAdjustmentController_RejectsCalibratedDirectFullTravelCorrectionThatCannotConvergeInBudget() {
             var controller = new AutomatedAdjustmentController(useUpasEngagementController: true);
             controller.ConfigureCalibratedDirectFullTravelRoute(
                 enabled: true,
@@ -1398,12 +1398,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
 
             var plan = controller.CreatePlan();
 
-            plan.HasMovement.Should().BeTrue();
-            plan.Reason.Should().Contain("Calibrated direct full-travel correction");
-            Math.Abs(plan.XMagnitude).Should().BeLessOrEqualTo(81);
-            Math.Abs(plan.YMagnitude).Should().BeLessOrEqualTo(81);
-            plan.XMagnitude.Should().BeNegative();
-            plan.YMagnitude.Should().BePositive();
+            plan.Reason.Should().NotContain("Calibrated direct full-travel correction");
         }
 
         [Test]

@@ -7,35 +7,40 @@ namespace NINA.Plugins.PolarAlignment.Test {
             var result = Evaluate(
                 azimuthMinutes: 324,
                 altitudeMinutes: 0,
-                azimuthMinutesPerUnit: 1,
-                altitudeMinutesPerUnit: 1,
+                azimuthDegreesPerXUnit: 1.0 / 60.0,
+                azimuthDegreesPerYUnit: 0,
+                altitudeDegreesPerXUnit: 0,
+                altitudeDegreesPerYUnit: 1.0 / 60.0,
                 maximumXUnits: 20,
                 maximumYUnits: 16);
 
             result.IsFeasible.Should().BeFalse();
-            result.RequiredMoveCount.Should().Be(17);
-            result.Reason.Should().Contain("17 fresh-feedback moves");
+            result.RequiredMoveCount.Should().Be(0);
+            result.Reason.Should().Contain("cannot produce");
         }
 
         [Test]
-        public void Evaluate_AcceptsCalibratedTwoMoveFullEnvelopeRouteInsideFiveMinutes() {
+        public void Evaluate_RejectsCalibratedTwoMoveFullEnvelopeRouteWhenDampedRuntimeCannotConverge() {
             var result = Evaluate(
                 azimuthMinutes: 324,
                 altitudeMinutes: -300,
-                azimuthMinutesPerUnit: 2,
-                altitudeMinutesPerUnit: 2,
+                azimuthDegreesPerXUnit: 2.0 / 60.0,
+                azimuthDegreesPerYUnit: 0,
+                altitudeDegreesPerXUnit: 0,
+                altitudeDegreesPerYUnit: 2.0 / 60.0,
                 maximumXUnits: 81,
                 maximumYUnits: 75);
 
-            result.IsFeasible.Should().BeTrue();
-            result.RequiredMoveCount.Should().Be(2);
-            result.RequiredRuntimeSeconds.Should().BeApproximately(230, 0.001);
+            result.IsFeasible.Should().BeFalse();
+            result.RequiredMoveCount.Should().Be(3);
+            result.RequiredRuntimeSeconds.Should().BeApproximately(285, 0.001);
+            result.Reason.Should().Contain("requires 3 fresh-feedback moves");
         }
 
         [Test]
         public void Evaluate_RejectsRouteThatFitsMoveCountButExceedsRuntime() {
             var result = TppaDirectFullTravelFeasibilityPolicy.Evaluate(
-                100, 100, 2, 2, 100, 100,
+                3, 3, 1, 0, 0, 1, 100, 100,
                 initialAgreementSeconds: 200,
                 perMoveFreshFeedbackSeconds: 70,
                 terminalConfirmationSeconds: 40,
@@ -51,8 +56,10 @@ namespace NINA.Plugins.PolarAlignment.Test {
             var result = Evaluate(
                 azimuthMinutes: 325,
                 altitudeMinutes: 0,
-                azimuthMinutesPerUnit: 2,
-                altitudeMinutesPerUnit: 2,
+                azimuthDegreesPerXUnit: 2.0 / 60.0,
+                azimuthDegreesPerYUnit: 0,
+                altitudeDegreesPerXUnit: 0,
+                altitudeDegreesPerYUnit: 2.0 / 60.0,
                 maximumXUnits: 200,
                 maximumYUnits: 200);
 
@@ -63,15 +70,19 @@ namespace NINA.Plugins.PolarAlignment.Test {
         private static TppaDirectFullTravelFeasibilityDecision Evaluate(
             double azimuthMinutes,
             double altitudeMinutes,
-            double azimuthMinutesPerUnit,
-            double altitudeMinutesPerUnit,
+            double azimuthDegreesPerXUnit,
+            double azimuthDegreesPerYUnit,
+            double altitudeDegreesPerXUnit,
+            double altitudeDegreesPerYUnit,
             double maximumXUnits,
             double maximumYUnits) {
             return TppaDirectFullTravelFeasibilityPolicy.Evaluate(
                 azimuthMinutes,
                 altitudeMinutes,
-                azimuthMinutesPerUnit,
-                altitudeMinutesPerUnit,
+                azimuthDegreesPerXUnit,
+                azimuthDegreesPerYUnit,
+                altitudeDegreesPerXUnit,
+                altitudeDegreesPerYUnit,
                 maximumXUnits,
                 maximumYUnits,
                 initialAgreementSeconds: 80,
