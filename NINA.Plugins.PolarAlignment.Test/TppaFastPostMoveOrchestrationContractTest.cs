@@ -45,17 +45,23 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
-        public void FastModeRequiresLifecycleEvidenceBeforeQualificationOrMovement() {
+        public void FastModeTreatsLifecycleTelemetryAsNonBlockingDiagnosticEvidence() {
             var source = File.ReadAllText(Path.Combine(RepositoryRoot(), "PolarAlignment", "Instructions", "PolarAlignment.cs"));
 
             source.Should().Contain("bool TryLogFastRunEvent(");
-            source.Should().Contain("if (!TryLogFastRunEvent(\"started\"");
-            source.Should().Contain("if (!TryLogFastRunEvent(\"initial-fresh-determination\"");
+            source.Should().Contain("TryLogFastRunEvent(\"started\"");
+            source.Should().Contain("TryLogFastRunEvent(\"initial-fresh-determination\"");
             source.Should().Contain("TryLogFastRunEvent(\"admission-rejected\"");
             source.Should().Contain("TppaFastAlignmentExecutionBudget.EvaluateInitialTotal(");
-            source.Should().Contain("No UPAS movement was authorized.");
-            source.Should().Contain("if (!TryLogFastRunEvent(\"post-move-response\"");
-            source.Should().Contain("if (!TryLogFastRunEvent(\"completed\"");
+            source.Should().Contain("TppaFastActuatorAdmissionGate.ExecuteIfAuthorizedAsync");
+            source.Should().Contain("TppaPostMoveResponsePolicy.Evaluate(");
+            source.Should().Contain("EnsureFastRuntimeBudget(");
+            source.Should().Contain("TryLogFastRunEvent(\"post-move-response\"");
+            source.Should().Contain("TryLogFastRunEvent(\"completed\"");
+            source.Should().NotContain("if (!TryLogFastRunEvent(\"started\"");
+            source.Should().NotContain("if (!TryLogFastRunEvent(\"initial-fresh-determination\"");
+            source.Should().NotContain("if (!TryLogFastRunEvent(\"post-move-response\"");
+            source.Should().NotContain("if (!TryLogFastRunEvent(\"completed\"");
             source.Should().NotContain("[\"reason\"] = ex.Message");
             source.Should().Contain("if (!enforceFastRuntimeBudget || (terminal && fastTerminalEventLogged))");
             source.Should().Contain("fastTerminalEventLogged = true;");

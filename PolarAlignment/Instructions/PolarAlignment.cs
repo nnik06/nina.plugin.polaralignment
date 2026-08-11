@@ -656,7 +656,9 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         $"Automated polar alignment cannot satisfy the five-minute runtime contract: " +
                         $"{fastConfiguration.Reason}. No UPAS connection or movement was authorized.");
                 }
-                if (!TryLogFastRunEvent("started", new Dictionary<string, object> {
+                // Lifecycle telemetry is diagnostic only. Motion authority remains governed by
+                // fresh determinations, travel, settling, response, and runtime checks below.
+                TryLogFastRunEvent("started", new Dictionary<string, object> {
                     ["settleSeconds"] = fastConfiguration.ResolvedSettleSeconds,
                     ["exposureSeconds"] = fastConfiguration.ExposureSeconds,
                     ["alignmentToleranceMinutes"] = AlignmentTolerance,
@@ -673,10 +675,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     ["loadProfileId"] = activeTppaCovarianceAuthority?.LoadProfileId ?? "direct-field",
                     ["tppaCampaignId"] = supervisorCampaignMode ? activeTppaCampaignId.ToString("D") : "direct-field",
                     ["preregisteredCampaignId"] = supervisorCampaignMode ? activePreregisteredCampaignId.ToString("D") : "direct-field"
-                })) {
-                    throw new SequenceEntityFailedException(
-                        "Fast-alignment evidence could not be started. No UPAS connection or movement was authorized.");
-                }
+                });
             }
             using var fastRuntimeDeadlineCTS = enforceFastRuntimeBudget
                 ? new CancellationTokenSource()
@@ -1017,14 +1016,11 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         determination.InitialMountAxisAltitudeError.ArcMinutes,
                         determination.InitialMountAxisTotalError.ArcMinutes);
                     Logger.Info($"TPPA fresh 3-point vector diagnostic: {freshVector.ToLogString()}.");
-                    if (!TryLogFastRunEvent("initial-fresh-determination", new Dictionary<string, object> {
+                    TryLogFastRunEvent("initial-fresh-determination", new Dictionary<string, object> {
                         ["azimuthMinutes"] = freshVector.AzimuthMinutes,
                         ["altitudeMinutes"] = freshVector.AltitudeMinutes,
                         ["totalMinutes"] = freshVector.TotalMinutes
-                    })) {
-                        throw new SequenceEntityFailedException(
-                            "Fast-alignment initial evidence could not be preserved. No UPAS movement was authorized.");
-                    }
+                    });
                     Logger.Info($"TPPA fresh 3-point active target diagnostic: {activeTarget}.");
                     if (enforceFastRuntimeBudget) {
                         var admission = TppaFastAlignmentExecutionBudget.EvaluateInitialTotal(
@@ -1647,7 +1643,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                         postMoveFreshVector,
                                         AlignmentTolerance);
                                     Logger.Info("TPPA_POST_MOVE_RESPONSE " + responseDecision.ToLogString());
-                                    if (!TryLogFastRunEvent("post-move-response", new Dictionary<string, object> {
+                                    TryLogFastRunEvent("post-move-response", new Dictionary<string, object> {
                                         ["classification"] = responseDecision.Classification.ToString(),
                                         ["preAzimuthMinutes"] = preMoveFreshVector.AzimuthMinutes,
                                         ["preAltitudeMinutes"] = preMoveFreshVector.AltitudeMinutes,
@@ -1657,10 +1653,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                         ["postTotalMinutes"] = postMoveFreshVector.TotalMinutes,
                                         ["totalImprovementMinutes"] = responseDecision.TotalImprovementMinutes,
                                         ["requiredImprovementMinutes"] = responseDecision.RequiredImprovementMinutes
-                                    })) {
-                                        throw new SequenceEntityFailedException(
-                                            "Fast-alignment post-move evidence could not be preserved. The run stopped without authorizing another UPAS movement.");
-                                    }
+                                    });
                                     var responseDisposition = TppaPostMoveResponsePolicy.DispositionForMode(
                                         responseDecision,
                                         enforceFastRuntimeBudget);
@@ -1730,17 +1723,13 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                             ?? throw new SequenceEntityFailedException(
                                 "Fast-alignment completion did not preserve the fresh vector that passed qualification. " +
                                 "The alignment state was not declared qualified and no additional UPAS movement was authorized.");
-                        if (!TryLogFastRunEvent("completed", new Dictionary<string, object> {
+                        TryLogFastRunEvent("completed", new Dictionary<string, object> {
                             ["outcome"] = "fresh-confirmed-within-tolerance",
                             ["moveCount"] = freshFeedbackMoveCount,
                             ["finalAzimuthMinutes"] = finalVector.AzimuthMinutes,
                             ["finalAltitudeMinutes"] = finalVector.AltitudeMinutes,
                             ["finalTotalMinutes"] = finalVector.TotalMinutes
-                        }, terminal: true)) {
-                            throw new SequenceEntityFailedException(
-                                "Fast-alignment completion evidence could not be preserved. " +
-                                "The alignment state was not declared qualified and no additional UPAS movement was authorized.");
-                        }
+                        }, terminal: true);
                         Logger.Info(
                             $"TPPA five-minute automated runtime contract completed in " +
                             $"{alignmentRuntime.Elapsed.TotalSeconds:F1}s.");
