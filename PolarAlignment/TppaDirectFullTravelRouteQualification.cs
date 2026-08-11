@@ -63,6 +63,16 @@ namespace NINA.Plugins.PolarAlignment {
                 return Deny("the measured 2x2 UPAS response matrix is singular or unmeasured");
             }
 
+            var conditionNumber = CalculateConditionNumber(
+                azimuthDeltaPerXUnitDegrees,
+                altitudeDeltaPerXUnitDegrees,
+                azimuthDeltaPerYUnitDegrees,
+                altitudeDeltaPerYUnitDegrees);
+            if (conditionNumber > TppaClampLimitedRecoveryPolicy.MaximumResponseConditionNumber) {
+                return Deny(
+                    $"the measured 2x2 UPAS response matrix is poorly conditioned ({conditionNumber:F2}; maximum {TppaClampLimitedRecoveryPolicy.MaximumResponseConditionNumber:F2})");
+            }
+
             var feasibility = TppaDirectFullTravelFeasibilityPolicy.Evaluate(
                 azimuthErrorMinutes,
                 altitudeErrorMinutes,
@@ -126,6 +136,26 @@ namespace NINA.Plugins.PolarAlignment {
             var projectedMaximum = start + physicalDegreesPerUnit * maximumCommandUnits;
             return Math.Min(projectedMinimum, projectedMaximum) >= minimum
                    && Math.Max(projectedMinimum, projectedMaximum) <= maximum;
+        }
+
+        private static double CalculateConditionNumber(
+            double azimuthDeltaPerXUnit,
+            double altitudeDeltaPerXUnit,
+            double azimuthDeltaPerYUnit,
+            double altitudeDeltaPerYUnit) {
+            var xNormSquared = azimuthDeltaPerXUnit * azimuthDeltaPerXUnit
+                               + altitudeDeltaPerXUnit * altitudeDeltaPerXUnit;
+            var yNormSquared = azimuthDeltaPerYUnit * azimuthDeltaPerYUnit
+                               + altitudeDeltaPerYUnit * altitudeDeltaPerYUnit;
+            var dot = azimuthDeltaPerXUnit * azimuthDeltaPerYUnit
+                      + altitudeDeltaPerXUnit * altitudeDeltaPerYUnit;
+            var trace = xNormSquared + yNormSquared;
+            var discriminant = Math.Max(0, trace * trace - 4 * (xNormSquared * yNormSquared - dot * dot));
+            var largestEigenvalue = (trace + Math.Sqrt(discriminant)) / 2;
+            var smallestEigenvalue = (trace - Math.Sqrt(discriminant)) / 2;
+            return smallestEigenvalue > 0 && largestEigenvalue > 0
+                ? Math.Sqrt(largestEigenvalue / smallestEigenvalue)
+                : double.PositiveInfinity;
         }
 
         private static bool IsFinite(params double[] values) {

@@ -27,6 +27,22 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public void Evaluate_RejectsAPoorlyConditionedMeasuredResponseMatrix() {
+            var result = TppaDirectFullTravelRouteQualification.Evaluate(
+                true, true,
+                0, -5.4, 5.4,
+                0, -5.4, 5.4,
+                0.5, 0.499,
+                0, 0.01,
+                81, 81,
+                0.5, 0.5,
+                24, 0);
+
+            result.IsQualified.Should().BeFalse();
+            result.Reason.Should().Contain("poorly conditioned");
+        }
+
+        [Test]
         public void Evaluate_RejectsAFeasibleRouteWithoutSignedMarkerHeadroom() {
             var result = TppaDirectFullTravelRouteQualification.Evaluate(
                 true, true,

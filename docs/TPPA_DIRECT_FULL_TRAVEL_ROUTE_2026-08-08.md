@@ -81,6 +81,11 @@ limit may consume that entire limit; an unsaturated companion axis remains
 damped at 0.65. This avoids turning a one-axis recovery into an unsafe
 whole-vector full-gain command.
 
+Every calibrated full-travel route, including a non-recovery route, requires a
+2x2 response condition number no greater than 5. A non-singular but nearly
+collinear matrix is still refused because its inverse would turn modest solve
+noise into an unstable UPAS command.
+
 For each admitted move, the live controller must still:
 
 1. Derive the signed command from the current fresh TPPA residual and the
