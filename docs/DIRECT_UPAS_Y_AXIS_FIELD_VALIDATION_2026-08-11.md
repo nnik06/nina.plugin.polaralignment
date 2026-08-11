@@ -119,6 +119,14 @@ response direction separated from the trusted X column (sine at least 0.15),
 and a response-matrix condition number no greater than 8.  The normal
 physical headroom and travel guards remain in force.
 
+Within the five-minute route, a successful first bounded Y-bootstrap probe also
+earns exactly one additional move: the normal maximum is two total moves, while
+the qualified bootstrap path may use three total moves (probe plus two
+fresh-feedback corrections). The controller reserves the fresh response after
+every move and the terminal stationary verification before authorizing any
+move. This allowance is never persisted, and a failed/worsening fresh response
+trips the terminal motion-abort latch instead of authorizing an inverse move.
+
 The first promoted coarse correction is an experiment, not proof.  Its next
 independent fresh TPPA determination must reduce total error by at least 20
 percent.  Otherwise the controller latches off every automated UPAS movement

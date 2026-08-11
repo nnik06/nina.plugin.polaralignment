@@ -170,6 +170,42 @@ namespace NINA.Plugins.PolarAlignment.Test {
             action.Should().Throw<ArgumentOutOfRangeException>();
         }
 
+        [Test]
+        public void BoundedYBootstrapAllowanceReservesThreeMovesAndTerminalVerification() {
+            var firstMove = TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
+                TimeSpan.FromSeconds(95),
+                observedFreshDeterminationSeconds: 35,
+                completedMoves: 0,
+                qualifiedFreshDeterminationReserveSeconds:
+                    TppaFastAlignmentExecutionBudget.DirectFieldFreshDeterminationReserveSeconds,
+                maximumFreshFeedbackMoves:
+                    TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMovesAfterBoundedYBootstrapProbe);
+            var thirdMove = TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
+                TimeSpan.FromSeconds(205),
+                observedFreshDeterminationSeconds: 35,
+                completedMoves: 2,
+                qualifiedFreshDeterminationReserveSeconds:
+                    TppaFastAlignmentExecutionBudget.DirectFieldFreshDeterminationReserveSeconds,
+                maximumFreshFeedbackMoves:
+                    TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMovesAfterBoundedYBootstrapProbe);
+
+            firstMove.CanStart.Should().BeTrue(firstMove.Reason);
+            firstMove.RequiredReserveSeconds.Should().Be(205);
+            thirdMove.CanStart.Should().BeTrue(thirdMove.Reason);
+            thirdMove.RequiredReserveSeconds.Should().Be(95);
+        }
+
+        [Test]
+        public void RejectsUnsupportedMoveAllowance() {
+            var action = () => TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
+                TimeSpan.FromSeconds(60),
+                observedFreshDeterminationSeconds: 35,
+                completedMoves: 0,
+                maximumFreshFeedbackMoves: 4);
+
+            action.Should().Throw<ArgumentOutOfRangeException>();
+        }
+
         [TestCase(0)]
         [TestCase(double.NaN)]
         [TestCase(double.PositiveInfinity)]

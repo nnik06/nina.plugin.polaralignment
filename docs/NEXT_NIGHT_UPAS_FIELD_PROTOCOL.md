@@ -102,8 +102,9 @@ geometry or flexure, but they are not a paperwork admission gate.
    Each needs explicit command completion, configured settle, and a new fresh
    three-point result before another command can be considered. A cold direct
    route with no qualified Y response spends its first move on the bounded Y
-   probe, so it has only one model-based correction remaining; it must not be
-   described as a two-correction run.
+   probe. Only that successful bounded Y-bootstrap probe earns one additional
+   move, for a maximum of three total moves; it must not be inferred from a
+   remembered setting or granted to an ordinary X probe or correction.
 5. Finish only after two independent fresh determinations are at or below 3
    arcminutes total. If any response is implausible, inconsistent, or worse,
    stop automatic correction with the last fresh residual preserved.
@@ -118,12 +119,14 @@ Before enabling a wide two-axis route, run the dedicated
 block. It obtains the missing directional ALT/Y response with an isolated
 photon-backed probe; an AZ/X calibration must never be extrapolated to ALT/Y.
 
-For the two-correction five-minute production route, complete that Y-response
-qualification before starting the timed alignment. The runtime budget counts
-all physical UPAS moves, including probes, and reserves a fresh result after
-each move plus the terminal verify-only determination. The cold-route
-probe-plus-one-correction path remains a valid guarded calibration trial, not
-evidence that the production two-correction contract was exercised.
+The runtime budget counts all physical UPAS moves, including probes, and
+reserves a fresh result after each move plus the terminal verify-only
+determination. A cold-route probe earns a third move only after its own fresh
+feedback identifies a plausible, independent Y response. It remains
+session-local: a restart, disconnect, manual slew, pier-side change,
+travel/reversal configuration change, weak response, poor conditioning, failed
+physical execution, or the terminal motion-abort latch removes that allowance.
+No Y response is persisted across sessions.
 
 ## Measurement Qualification
 1. After the required settling dwell, run three no-motion fresh TPPA determinations on safe arc A with fixed settings and refraction state.

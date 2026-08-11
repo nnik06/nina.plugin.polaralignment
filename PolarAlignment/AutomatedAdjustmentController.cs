@@ -196,6 +196,14 @@ namespace NINA.Plugins.PolarAlignment {
 
         public string MotionAuthorityAbortReason => motionAuthorityAbortReason;
 
+        public bool MayRequireCalibratedAltitudeBootstrapProbe =>
+            calibratedDirectAzimuthResponseSeed != null
+            && !HasObservedYResponse()
+            && !HasPlausibleCalibratedFullTravelResponse()
+            && currentObservation != null
+            && currentObservation.TotalErrorDegrees >= MinimumResidualForProbeDegrees
+            && !IsProbeAxisExhausted(xAxis: false);
+
         /// <summary>
         /// True while the most recent automated azimuth action has not produced a
         /// mechanically trustworthy response yet. Completion logic uses this as a
@@ -602,12 +610,7 @@ namespace NINA.Plugins.PolarAlignment {
 
         private bool TryCreateCalibratedAltitudeBootstrapPlan(out AutomatedAdjustmentPlan plan) {
             plan = null;
-            if (calibratedDirectAzimuthResponseSeed == null
-                || HasObservedYResponse()
-                || HasPlausibleCalibratedFullTravelResponse()
-                || currentObservation == null
-                || currentObservation.TotalErrorDegrees < MinimumResidualForProbeDegrees
-                || IsProbeAxisExhausted(xAxis: false)) {
+            if (!MayRequireCalibratedAltitudeBootstrapProbe) {
                 return false;
             }
 
@@ -615,7 +618,8 @@ namespace NINA.Plugins.PolarAlignment {
                 0,
                 GetCalibratedAltitudeBootstrapMagnitude(),
                 true,
-                "Probing altitude response using calibrated azimuth bootstrap");
+                "Probing altitude response using calibrated azimuth bootstrap",
+                isBoundedYBootstrapProbe: true);
             return true;
         }
 
@@ -2077,16 +2081,22 @@ namespace NINA.Plugins.PolarAlignment {
     }
 
     internal sealed class AutomatedAdjustmentPlan {
-        public AutomatedAdjustmentPlan(double xMagnitude, double yMagnitude, bool isProbe, string reason) {
+        public AutomatedAdjustmentPlan(double xMagnitude,
+                                       double yMagnitude,
+                                       bool isProbe,
+                                       string reason,
+                                       bool isBoundedYBootstrapProbe = false) {
             XMagnitude = xMagnitude;
             YMagnitude = yMagnitude;
             IsProbe = isProbe;
             Reason = reason;
+            IsBoundedYBootstrapProbe = isBoundedYBootstrapProbe;
         }
 
         public double XMagnitude { get; }
         public double YMagnitude { get; }
         public bool IsProbe { get; }
+        public bool IsBoundedYBootstrapProbe { get; }
         public string Reason { get; }
         public bool HasMovement => Math.Abs(XMagnitude) > 0 || Math.Abs(YMagnitude) > 0;
 

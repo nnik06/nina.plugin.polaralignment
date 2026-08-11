@@ -17,6 +17,7 @@ namespace NINA.Plugins.PolarAlignment {
 
     internal static class TppaFastAlignmentExecutionBudget {
         public const int MaximumFreshFeedbackMoves = 2;
+        public const int MaximumFreshFeedbackMovesAfterBoundedYBootstrapProbe = 3;
 
         public const double MaximumRuntimeSeconds = 300;
         public const double MinimumQualifiedInitialTotalMinutes = 0;
@@ -105,11 +106,16 @@ namespace NINA.Plugins.PolarAlignment {
                 double observedFreshDeterminationSeconds,
                 int completedMoves,
                 double qualifiedFreshDeterminationReserveSeconds = FreshDeterminationReserveSeconds,
-                double maximumRuntimeSeconds = MaximumRuntimeSeconds) {
+                double maximumRuntimeSeconds = MaximumRuntimeSeconds,
+                int maximumFreshFeedbackMoves = MaximumFreshFeedbackMoves) {
             if (elapsed < TimeSpan.Zero) {
                 throw new ArgumentOutOfRangeException(nameof(elapsed));
             }
-            if (completedMoves < 0 || completedMoves >= MaximumFreshFeedbackMoves) {
+            if (maximumFreshFeedbackMoves != MaximumFreshFeedbackMoves
+                    && maximumFreshFeedbackMoves != MaximumFreshFeedbackMovesAfterBoundedYBootstrapProbe) {
+                throw new ArgumentOutOfRangeException(nameof(maximumFreshFeedbackMoves));
+            }
+            if (completedMoves < 0 || completedMoves >= maximumFreshFeedbackMoves) {
                 throw new ArgumentOutOfRangeException(nameof(completedMoves));
             }
             if (!double.IsFinite(observedFreshDeterminationSeconds)
@@ -129,7 +135,7 @@ namespace NINA.Plugins.PolarAlignment {
             var observedCadenceSeconds = ResolveObservedCadenceSeconds(
                 observedFreshDeterminationSeconds,
                 qualifiedFreshDeterminationReserveSeconds);
-            var remainingMoveSlots = MaximumFreshFeedbackMoves - completedMoves;
+            var remainingMoveSlots = maximumFreshFeedbackMoves - completedMoves;
             // Each remaining move needs its independent fresh response. A run
             // may finish only after one final stationary confirmation, which is
             // intentionally separate from the response used to steer a move.
@@ -146,13 +152,15 @@ namespace NINA.Plugins.PolarAlignment {
                 double observedFreshDeterminationSeconds,
                 int completedMoves,
                 double qualifiedFreshDeterminationReserveSeconds = FreshDeterminationReserveSeconds,
-                double maximumRuntimeSeconds = MaximumRuntimeSeconds) {
+                double maximumRuntimeSeconds = MaximumRuntimeSeconds,
+                int maximumFreshFeedbackMoves = MaximumFreshFeedbackMoves) {
             var moveDecision = EvaluateBeforeMove(
                 elapsed,
                 observedFreshDeterminationSeconds,
                 completedMoves,
                 qualifiedFreshDeterminationReserveSeconds,
-                maximumRuntimeSeconds);
+                maximumRuntimeSeconds,
+                maximumFreshFeedbackMoves);
             var observedCadenceSeconds = ResolveObservedCadenceSeconds(
                 observedFreshDeterminationSeconds,
                 qualifiedFreshDeterminationReserveSeconds);

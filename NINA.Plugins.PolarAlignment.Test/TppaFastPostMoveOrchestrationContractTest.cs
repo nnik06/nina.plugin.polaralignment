@@ -34,7 +34,9 @@ namespace NINA.Plugins.PolarAlignment.Test {
             source.Should().Contain("qualifiedFreshDeterminationReserveSeconds);");
             source.Should().Contain("terminal verify-only determination");
             source.Should().Contain("responseDecision.CouldAuthorizeAnotherMove");
-            source.Should().Contain("freshFeedbackMoveCount >= TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMoves");
+            source.Should().Contain("freshFeedbackMoveCount >= freshFeedbackMoveLimit");
+            source.Should().Contain("TPAPAVM.LastAutomatedAdjustmentWasBoundedYBootstrapProbe");
+            source.Should().Contain("MaximumFreshFeedbackMovesAfterBoundedYBootstrapProbe");
             source.Should().Contain("The run stopped on fresh evidence without authorizing another move.");
             source.Should().Contain("maximumObservedFreshDeterminationSeconds = Math.Max(");
             source.Should().Contain("freshDeterminationStopwatch.Elapsed.TotalSeconds");

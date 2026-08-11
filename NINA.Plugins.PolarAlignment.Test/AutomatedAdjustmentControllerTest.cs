@@ -1507,12 +1507,16 @@ namespace NINA.Plugins.PolarAlignment.Test {
             var controller = CreateBootstrapController();
             controller.UpdateObservation(5, -5);
 
+            controller.MayRequireCalibratedAltitudeBootstrapProbe.Should().BeTrue();
             var probe = controller.CreatePlan();
             probe.IsProbe.Should().BeTrue();
+            probe.IsBoundedYBootstrapProbe.Should().BeTrue();
             probe.YMagnitude.Should().Be(TppaDirectBootstrapRouteQualification.BootstrapYProbeUnits);
 
             controller.NoteSuccessfulExecution(probe);
             controller.UpdateObservation(5, -4.5);
+
+            controller.MayRequireCalibratedAltitudeBootstrapProbe.Should().BeFalse();
 
             var coarse = controller.CreatePlan();
             coarse.HasMovement.Should().BeTrue();

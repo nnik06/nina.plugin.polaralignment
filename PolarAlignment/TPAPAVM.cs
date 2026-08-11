@@ -72,6 +72,13 @@ namespace NINA.Plugins.PolarAlignment {
         public bool AutomatedAdjustmentRequiresFreshMeasurementFeedback =>
             ActiveAlignmentSystemVM is NINA.Plugins.PolarAlignment.Avalon.UniversalPolarAlignmentVM
             && ActiveAlignmentSystemVM.DoAutomatedAdjustments;
+        internal bool MayRequireBoundedYBootstrapProbe {
+            get {
+                ConfigureAutomatedAdjustmentControllerForActiveSystem();
+                return automatedAdjustmentController.MayRequireCalibratedAltitudeBootstrapProbe;
+            }
+        }
+        internal bool LastAutomatedAdjustmentWasBoundedYBootstrapProbe { get; private set; }
 
         public void RebaseAutomatedAdjustmentToFreshDetermination() {
             if (PolarErrorDetermination == null) {
@@ -444,6 +451,7 @@ namespace NINA.Plugins.PolarAlignment {
         public string LastAutomatedAdjustmentDecisionReason { get; private set; }
 
         public async Task<bool> MoveCloser(IProgress<ApplicationStatus> progress, CancellationToken token) {
+            LastAutomatedAdjustmentWasBoundedYBootstrapProbe = false;
             var activeSystem = ActiveAlignmentSystemVM;
             if (activeSystem == null || !activeSystem.DoAutomatedAdjustments) {
                 LastAutomatedAdjustmentDecisionReason = "Automated adjustments are disabled or no alignment system is active.";
@@ -533,6 +541,7 @@ namespace NINA.Plugins.PolarAlignment {
             }
 
             automatedAdjustmentController.NoteSuccessfulExecution(new AutomatedAdjustmentPlan(executedX, executedY, plan.IsProbe, plan.Reason));
+            LastAutomatedAdjustmentWasBoundedYBootstrapProbe = plan.IsBoundedYBootstrapProbe;
             await CoreUtil.Wait(TimeSpan.FromSeconds(activeSystem.AutomatedAdjustmentSettleTime), token, progress, "Settling");
             LastAutomatedAdjustmentDecisionReason = $"Executed {plan.Reason}: X {Math.Round(executedX, 2)}, Y {Math.Round(executedY, 2)}.";
             return true;
