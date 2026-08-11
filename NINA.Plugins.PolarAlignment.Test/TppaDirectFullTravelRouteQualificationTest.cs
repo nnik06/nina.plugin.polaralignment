@@ -75,6 +75,24 @@ namespace NINA.Plugins.PolarAlignment.Test {
             result.Reason.Should().Contain("five-minute feasibility");
         }
 
+        [Test]
+        public void Evaluate_AdmitsAQualifiedClampLimitedFullDiagonal() {
+            var result = TppaDirectFullTravelRouteQualification.Evaluate(
+                true, true,
+                0, -5.4, 5.4,
+                0, -5.4, 5.4,
+                2.0 / 60.0, 0,
+                0, 2.0 / 60.0,
+                81, 75,
+                0.02, 0.02,
+                324, -300,
+                clampLimitedRecoveryEnabled: true,
+                relativeResponseUncertainty: 0.05);
+
+            result.IsQualified.Should().BeTrue();
+            result.Feasibility.RequiredMoveCount.Should().Be(2);
+        }
+
         private static TppaDirectFullTravelRouteQualification Evaluate(bool enabled, bool confirmed, double azimuthMinutes, double altitudeMinutes) {
             return TppaDirectFullTravelRouteQualification.Evaluate(
                 enabled, confirmed,
