@@ -3,6 +3,7 @@ using System;
 namespace NINA.Plugins.PolarAlignment {
     internal sealed record TppaDirectFullTravelRouteQualification(
         bool IsQualified,
+        TppaOperationalAlignmentTier Tier,
         TppaDirectFullTravelFeasibilityDecision Feasibility,
         string Reason) {
         public static TppaDirectFullTravelRouteQualification Evaluate(
@@ -27,7 +28,8 @@ namespace NINA.Plugins.PolarAlignment {
             bool clampLimitedRecoveryEnabled = false,
             double relativeResponseUncertainty = double.PositiveInfinity,
             int physicalAzimuthCommandDirectionMultiplier = 1,
-            int physicalAltitudeCommandDirectionMultiplier = 1) {
+            int physicalAltitudeCommandDirectionMultiplier = 1,
+            double terminalErrorMinutes = TppaDirectFullTravelFeasibilityPolicy.DefaultTerminalErrorMinutes) {
             if (!enabled || !operatorConfirmed) {
                 return Deny("the calibrated direct full-travel route is not enabled and operator-confirmed");
             }
@@ -87,10 +89,15 @@ namespace NINA.Plugins.PolarAlignment {
                 terminalConfirmationSeconds: 40,
                 perMoveOverheadSeconds: 15,
                 clampLimitedRecoveryEnabled: clampLimitedRecoveryEnabled,
-                relativeResponseUncertainty: relativeResponseUncertainty);
+                relativeResponseUncertainty: relativeResponseUncertainty,
+                terminalErrorMinutes: terminalErrorMinutes);
 
             if (!feasibility.IsFeasible) {
-                return new(false, feasibility, feasibility.Reason);
+                return new(
+                    false,
+                    TppaOperationalAlignmentTierPolicy.Evaluate(terminalErrorMinutes).Tier,
+                    feasibility,
+                    feasibility.Reason);
             }
 
             if (!HasSignedHeadroom(
@@ -109,14 +116,22 @@ namespace NINA.Plugins.PolarAlignment {
                     feasibility.MinimumYDisplacementUnits,
                     feasibility.MaximumYDisplacementUnits,
                     physicalAltitudeCommandDirectionMultiplier)) {
-                return new(false, feasibility, "the signed visual-marker travel envelope lacks required full-route headroom");
+                return new(
+                    false,
+                    TppaOperationalAlignmentTierPolicy.Evaluate(terminalErrorMinutes).Tier,
+                    feasibility,
+                    "the signed visual-marker travel envelope lacks required full-route headroom");
             }
 
-            return new(true, feasibility, "the calibrated direct full-travel route passed envelope, response, headroom, and five-minute feasibility checks");
+            return new(
+                true,
+                TppaOperationalAlignmentTierPolicy.Evaluate(terminalErrorMinutes).Tier,
+                feasibility,
+                "the calibrated direct full-travel route passed envelope, response, headroom, and five-minute feasibility checks");
         }
 
         private static TppaDirectFullTravelRouteQualification Deny(string reason) {
-            return new(false, new(false, 0, 0, 0, 0, reason), reason);
+            return new(false, TppaOperationalAlignmentTier.NonOperational, new(false, 0, 0, 0, 0, reason), reason);
         }
 
         private static bool Contains(double value, double minimum, double maximum) {

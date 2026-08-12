@@ -8,31 +8,22 @@ enough to consider a future expansion of the direct full-travel route. This is
 not an alignment run and it does not authorize a gain, command-limit, or travel
 guard change.
 
-The current release fails closed: a direct route is admitted only
-when its simulated damped controller reaches the 3 arcminute terminal target
-within the two-move contract. The configured full-envelope corner is therefore
-expected to be rejected until field evidence supports a different qualified
-route.
+The current release fails closed: a direct route is admitted only when its
+simulated damped controller reaches the explicitly selected operational target
+within the three-move, 300-second contract. The imaging-ready target is 3
+arcminutes; the tripod-free bulk target is 24 arcminutes. A 24-arcminute result
+is deliberately labelled coarse and is not an imaging-ready completion.
 
 ## Move-Count Promotion Rule
-
-The current live route remains capped at two fresh-feedback moves. Do not
-increase that live authority from analytic convergence arithmetic alone.
 
 For the direct-field 40-second fresh-determination reservation and 15-second
 move reservation, a run with `N` moves and a separate terminal confirmation
 requires `40(N + 1) + 15N` seconds: 150 seconds for two moves and 205 seconds
 for three. Three moves fit the 300-second contract with 95 seconds remaining.
-They are also required by the nominal 0.65-gain model to bring a 300 arcminute
+They are required by the nominal 0.65-gain model to bring a 300 arcminute
 (5 degree) residual below the 24 arcminute bulk target; two leave 36.75
-arcminutes.
-
-That is a planning result, not motion authority. Promote the live route from
-two to three moves only after the response set below establishes the local
-2x2 matrix, directional deadband, cross-axis coupling, and cumulative signed
-travel margin. The absolute ceiling remains three moves, including any Y
-bootstrap probe; do not stack the existing bootstrap exception into a fourth
-move.
+arcminutes. The absolute ceiling remains three moves, including any Y bootstrap
+probe; do not stack the bootstrap exception into a fourth move.
 
 ## Operational Contract After Qualification
 
@@ -42,7 +33,8 @@ policies. Never let a broad-travel result claim fine convergence.
 - **Fine closure:** may claim `FINE_CONFIRMED` only after two independent fresh
   determinations are within 3 arcminutes. It is a five-minute operation.
 - **Bulk acquisition:** may claim `COARSE_AT_24` only after a fresh determination
-  is at or below 24 arcminutes. It may not emit a fine-alignment claim.
+  is at or below 24 arcminutes. It must be labelled `not imaging ready` and
+  may not emit a fine-alignment claim or operational imaging qualification.
 - **Bulk-to-fine handoff:** requires a new fresh determination and a new fine
   admission. It is not an inherited authorization from the bulk phase.
 - **Unqualified:** returns the exact failed predicate and stops. It must never

@@ -27,7 +27,8 @@ namespace NINA.Plugins.PolarAlignment {
             TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMoves;
         internal const double MaximumAxisErrorMinutes = 324.0;
         internal const double MaximumTotalErrorMinutes = 458.205195;
-        internal const double MaximumTerminalErrorMinutes = 3.0;
+        internal const double DefaultTerminalErrorMinutes =
+            TppaOperationalAlignmentTierPolicy.ImagingReadyMaximumTotalMinutes;
         private const double NormalEquationDamping = 1e-6;
         private const double ConfirmedCorrectionGain = 0.65;
 
@@ -46,7 +47,8 @@ namespace NINA.Plugins.PolarAlignment {
             double perMoveOverheadSeconds,
             double maximumRuntimeSeconds = TppaFastAlignmentExecutionBudget.MaximumRuntimeSeconds,
             bool clampLimitedRecoveryEnabled = false,
-            double relativeResponseUncertainty = double.PositiveInfinity) {
+            double relativeResponseUncertainty = double.PositiveInfinity,
+            double terminalErrorMinutes = DefaultTerminalErrorMinutes) {
             if (!AreFinite(
                     azimuthErrorMinutes,
                     altitudeErrorMinutes,
@@ -60,8 +62,14 @@ namespace NINA.Plugins.PolarAlignment {
                     perMoveFreshFeedbackSeconds,
                     terminalConfirmationSeconds,
                     perMoveOverheadSeconds,
-                    maximumRuntimeSeconds)) {
+                    maximumRuntimeSeconds,
+                    terminalErrorMinutes)) {
                 return Deny("all feasibility inputs must be finite");
+            }
+
+            var tier = TppaOperationalAlignmentTierPolicy.Evaluate(terminalErrorMinutes);
+            if (tier.Tier == TppaOperationalAlignmentTier.NonOperational) {
+                return Deny("the requested direct-route terminal target is not an operational TPPA tier");
             }
 
             var totalMinutes = Math.Sqrt(
@@ -94,7 +102,7 @@ namespace NINA.Plugins.PolarAlignment {
             var minimumYDisplacementUnits = 0.0;
             var maximumYDisplacementUnits = 0.0;
             var requiredMoves = 0;
-            while (ResidualMinutes(azimuthResidualDegrees, altitudeResidualDegrees) > MaximumTerminalErrorMinutes
+            while (ResidualMinutes(azimuthResidualDegrees, altitudeResidualDegrees) > terminalErrorMinutes
                    && requiredMoves <= MaximumFeedbackMoves) {
                 if (!TryCreateRuntimeEquivalentCommand(
                         azimuthDeltaPerXUnitDegrees,
@@ -146,14 +154,14 @@ namespace NINA.Plugins.PolarAlignment {
                     minimumYDisplacementUnits, maximumYDisplacementUnits);
             }
 
-            if (ResidualMinutes(azimuthResidualDegrees, altitudeResidualDegrees) > MaximumTerminalErrorMinutes) {
+            if (ResidualMinutes(azimuthResidualDegrees, altitudeResidualDegrees) > terminalErrorMinutes) {
                 return new(
                     false,
                     requiredXUnits,
                     requiredYUnits,
                     requiredMoves,
                     requiredRuntimeSeconds,
-                    $"the calibrated damped controller cannot reach {MaximumTerminalErrorMinutes:F1} arcmin within {MaximumFeedbackMoves} fresh-feedback moves",
+                    $"the calibrated damped controller cannot reach {terminalErrorMinutes:F1} arcmin within {MaximumFeedbackMoves} fresh-feedback moves",
                     minimumXDisplacementUnits, maximumXDisplacementUnits,
                     minimumYDisplacementUnits, maximumYDisplacementUnits);
             }

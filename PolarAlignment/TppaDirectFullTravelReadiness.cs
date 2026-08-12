@@ -28,7 +28,8 @@ namespace NINA.Plugins.PolarAlignment {
             bool clampLimitedRecoveryEnabled = false,
             double relativeResponseUncertainty = double.PositiveInfinity,
             int physicalAzimuthCommandDirectionMultiplier = 1,
-            int physicalAltitudeCommandDirectionMultiplier = 1) {
+            int physicalAltitudeCommandDirectionMultiplier = 1,
+            double terminalErrorMinutes = TppaDirectFullTravelFeasibilityPolicy.DefaultTerminalErrorMinutes) {
             if (!enabled) {
                 return new(false, false, "the calibrated direct full-travel route is not enabled");
             }
@@ -55,7 +56,8 @@ namespace NINA.Plugins.PolarAlignment {
                 clampLimitedRecoveryEnabled,
                 relativeResponseUncertainty,
                 physicalAzimuthCommandDirectionMultiplier,
-                physicalAltitudeCommandDirectionMultiplier);
+                physicalAltitudeCommandDirectionMultiplier,
+                terminalErrorMinutes);
             if (!qualification.IsQualified) {
                 var bootstrap = TppaDirectBootstrapRouteQualification.Evaluate(
                     enabled,

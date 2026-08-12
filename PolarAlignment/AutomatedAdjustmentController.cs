@@ -336,7 +336,8 @@ namespace NINA.Plugins.PolarAlignment {
             int physicalAzimuthCommandDirectionMultiplier = 1,
             int physicalAltitudeCommandDirectionMultiplier = 1,
             bool clampLimitedRecoveryEnabled = false,
-            double relativeResponseUncertainty = double.PositiveInfinity) {
+            double relativeResponseUncertainty = double.PositiveInfinity,
+            double terminalErrorMinutes = TppaDirectFullTravelFeasibilityPolicy.DefaultTerminalErrorMinutes) {
             calibratedDirectFullTravelRoute = enabled && operatorConfirmed
                 ? new CalibratedDirectFullTravelRoute(
                     azimuthStartingPositionDegrees,
@@ -357,7 +358,8 @@ namespace NINA.Plugins.PolarAlignment {
                     physicalAzimuthCommandDirectionMultiplier,
                     physicalAltitudeCommandDirectionMultiplier,
                     clampLimitedRecoveryEnabled,
-                    relativeResponseUncertainty)
+                    relativeResponseUncertainty,
+                    terminalErrorMinutes)
                 : null;
             calibratedDirectAzimuthRoute = enabled && operatorConfirmed
                 ? new CalibratedDirectAzimuthRoute(
@@ -902,7 +904,8 @@ namespace NINA.Plugins.PolarAlignment {
                 calibratedDirectFullTravelRoute.ClampLimitedRecoveryEnabled,
                 calibratedDirectFullTravelRoute.RelativeResponseUncertainty,
                 calibratedDirectFullTravelRoute.PhysicalAzimuthCommandDirectionMultiplier,
-                calibratedDirectFullTravelRoute.PhysicalAltitudeCommandDirectionMultiplier);
+                calibratedDirectFullTravelRoute.PhysicalAltitudeCommandDirectionMultiplier,
+                calibratedDirectFullTravelRoute.TerminalErrorMinutes);
             if (!qualification.IsQualified) {
                 Logger.Info($"Calibrated direct full-travel route is not eligible: {qualification.Reason}.");
                 return false;
@@ -2177,7 +2180,8 @@ namespace NINA.Plugins.PolarAlignment {
                 int physicalAzimuthCommandDirectionMultiplier,
                 int physicalAltitudeCommandDirectionMultiplier,
                 bool clampLimitedRecoveryEnabled,
-                double relativeResponseUncertainty) {
+                double relativeResponseUncertainty,
+                double terminalErrorMinutes) {
                 AzimuthStartingPositionDegrees = azimuthStartingPositionDegrees;
                 AzimuthMinimumDegrees = azimuthMinimumDegrees;
                 AzimuthMaximumDegrees = azimuthMaximumDegrees;
@@ -2193,6 +2197,7 @@ namespace NINA.Plugins.PolarAlignment {
                 PhysicalAltitudeCommandDirectionMultiplier = physicalAltitudeCommandDirectionMultiplier < 0 ? -1 : 1;
                 ClampLimitedRecoveryEnabled = clampLimitedRecoveryEnabled;
                 RelativeResponseUncertainty = relativeResponseUncertainty;
+                TerminalErrorMinutes = terminalErrorMinutes;
             }
 
             public double AzimuthStartingPositionDegrees { get; }
@@ -2210,6 +2215,7 @@ namespace NINA.Plugins.PolarAlignment {
             public int PhysicalAltitudeCommandDirectionMultiplier { get; }
             public bool ClampLimitedRecoveryEnabled { get; }
             public double RelativeResponseUncertainty { get; }
+            public double TerminalErrorMinutes { get; }
         }
 
         private sealed class CalibratedDirectAzimuthRoute {

@@ -140,6 +140,24 @@ namespace NINA.Plugins.PolarAlignment.Test {
             result.Feasibility.RequiredMoveCount.Should().Be(2);
         }
 
+        [Test]
+        public void Evaluate_CarriesTheExplicitTripodFreeCoarseTier() {
+            var result = TppaDirectFullTravelRouteQualification.Evaluate(
+                true, true,
+                0, -5.4, 5.4,
+                0, -5.4, 5.4,
+                0.05, 0,
+                0, 0.05,
+                81, 81,
+                0.05, 0.05,
+                300, -300,
+                terminalErrorMinutes: TppaOperationalAlignmentTierPolicy.TripodFreeCoarseMaximumTotalMinutes);
+
+            result.IsQualified.Should().BeTrue();
+            result.Tier.Should().Be(TppaOperationalAlignmentTier.TripodFreeCoarse);
+            result.Feasibility.RequiredMoveCount.Should().Be(3);
+        }
+
         private static TppaDirectFullTravelRouteQualification Evaluate(bool enabled, bool confirmed, double azimuthMinutes, double altitudeMinutes) {
             return TppaDirectFullTravelRouteQualification.Evaluate(
                 enabled, confirmed,

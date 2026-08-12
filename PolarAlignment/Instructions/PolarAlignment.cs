@@ -564,7 +564,8 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
 
         private static void LogDirectFullTravelReadinessIfRelevant(
             bool automatedAdjustmentsEnabled,
-            bool actuatorMovementAllowed) {
+            bool actuatorMovementAllowed,
+            double terminalErrorMinutes) {
             if (!automatedAdjustmentsEnabled
                 || !actuatorMovementAllowed
                 || !Properties.Settings.Default.AvalonDirectFullTravelRouteEnabled) {
@@ -591,11 +592,19 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 Properties.Settings.Default.AvalonClampLimitedRecoveryEnabled,
                 Properties.Settings.Default.AvalonCalibratedResponseRelativeUncertainty,
                 Properties.Settings.Default.AvalonReverseAzimuth ? -1 : 1,
-                Properties.Settings.Default.AvalonReverseAltitude ? -1 : 1);
+                Properties.Settings.Default.AvalonReverseAltitude ? -1 : 1,
+                terminalErrorMinutes);
             Logger.Info(
                 $"TPPA direct full-travel preflight: " +
                 $"{(readiness.IsReady ? (readiness.RequiresBoundedYBootstrap ? "READY FOR Y BOOTSTRAP" : "READY") : "NOT READY")}; " +
                 $"{readiness.Reason}");
+        }
+
+        private static string OperationalCompletionLabel(
+            TppaOperationalAlignmentTierDecision tier) {
+            return tier.IsImagingReady
+                ? "Imaging-ready polar alignment complete."
+                : "Coarse polar alignment complete (not imaging ready); run a new <=3' fine alignment before long-exposure imaging.";
         }
 
         /// <summary>
@@ -614,7 +623,19 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 && automatedAdjustmentsEnabled
                 && executionPolicy.AllowActuatorMovement;
             var operationalTier = TppaOperationalAlignmentTierPolicy.Evaluate(AlignmentTolerance);
-            LogDirectFullTravelReadinessIfRelevant(automatedAdjustmentsEnabled, executionPolicy.AllowActuatorMovement);
+            if (automatedAdjustmentsEnabled
+                && executionPolicy.AllowActuatorMovement
+                && operationalTier.Tier == TppaOperationalAlignmentTier.NonOperational) {
+                throw new SequenceEntityFailedException(
+                    "Automated polar alignment requires an explicit imaging-ready (<=3') or tripod-free coarse (<=24') target.");
+            }
+            if (automatedAdjustmentsEnabled && executionPolicy.AllowActuatorMovement) {
+                TPAPAVM.SetDirectFullTravelTarget(AlignmentTolerance);
+            }
+            LogDirectFullTravelReadinessIfRelevant(
+                automatedAdjustmentsEnabled,
+                executionPolicy.AllowActuatorMovement,
+                AlignmentTolerance);
             var supervisorCampaignMode = enforceFastRuntimeBudget
                 && Properties.Settings.Default.RequireExternalUpasSupervisorForAutomatedMoves;
             if (supervisorCampaignMode) {
@@ -1145,7 +1166,8 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                             Properties.Settings.Default.AvalonClampLimitedRecoveryEnabled,
                             Properties.Settings.Default.AvalonCalibratedResponseRelativeUncertainty,
                             Properties.Settings.Default.AvalonReverseAzimuth ? -1 : 1,
-                            Properties.Settings.Default.AvalonReverseAltitude ? -1 : 1);
+                            Properties.Settings.Default.AvalonReverseAltitude ? -1 : 1,
+                            AlignmentTolerance);
                         var directAzimuthQualification = TppaDirectAxisRouteQualification.Evaluate(
                             Properties.Settings.Default.AvalonDirectFullTravelRouteEnabled,
                             Properties.Settings.Default.AvalonDirectFullTravelRouteConfirmed,
@@ -1278,7 +1300,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                 confirmationDetermination.InitialMountAxisAltitudeError.ArcMinutes,
                                 confirmationDetermination.InitialMountAxisTotalError.ArcMinutes,
                                 AlignmentTolerance);
-                            if (enforceFastRuntimeBudget) {
+                            if (enforceFastRuntimeBudget && operationalTier.IsImagingReady) {
                                 var operationalQualification = TppaOperationalQualification.Evaluate(
                                     new TppaOperationalQualificationInput(
                                         alignmentRuntime.Elapsed.TotalSeconds,
@@ -1305,6 +1327,10 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                         "Fast TPPA operational qualification failed: " +
                                         string.Join(" | ", operationalQualification.Issues));
                                 }
+                            } else if (enforceFastRuntimeBudget) {
+                                Logger.Info(
+                                    "TPPA coarse completion is not imaging-ready and intentionally does not satisfy the fine operational-imaging qualification. " +
+                                    "Run a new <=3' fine alignment before starting long-exposure imaging.");
                             }                            Logger.Info($"TPPA fresh UPAS completion confirmation: Az: {confirmationDetermination.InitialMountAxisAzimuthError}, " +
                                         $"Alt: {confirmationDetermination.InitialMountAxisAltitudeError}, Tot: {confirmationDetermination.InitialMountAxisTotalError}. " +
                                         $"Repeatability: {(completionAgreement.IsRepeatable ? "PASS" : "FAIL")}; " +
@@ -1322,8 +1348,9 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                 continue;
                             }
                             if (confirmedTotalErrorMinutes <= AlignmentTolerance && completionAgreement.IsRepeatable) {
-                                Logger.Info($"Two consecutive fresh three-point UPAS measurements are below alignment tolerance ({AlignmentTolerance}'). Automatically finishing polar alignment.");
+                                Logger.Info($"{OperationalCompletionLabel(operationalTier)} Two consecutive fresh three-point UPAS measurements are below alignment tolerance ({AlignmentTolerance}'). Automatically finishing polar alignment.");
                                 Notification.ShowInformation(
+                                    $"{OperationalCompletionLabel(operationalTier)}{Environment.NewLine}" +
                                     $"Two consecutive fresh three-point UPAS measurements are below alignment tolerance.{Environment.NewLine}" +
                                     $"Tolerance: {AlignmentTolerance}'{Environment.NewLine}" +
                                     $"Altitude Error: {Math.Round(confirmationDetermination.InitialMountAxisAltitudeError.ArcMinutes, 2)}'{Environment.NewLine}" +
@@ -1378,8 +1405,9 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                             $"Alt: {tieBreakerDetermination.InitialMountAxisAltitudeError}, Tot: {tieBreakerDetermination.InitialMountAxisTotalError}. " +
                                             $"Consensus with first={candidateTieAgreement.IsRepeatable}, second={confirmationTieAgreement.IsRepeatable}.");
                                 if (tieBreakerTotalErrorMinutes <= AlignmentTolerance && tieBreakerHasConsensus) {
-                                    Logger.Info($"Fresh three-point UPAS tie-breaker established below-tolerance consensus ({AlignmentTolerance}'). Automatically finishing polar alignment.");
+                                    Logger.Info($"{OperationalCompletionLabel(operationalTier)} Fresh three-point UPAS tie-breaker established below-tolerance consensus ({AlignmentTolerance}'). Automatically finishing polar alignment.");
                                     Notification.ShowInformation(
+                                        $"{OperationalCompletionLabel(operationalTier)}{Environment.NewLine}" +
                                         $"Fresh three-point tie-breaker established below-tolerance consensus.{Environment.NewLine}" +
                                         $"Tolerance: {AlignmentTolerance}'{Environment.NewLine}" +
                                         $"Altitude Error: {Math.Round(tieBreakerDetermination.InitialMountAxisAltitudeError.ArcMinutes, 2)}'{Environment.NewLine}" +
@@ -1456,12 +1484,13 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                     if (freshDecision == AutomatedAlignmentCompletionDecision.AbortAfterFreshVerificationFailures) {
                                         throw new InvalidOperationException($"Fresh three-point completion verification was above the selected {AlignmentTolerance}' tolerance. Automated alignment was stopped immediately because correction-frame feedback did not agree with an independent measurement.");
                                     } else if (freshDecision == AutomatedAlignmentCompletionDecision.Finish) {
-                                        Logger.Info($"Fresh three-point verification is below alignment tolerance ({AlignmentTolerance}'). " +
+                                        Logger.Info($"{OperationalCompletionLabel(operationalTier)} Fresh three-point verification is below alignment tolerance ({AlignmentTolerance}'). " +
                                             $"Altitude Error: {Math.Round(verificationDetermination.InitialMountAxisAltitudeError.ArcMinutes, 2)}'. " +
                                             $"Azimuth Error: {Math.Round(verificationDetermination.InitialMountAxisAzimuthError.ArcMinutes, 2)}'. " +
                                             $"Total Error: {Math.Round(verifiedTotalErrorMinutes, 2)}'. " +
                                             $"Automatically finishing polar alignment.");
                                         Notification.ShowInformation(
+                                            $"{OperationalCompletionLabel(operationalTier)}{Environment.NewLine}" +
                                             $"Fresh three-point verification is below alignment tolerance.{Environment.NewLine}" +
                                             $"Tolerance: {AlignmentTolerance}'{Environment.NewLine}" +
                                             $"Altitude Error: {Math.Round(verificationDetermination.InitialMountAxisAltitudeError.ArcMinutes, 2)}'{Environment.NewLine}" +

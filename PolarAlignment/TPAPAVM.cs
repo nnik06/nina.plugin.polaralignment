@@ -67,6 +67,8 @@ namespace NINA.Plugins.PolarAlignment {
         private readonly IAutomatedMoveExecutor automatedMoveExecutor;
         private bool lastContinuousEstimateStable = true;
         private bool upasResponseMemorySeeded;
+        private double directFullTravelTargetMinutes =
+            TppaOperationalAlignmentTierPolicy.ImagingReadyMaximumTotalMinutes;
 
         public bool AutomatedAdjustmentRequiresCompletionValidation => automatedAdjustmentController.RequiresCompletionValidation;
         public bool AutomatedAdjustmentRequiresFreshMeasurementFeedback =>
@@ -85,6 +87,18 @@ namespace NINA.Plugins.PolarAlignment {
             }
         }
         internal bool LastAutomatedAdjustmentWasBoundedYBootstrapProbe { get; private set; }
+
+        internal void SetDirectFullTravelTarget(double targetMinutes) {
+            var tier = TppaOperationalAlignmentTierPolicy.Evaluate(targetMinutes);
+            if (tier.Tier == TppaOperationalAlignmentTier.NonOperational) {
+                throw new ArgumentOutOfRangeException(
+                    nameof(targetMinutes),
+                    "Direct full-travel target must be an imaging-ready or tripod-free coarse TPPA tier.");
+            }
+
+            directFullTravelTargetMinutes = targetMinutes;
+            ConfigureAutomatedAdjustmentControllerForActiveSystem();
+        }
 
         public void RebaseAutomatedAdjustmentToFreshDetermination() {
             if (PolarErrorDetermination == null) {
@@ -401,7 +415,8 @@ namespace NINA.Plugins.PolarAlignment {
                 Properties.Settings.Default.AvalonReverseAzimuth ? -1 : 1,
                 Properties.Settings.Default.AvalonReverseAltitude ? -1 : 1,
                 Properties.Settings.Default.AvalonClampLimitedRecoveryEnabled,
-                Properties.Settings.Default.AvalonCalibratedResponseRelativeUncertainty);
+                Properties.Settings.Default.AvalonCalibratedResponseRelativeUncertainty,
+                directFullTravelTargetMinutes);
 
             if (useUpasController) {
                 Logger.Info(

@@ -7,9 +7,12 @@ UPAS supervisor/P20 system is unavailable or not commissioned. It is not an
 absolute-metrology programme and does not require receipts, covariance
 artifacts, P20 optical authority, or a sealed campaign before TPPA can align.
 
-The operational target is a confirmed total error of at most 3 arcminutes in
-five minutes. The wider fallback target is at most 24 arcminutes from within
-the UPAS +/-5.4 degree software envelope.
+The imaging-ready operational target is a confirmed total error of at most 3
+arcminutes in five minutes. The wider tripod-free bulk target is at most 24
+arcminutes from within the UPAS +/-5.4 degree software envelope. The selected
+target is carried through route qualification: a bulk result is explicitly not
+imaging ready and can never be promoted to fine merely because it lands below
+3 arcminutes.
 
 ## Evidence Required At Start
 
@@ -69,10 +72,11 @@ with the existing bounded bootstrap path:
 
 The full-travel route is admitted only when
 `TppaDirectFullTravelFeasibilityPolicy` proves the current calibrated residual
-fits in at most three fresh-feedback moves and within 300 seconds. The route
-accepts up to 324 arcminutes per axis and 458.205 arcminutes total only after
-its direct calibration is enabled and confirmed; ordinary direct operation
-remains limited to 120 arcminutes.
+fits the selected 3-arcminute fine or 24-arcminute coarse terminal target in at
+most three fresh-feedback moves and within 300 seconds. The route accepts up to
+324 arcminutes per axis and 458.205 arcminutes total only after its direct
+calibration is enabled and confirmed; ordinary direct operation remains limited
+to 120 arcminutes.
 
 For a qualified clamp-limited recovery, the response matrix must have condition
 number no greater than 5 and relative response uncertainty no greater than 10
@@ -104,7 +108,9 @@ For each admitted move, the live controller must still:
    signed actual/predicted response ratio in [0.4, 1.6], and the actual
    residual reduction must be at least 40 percent of the predicted reduction.
    A failure latches automated motion off before another recovery move.
-6. End only after two independent fresh determinations are within 3 arcminutes.
+6. End only after two independent fresh determinations are within the selected
+   target. A 24-arcminute completion is labelled coarse/not imaging ready; a
+   separate new <=3-arcminute run is required before long-exposure imaging.
 
 An unsuccessful response, inconsistent fresh solve, timeout, cancellation, or
 travel denial ends the automatic run without authorizing another move. It must
@@ -113,11 +119,11 @@ report the last measured position/residual rather than infer success.
 ## Current Status
 
 The controller integration and NINA field panel are present as of commit
-`92c8564`, but the route is disabled by default. Enabling it without a fresh 2x2 field calibration,
-measured ALT/Y response, directional backlash evidence, and a stated response
-uncertainty is not a qualified use of the route. The nominal full-diagonal
-fixture reaches the 3-arcminute terminal target in two feedback moves and 230
-seconds; that is a software proof, not field validation.
+`92c8564`, but the route is disabled by default. Enabling it without a fresh
+2x2 field calibration, measured ALT/Y response, directional backlash evidence,
+and a stated response uncertainty is not a qualified use of the route. Offline
+fixtures exercise both the 3-arcminute fine and 24-arcminute tripod-free coarse
+tiers; that is a software proof, not field validation.
 
 The separate supervisor remains the preferred route for unattended,
 machine-witnessed physical position and broad 2x2 calibration. Its incomplete

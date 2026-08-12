@@ -57,6 +57,24 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public void Evaluate_AdmitsThreeMoveFullEnvelopeBulkAcquisition() {
+            var result = TppaDirectFullTravelFeasibilityPolicy.Evaluate(
+                300, -300,
+                0.05, 0,
+                0, 0.05,
+                81, 81,
+                initialAgreementSeconds: 80,
+                perMoveFreshFeedbackSeconds: 40,
+                terminalConfirmationSeconds: 40,
+                perMoveOverheadSeconds: 15,
+                terminalErrorMinutes: TppaOperationalAlignmentTierPolicy.TripodFreeCoarseMaximumTotalMinutes);
+
+            result.IsFeasible.Should().BeTrue();
+            result.RequiredMoveCount.Should().Be(3);
+            result.RequiredRuntimeSeconds.Should().BeApproximately(285, 0.001);
+        }
+
+        [Test]
         public void Evaluate_RejectsRouteThatFitsMoveCountButExceedsRuntime() {
             var result = TppaDirectFullTravelFeasibilityPolicy.Evaluate(
                 3, 3, 1, 0, 0, 1, 100, 100,
