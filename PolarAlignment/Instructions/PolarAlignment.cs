@@ -562,6 +562,42 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
         }
         public bool IsPausing { get => pauseTS?.IsPaused ?? false; }
 
+        private static void LogDirectFullTravelReadinessIfRelevant(
+            bool automatedAdjustmentsEnabled,
+            bool actuatorMovementAllowed) {
+            if (!automatedAdjustmentsEnabled
+                || !actuatorMovementAllowed
+                || !Properties.Settings.Default.AvalonDirectFullTravelRouteEnabled) {
+                return;
+            }
+
+            var readiness = TppaDirectFullTravelReadiness.Evaluate(
+                true,
+                Properties.Settings.Default.AvalonDirectFullTravelRouteConfirmed,
+                Properties.Settings.Default.AvalonAzimuthStartingPositionDegrees,
+                Properties.Settings.Default.AvalonAzimuthMinimumDegrees,
+                Properties.Settings.Default.AvalonAzimuthMaximumDegrees,
+                Properties.Settings.Default.AvalonAltitudeStartingPositionDegrees,
+                Properties.Settings.Default.AvalonAltitudeMinimumDegrees,
+                Properties.Settings.Default.AvalonAltitudeMaximumDegrees,
+                Properties.Settings.Default.AvalonCalibratedAzimuthDeltaPerXUnit,
+                Properties.Settings.Default.AvalonCalibratedAzimuthDeltaPerYUnit,
+                Properties.Settings.Default.AvalonCalibratedAltitudeDeltaPerXUnit,
+                Properties.Settings.Default.AvalonCalibratedAltitudeDeltaPerYUnit,
+                Properties.Settings.Default.AvalonCalibratedMaximumXUnitsPerMove,
+                Properties.Settings.Default.AvalonCalibratedMaximumYUnitsPerMove,
+                Properties.Settings.Default.AvalonAzimuthDegreesPerNudgeUnit,
+                Properties.Settings.Default.AvalonAltitudeDegreesPerNudgeUnit,
+                Properties.Settings.Default.AvalonClampLimitedRecoveryEnabled,
+                Properties.Settings.Default.AvalonCalibratedResponseRelativeUncertainty,
+                Properties.Settings.Default.AvalonReverseAzimuth ? -1 : 1,
+                Properties.Settings.Default.AvalonReverseAltitude ? -1 : 1);
+            Logger.Info(
+                $"TPPA direct full-travel preflight: " +
+                $"{(readiness.IsReady ? (readiness.RequiresBoundedYBootstrap ? "READY FOR Y BOOTSTRAP" : "READY") : "NOT READY")}; " +
+                $"{readiness.Reason}");
+        }
+
         /// <summary>
         /// The core logic when the sequence item is running resides here
         /// Add whatever action is necessary
@@ -578,6 +614,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 && automatedAdjustmentsEnabled
                 && executionPolicy.AllowActuatorMovement;
             var operationalTier = TppaOperationalAlignmentTierPolicy.Evaluate(AlignmentTolerance);
+            LogDirectFullTravelReadinessIfRelevant(automatedAdjustmentsEnabled, executionPolicy.AllowActuatorMovement);
             var supervisorCampaignMode = enforceFastRuntimeBudget
                 && Properties.Settings.Default.RequireExternalUpasSupervisorForAutomatedMoves;
             if (supervisorCampaignMode) {
