@@ -40,15 +40,14 @@ per-move `Max X`/`Max Y` command authority, and the physical AZ marker range.
 The regular AZ and ALT travel-guard settings remain the runtime motion limits.
 
 Enable the route and, when a clamp-limited recovery is intended, enter the
-measured relative response uncertainty and enable that recovery mode. Mark
-**Route attested** only after the displayed values match the current-session
-measurement. Editing any response, envelope, axis reversal, or current marker
-position clears that attestation automatically; the route then cannot qualify
-until it is reviewed again.
+measured relative response uncertainty and enable that recovery mode. The
+enabled route plus the entered response matrix and current signed physical
+marker positions are the attended admission inputs. There is no separate
+checkbox attestation: it carried no measurement and must not block a field run.
 
-The calibration values persist for review, but route attestation is cleared at
-the start of every NINA session and after a UPAS connection/reset. It is a
-current-session motion check, not a long-lived configuration permission.
+Calibration values persist for review. A reset or physical adjustment still
+requires the operator to enter the current signed marker positions before the
+travel envelope can qualify; that is the motion-relevant session action.
 
 ## First Session With No ALT/Y Column
 

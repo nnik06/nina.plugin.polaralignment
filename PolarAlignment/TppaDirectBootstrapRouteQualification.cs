@@ -24,8 +24,8 @@ namespace NINA.Plugins.PolarAlignment {
             double altitudeDeltaPerXUnitDegrees,
             double maximumYUnitsPerMove,
             double physicalAltitudeDegreesPerYUnit) {
-            if (!enabled || !operatorConfirmed) {
-                return Deny("the calibrated direct bootstrap route is not enabled and operator-confirmed");
+            if (!enabled) {
+                return Deny("the calibrated direct bootstrap route is not enabled");
             }
 
             if (!IsFinite(

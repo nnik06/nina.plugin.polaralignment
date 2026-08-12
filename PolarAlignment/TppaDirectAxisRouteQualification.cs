@@ -28,8 +28,8 @@ namespace NINA.Plugins.PolarAlignment {
                 double maximumUnitsPerMove,
                 double azimuthErrorMinutes,
                 double altitudeErrorMinutes) {
-            if (!enabled || !operatorConfirmed) {
-                return Deny("the calibrated direct axis route is not enabled and operator-confirmed");
+            if (!enabled) {
+                return Deny("the calibrated direct axis route is not enabled");
             }
 
             if (!IsFinite(

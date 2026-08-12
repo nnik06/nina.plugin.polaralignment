@@ -397,7 +397,7 @@ namespace NINA.Plugins.PolarAlignment {
 
             automatedAdjustmentController.ConfigureCalibratedDirectFullTravelRoute(
                 useUpasController && Properties.Settings.Default.AvalonDirectFullTravelRouteEnabled,
-                Properties.Settings.Default.AvalonDirectFullTravelRouteConfirmed,
+                true,
                 Properties.Settings.Default.AvalonAzimuthStartingPositionDegrees,
                 Properties.Settings.Default.AvalonAzimuthMinimumDegrees,
                 Properties.Settings.Default.AvalonAzimuthMaximumDegrees,

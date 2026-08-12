@@ -338,7 +338,7 @@ namespace NINA.Plugins.PolarAlignment {
             bool clampLimitedRecoveryEnabled = false,
             double relativeResponseUncertainty = double.PositiveInfinity,
             double terminalErrorMinutes = TppaDirectFullTravelFeasibilityPolicy.DefaultTerminalErrorMinutes) {
-            calibratedDirectFullTravelRoute = enabled && operatorConfirmed
+            calibratedDirectFullTravelRoute = enabled
                 ? new CalibratedDirectFullTravelRoute(
                     azimuthStartingPositionDegrees,
                     azimuthMinimumDegrees,
@@ -361,7 +361,7 @@ namespace NINA.Plugins.PolarAlignment {
                     relativeResponseUncertainty,
                     terminalErrorMinutes)
                 : null;
-            calibratedDirectAzimuthRoute = enabled && operatorConfirmed
+            calibratedDirectAzimuthRoute = enabled
                 ? new CalibratedDirectAzimuthRoute(
                     azimuthStartingPositionDegrees,
                     azimuthMinimumDegrees,

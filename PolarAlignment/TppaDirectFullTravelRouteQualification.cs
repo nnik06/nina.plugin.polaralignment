@@ -30,8 +30,8 @@ namespace NINA.Plugins.PolarAlignment {
             int physicalAzimuthCommandDirectionMultiplier = 1,
             int physicalAltitudeCommandDirectionMultiplier = 1,
             double terminalErrorMinutes = TppaDirectFullTravelFeasibilityPolicy.DefaultTerminalErrorMinutes) {
-            if (!enabled || !operatorConfirmed) {
-                return Deny("the calibrated direct full-travel route is not enabled and operator-confirmed");
+            if (!enabled) {
+                return Deny("the calibrated direct full-travel route is not enabled");
             }
 
             if (!IsFinite(

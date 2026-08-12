@@ -2196,12 +2196,6 @@
                                     VerticalAlignment="Center"
                                     IsChecked="{Binding UniversalPolarAlignmentVM.DirectFullTravelRouteEnabled}"
                                     ToolTip="Allow the measured 2x2 UPAS response to qualify the direct full-travel route." />
-                                <TextBlock Margin="0,0,4,0" VerticalAlignment="Center" Text="Route attested" />
-                                <CheckBox
-                                    Margin="0,0,12,0"
-                                    VerticalAlignment="Center"
-                                    IsChecked="{Binding UniversalPolarAlignmentVM.DirectFullTravelRouteConfirmed}"
-                                    ToolTip="Attest the visible response matrix and move authority below. Any change clears this attestation." />
                                 <TextBlock Margin="0,0,4,0" VerticalAlignment="Center" Text="Clamp recovery" />
                                 <CheckBox
                                     Margin="0,0,12,0"

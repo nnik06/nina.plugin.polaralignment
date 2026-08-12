@@ -11,11 +11,12 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
-        public void Evaluate_ReportsCurrentSessionAttestationBeforeResponseDetails() {
+        public void Evaluate_ReportsReadyAtColdStartWhenTheLegacyConfirmationFlagIsFalse() {
             var result = Evaluate(enabled: true, confirmed: false);
 
-            result.IsReady.Should().BeFalse();
-            result.Reason.Should().Contain("operator-confirmed");
+            result.IsReady.Should().BeTrue();
+            result.RequiresBoundedYBootstrap.Should().BeFalse();
+            result.Reason.Should().Contain("fresh TPPA error");
         }
 
         [Test]

@@ -4,16 +4,7 @@ using NINA.Plugins.PolarAlignment.Avalon;
 
 namespace NINA.Plugins.PolarAlignment.Avalon {
     public partial class UniversalPolarAlignmentVM : UniversalPolarAlignmentBaseVM {
-        public UniversalPolarAlignmentVM(IProfileService profileService) : base(profileService) {
-            // The response values can be reviewed across sessions, but their
-            // motion authority is valid only after the current session's
-            // marker and axis sense have been checked.
-            if (Properties.Settings.Default.AvalonDirectFullTravelRouteConfirmed) {
-                Properties.Settings.Default.AvalonDirectFullTravelRouteConfirmed = false;
-                CoreUtil.SaveSettings(Properties.Settings.Default);
-                Logger.Info("UPAS calibrated direct full-travel route attestation cleared for the new NINA session.");
-            }
-        }
+        public UniversalPolarAlignmentVM(IProfileService profileService) : base(profileService) { }
 
         protected override string SystemName => "Avalon Polar Alignment System";
 
@@ -41,9 +32,6 @@ namespace NINA.Plugins.PolarAlignment.Avalon {
             get => Properties.Settings.Default.AvalonXGearRatio;
             set {
                 if (value < 1) { value = 1; }
-                if (Properties.Settings.Default.AvalonXGearRatio != value) {
-                    InvalidateDirectFullTravelConfirmation();
-                }
                 Properties.Settings.Default.AvalonXGearRatio = value;
                 if (upa != null) { upa.XGearRatio = value; }
                 CoreUtil.SaveSettings(Properties.Settings.Default);
@@ -66,7 +54,6 @@ namespace NINA.Plugins.PolarAlignment.Avalon {
             set {
                 if (Properties.Settings.Default.AvalonYGearRatio != value) {
                     InvalidateAltitudeTravelConfirmation();
-                    InvalidateDirectFullTravelConfirmation();
                 }
                 if (value < 1) { value = 1; }
                 Properties.Settings.Default.AvalonYGearRatio = value;
@@ -91,7 +78,6 @@ namespace NINA.Plugins.PolarAlignment.Avalon {
             set {
                 if (Properties.Settings.Default.AvalonReverseAzimuth != value) {
                     Properties.Settings.Default.AvalonRememberedAzimuthResponsePerUnit = 0;
-                    InvalidateDirectFullTravelConfirmation();
                 }
                 Properties.Settings.Default.AvalonReverseAzimuth = value;
                 CoreUtil.SaveSettings(Properties.Settings.Default);
@@ -104,7 +90,6 @@ namespace NINA.Plugins.PolarAlignment.Avalon {
             set {
                 if (Properties.Settings.Default.AvalonReverseAltitude != value) {
                     InvalidateAltitudeTravelConfirmation();
-                    InvalidateDirectFullTravelConfirmation();
                 }
                 Properties.Settings.Default.AvalonReverseAltitude = value;
                 CoreUtil.SaveSettings(Properties.Settings.Default);
@@ -168,7 +153,6 @@ namespace NINA.Plugins.PolarAlignment.Avalon {
             set {
                 if (Properties.Settings.Default.AvalonAzimuthStartingPositionDegrees != value) {
                     InvalidateAzimuthTravelConfirmation();
-                    InvalidateDirectFullTravelConfirmation();
                 }
                 Properties.Settings.Default.AvalonAzimuthStartingPositionDegrees = value;
                 CoreUtil.SaveSettings(Properties.Settings.Default);
@@ -180,9 +164,6 @@ namespace NINA.Plugins.PolarAlignment.Avalon {
             get => Properties.Settings.Default.AvalonAzimuthTravelLimitDegrees;
             set {
                 var normalized = value < 0 ? 0 : value;
-                if (Properties.Settings.Default.AvalonAzimuthTravelLimitDegrees != normalized) {
-                    InvalidateDirectFullTravelConfirmation();
-                }
                 Properties.Settings.Default.AvalonAzimuthTravelLimitDegrees = normalized;
                 CoreUtil.SaveSettings(Properties.Settings.Default);
                 RaisePropertyChanged();
@@ -193,9 +174,6 @@ namespace NINA.Plugins.PolarAlignment.Avalon {
             get => Properties.Settings.Default.AvalonAzimuthDegreesPerNudgeUnit;
             set {
                 var normalized = value <= 0 ? 0.025 : value;
-                if (Properties.Settings.Default.AvalonAzimuthDegreesPerNudgeUnit != normalized) {
-                    InvalidateDirectFullTravelConfirmation();
-                }
                 Properties.Settings.Default.AvalonAzimuthDegreesPerNudgeUnit = normalized;
                 CoreUtil.SaveSettings(Properties.Settings.Default);
                 RaisePropertyChanged();
@@ -231,7 +209,6 @@ namespace NINA.Plugins.PolarAlignment.Avalon {
             set {
                 if (Properties.Settings.Default.AvalonAltitudeStartingPositionDegrees != value) {
                     InvalidateAltitudeTravelConfirmation();
-                    InvalidateDirectFullTravelConfirmation();
                 }
                 Properties.Settings.Default.AvalonAltitudeStartingPositionDegrees = value;
                 CoreUtil.SaveSettings(Properties.Settings.Default);
@@ -244,7 +221,6 @@ namespace NINA.Plugins.PolarAlignment.Avalon {
             set {
                 if (Properties.Settings.Default.AvalonAltitudeMinimumDegrees != value) {
                     InvalidateAltitudeTravelConfirmation();
-                    InvalidateDirectFullTravelConfirmation();
                 }
                 Properties.Settings.Default.AvalonAltitudeMinimumDegrees = value;
                 CoreUtil.SaveSettings(Properties.Settings.Default);
@@ -257,7 +233,6 @@ namespace NINA.Plugins.PolarAlignment.Avalon {
             set {
                 if (Properties.Settings.Default.AvalonAltitudeMaximumDegrees != value) {
                     InvalidateAltitudeTravelConfirmation();
-                    InvalidateDirectFullTravelConfirmation();
                 }
                 Properties.Settings.Default.AvalonAltitudeMaximumDegrees = value;
                 CoreUtil.SaveSettings(Properties.Settings.Default);
@@ -271,7 +246,6 @@ namespace NINA.Plugins.PolarAlignment.Avalon {
                 var normalized = value <= 0 ? 0.022 : value;
                 if (Properties.Settings.Default.AvalonAltitudeDegreesPerNudgeUnit != normalized) {
                     InvalidateAltitudeTravelConfirmation();
-                    InvalidateDirectFullTravelConfirmation();
                 }
                 Properties.Settings.Default.AvalonAltitudeDegreesPerNudgeUnit = normalized;
                 CoreUtil.SaveSettings(Properties.Settings.Default);
@@ -283,24 +257,6 @@ namespace NINA.Plugins.PolarAlignment.Avalon {
             get => Properties.Settings.Default.AvalonDirectFullTravelRouteEnabled;
             set {
                 Properties.Settings.Default.AvalonDirectFullTravelRouteEnabled = value;
-                CoreUtil.SaveSettings(Properties.Settings.Default);
-                RaisePropertyChanged();
-            }
-        }
-
-        public bool DirectFullTravelRouteConfirmed {
-            get => Properties.Settings.Default.AvalonDirectFullTravelRouteConfirmed;
-            set {
-                if (value && !Properties.Settings.Default.AvalonDirectFullTravelRouteConfirmed) {
-                    Logger.Info(
-                        "UPAS calibrated direct full-travel route attested: " +
-                        $"response=[[{CalibratedAzimuthDeltaPerXUnit:F6}, {CalibratedAzimuthDeltaPerYUnit:F6}], " +
-                        $"[{CalibratedAltitudeDeltaPerXUnit:F6}, {CalibratedAltitudeDeltaPerYUnit:F6}]] deg/unit, " +
-                        $"max=[{CalibratedMaximumXUnitsPerMove:F1}, {CalibratedMaximumYUnitsPerMove:F1}] units, " +
-                        $"relativeUncertainty={CalibratedResponseRelativeUncertainty:F3}, " +
-                        $"recovery={ClampLimitedRecoveryEnabled}.");
-                }
-                Properties.Settings.Default.AvalonDirectFullTravelRouteConfirmed = value;
                 CoreUtil.SaveSettings(Properties.Settings.Default);
                 RaisePropertyChanged();
             }
@@ -368,7 +324,6 @@ namespace NINA.Plugins.PolarAlignment.Avalon {
                 $"Caller stack: {new System.Diagnostics.StackTrace(skipFrames: 1, fNeedFileInfo: true)}");
             InvalidateAzimuthTravelConfirmation();
             InvalidateAltitudeTravelConfirmation();
-            InvalidateDirectFullTravelConfirmation();
         }
 
         private void InvalidateAzimuthTravelConfirmation() {
@@ -394,9 +349,6 @@ namespace NINA.Plugins.PolarAlignment.Avalon {
         }
 
         private void SetDirectRouteSetting<T>(string name, T value) {
-            if (!Equals(Properties.Settings.Default[name], value)) {
-                InvalidateDirectFullTravelConfirmation();
-            }
             Properties.Settings.Default[name] = value;
             CoreUtil.SaveSettings(Properties.Settings.Default);
         }
@@ -406,15 +358,5 @@ namespace NINA.Plugins.PolarAlignment.Avalon {
             RaisePropertyChanged(propertyName);
         }
 
-        private void InvalidateDirectFullTravelConfirmation() {
-            if (!Properties.Settings.Default.AvalonDirectFullTravelRouteConfirmed) {
-                return;
-            }
-
-            Logger.Warning("UPAS calibrated direct full-travel route invalidated by a configuration change. Re-attest the measured response before automated movement.");
-            Properties.Settings.Default.AvalonDirectFullTravelRouteConfirmed = false;
-            CoreUtil.SaveSettings(Properties.Settings.Default);
-            RaisePropertyChanged(nameof(DirectFullTravelRouteConfirmed));
-        }
     }
 }

@@ -3,11 +3,11 @@ using FluentAssertions;
 namespace NINA.Plugins.PolarAlignment.Test {
     public class TppaDirectFullTravelRouteQualificationTest {
         [Test]
-        public void Evaluate_RejectsAnUnconfirmedRouteBeforeReadingItsCalibration() {
-            var result = Evaluate(enabled: true, confirmed: false, azimuthMinutes: 60, altitudeMinutes: 60);
+        public void Evaluate_AdmitsAValidRouteWhenTheLegacyConfirmationFlagIsFalse() {
+            var result = Evaluate(enabled: true, confirmed: false, azimuthMinutes: 17, altitudeMinutes: -17);
 
-            result.IsQualified.Should().BeFalse();
-            result.Reason.Should().Contain("operator-confirmed");
+            result.IsQualified.Should().BeTrue();
+            result.Reason.Should().Contain("five-minute feasibility");
         }
 
         [Test]

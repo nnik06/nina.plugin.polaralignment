@@ -574,7 +574,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
 
             var readiness = TppaDirectFullTravelReadiness.Evaluate(
                 true,
-                Properties.Settings.Default.AvalonDirectFullTravelRouteConfirmed,
+                true,
                 Properties.Settings.Default.AvalonAzimuthStartingPositionDegrees,
                 Properties.Settings.Default.AvalonAzimuthMinimumDegrees,
                 Properties.Settings.Default.AvalonAzimuthMaximumDegrees,
@@ -1146,7 +1146,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                             && TPAPAVM.ActiveAlignmentSystemVM?.DoAutomatedAdjustments == true) {
                         var directFullTravelQualification = TppaDirectFullTravelRouteQualification.Evaluate(
                             Properties.Settings.Default.AvalonDirectFullTravelRouteEnabled,
-                            Properties.Settings.Default.AvalonDirectFullTravelRouteConfirmed,
+                            true,
                             Properties.Settings.Default.AvalonAzimuthStartingPositionDegrees,
                             Properties.Settings.Default.AvalonAzimuthMinimumDegrees,
                             Properties.Settings.Default.AvalonAzimuthMaximumDegrees,
@@ -1170,7 +1170,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                             AlignmentTolerance);
                         var directAzimuthQualification = TppaDirectAxisRouteQualification.Evaluate(
                             Properties.Settings.Default.AvalonDirectFullTravelRouteEnabled,
-                            Properties.Settings.Default.AvalonDirectFullTravelRouteConfirmed,
+                            true,
                             Properties.Settings.Default.AvalonAzimuthStartingPositionDegrees,
                             Properties.Settings.Default.AvalonAzimuthMinimumDegrees,
                             Properties.Settings.Default.AvalonAzimuthMaximumDegrees,
@@ -1182,7 +1182,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                             determination.InitialMountAxisAltitudeError.ArcMinutes);
                         var directBootstrapQualification = TppaDirectBootstrapRouteQualification.Evaluate(
                             Properties.Settings.Default.AvalonDirectFullTravelRouteEnabled,
-                            Properties.Settings.Default.AvalonDirectFullTravelRouteConfirmed,
+                            true,
                             Properties.Settings.Default.AvalonAzimuthStartingPositionDegrees,
                             Properties.Settings.Default.AvalonAzimuthMinimumDegrees,
                             Properties.Settings.Default.AvalonAzimuthMaximumDegrees,
