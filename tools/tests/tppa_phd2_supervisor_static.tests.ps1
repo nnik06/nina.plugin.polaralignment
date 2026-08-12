@@ -26,6 +26,16 @@ Assert-Contains '$obj.Event -eq "LockPositionSet" -and $steps -eq 0 -and -not $s
 Assert-Contains '$lockDistance -le 2.0' "startup lock acceptance must be tied to the selected guide-star coordinates"
 Assert-Contains 'PHD2 freshly selected guide star' "a stopped PHD2 session must refresh its lock instead of trusting a stale retained coordinate"
 Assert-Contains 'function Wait-NinaSequenceIdle' "supervisor must define a bounded NINA sequence-idle wait"
+Assert-Contains 'function Get-NinaOperationalSessionAssessment' "supervisor must assess a live NINA process, log, and mount before field work"
+Assert-Contains "Current_DispatcherUnhandledException'" "supervisor must reject a logged unhandled NINA UI failure"
+if ($text.Contains('Current_DispatcherUnhandledException|Desktop composition is disabled')) {
+    throw 'Assertion failed: desktop-composition status alone must not reject a healthy remote NINA session.'
+}
+Assert-Contains 'expected exactly one NINA process' "supervisor must reject overlapping or missing NINA instances"
+Assert-Contains 'latest NINA log' "supervisor must bind the live NINA PID to its current log"
+Assert-Contains '-Count [int]::MaxValue' "zombie detection must scan the complete current-session log, not only a tail"
+Assert-Contains 'function Assert-NinaOperationalSession' "supervisor must expose a fail-closed operational-session preflight"
+Assert-Contains 'Assert-NinaOperationalSession -Base $nina' "sequence-starting modes must require a healthy NINA operational session"
 Assert-Contains 'if (-not (Wait-NinaSequenceIdle -Base $Base))' "fresh TPPA stop must confirm NINA is idle before another sequence load"
 Assert-Contains 'refusing to reload it' "idle timeout must fail closed instead of racing a sequence reload"
 Assert-Contains '"/sequence/json" -TimeoutSec 3' "idle confirmation must fall back to the bounded sequence JSON endpoint"
@@ -78,6 +88,14 @@ if ($freshMeasurementStart -lt 0 -or $stabilityStart -le $freshMeasurementStart)
 $freshMeasurementBlock = $text.Substring($freshMeasurementStart, $stabilityStart - $freshMeasurementStart)
 if ($freshMeasurementBlock.Contains('Capture-Phd2')) {
     throw "Assertion failed: FreshMeasurement mode must not call a PHD2 capture function."
+}
+$freshAssessmentIndex = $freshMeasurementBlock.IndexOf('Assert-NinaOperationalSession -Base $nina')
+$freshLoadIndex = $freshMeasurementBlock.IndexOf('Load-NinaSequence -Base $nina')
+if ($freshAssessmentIndex -lt 0 -or $freshLoadIndex -lt 0 -or $freshAssessmentIndex -gt $freshLoadIndex) {
+    throw "Assertion failed: FreshMeasurement must qualify NINA before loading a TPPA sequence."
+}
+if (([regex]::Matches($text, 'Assert-NinaOperationalSession -Base \$nina')).Count -lt 7) {
+    throw 'Assertion failed: long-running TPPA modes must recheck NINA health between cycles.'
 }
 
 foreach ($eventName in @(

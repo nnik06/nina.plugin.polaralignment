@@ -243,6 +243,7 @@ function Assert-PdaPointing {
     if (-not $RequirePdaNearPole) { return }
     $nina = Find-Nina
     if (-not $nina) { throw "NINA API is required to verify PDA pointing and tracking." }
+    Assert-NinaOperationalSession -Base $nina
     $info = Invoke-Nina -Base $nina -Path "/equipment/mount/info" -TimeoutSec 10
     if (-not $info.Success -or $null -eq $info.Response) { throw "NINA mount info is unavailable; refusing PDA capture." }
     $mount = $info.Response
@@ -691,6 +692,71 @@ function Read-NinaLogSharedTail {
     @($text -split "`r?`n" | Select-Object -Last $Count)
 }
 
+function Get-NinaOperationalSessionAssessment {
+    param([string]$Base)
+
+    $reasons = New-Object System.Collections.Generic.List[string]
+    $ninaProcesses = @(Get-Process -Name 'NINA' -ErrorAction SilentlyContinue)
+    if ($ninaProcesses.Count -ne 1) {
+        [void]$reasons.Add("expected exactly one NINA process, found $($ninaProcesses.Count)")
+        return [pscustomobject]@{ Healthy = $false; Reasons = @($reasons); ProcessId = $null; LogPath = $null; Mount = $null }
+    }
+
+    $process = $ninaProcesses[0]
+    $logPath = $null
+    try {
+        $logPath = Get-LatestNinaLogPath
+        $logName = [IO.Path]::GetFileName($logPath)
+        if ($logName -notmatch ("\\." + [regex]::Escape([string]$process.Id) + "-\\d{6}\\.log$")) {
+            [void]$reasons.Add("latest NINA log '$logName' does not belong to NINA PID $($process.Id)")
+        } else {
+            $fatal = @(Read-NinaLogSharedTail -Path $logPath -Count [int]::MaxValue | Where-Object {
+                $_ -match 'Current_DispatcherUnhandledException'
+            } | Select-Object -Last 1)
+            if ($fatal.Count -gt 0) {
+                [void]$reasons.Add("current NINA log contains an unhandled UI fault: $($fatal[0])")
+            }
+        }
+    } catch {
+        [void]$reasons.Add("unable to inspect current NINA log: $($_.Exception.Message)")
+    }
+
+    $mount = $null
+    try {
+        $response = Invoke-Nina -Base $Base -Path '/equipment/mount/info' -TimeoutSec 10
+        if (-not $response.Success -or $null -eq $response.Response) {
+            [void]$reasons.Add('NINA mount-info response is unavailable')
+        } else {
+            $mount = $response.Response
+            if (-not [bool]$mount.Connected) { [void]$reasons.Add('NINA reports the mount disconnected') }
+        }
+    } catch {
+        [void]$reasons.Add("NINA mount-info query failed: $($_.Exception.Message)")
+    }
+
+    return [pscustomobject]@{
+        Healthy = $reasons.Count -eq 0
+        Reasons = @($reasons)
+        ProcessId = $process.Id
+        LogPath = $logPath
+        Mount = $mount
+    }
+}
+
+function Assert-NinaOperationalSession {
+    param([string]$Base)
+
+    $assessment = Get-NinaOperationalSessionAssessment -Base $Base
+    if (-not $assessment.Healthy) {
+        throw "NINA operational-session preflight failed: $($assessment.Reasons -join '; ')"
+    }
+
+    Log ("NINA operational-session preflight passed. PID={0}; log={1}; mount connected={2}." -f
+        $assessment.ProcessId,
+        [IO.Path]::GetFileName($assessment.LogPath),
+        [bool]$assessment.Mount.Connected)
+}
+
 function Test-NinaLogSequenceFinished {
     param([datetime]$SinceLocal)
     try {
@@ -1012,6 +1078,11 @@ if ($Mode -eq "Probe") {
     $nina = Find-Nina
     if ($nina) {
         Log "NINA API found at $nina"
+        $assessment = Get-NinaOperationalSessionAssessment -Base $nina
+        Log ("NINA operational-session assessment: healthy={0}; pid={1}; reasons={2}" -f
+            $assessment.Healthy,
+            $assessment.ProcessId,
+            ($assessment.Reasons -join ' | '))
         foreach ($path in @("/version", "/version/nina", "/application/logs")) { try { Log ("NINA $path OK: " + ((Invoke-Nina -Base $nina -Path $path -TimeoutSec 5) | ConvertTo-Json -Depth 5 -Compress)) } catch { Log "NINA $path failed: $($_.Exception.Message)" } }
         try {
             $state = Invoke-Nina -Base $nina -Path "/sequence/state" -TimeoutSec 20
@@ -1038,6 +1109,7 @@ if ($Mode -eq "FreshMeasurement") {
 
     $nina = Find-Nina
     if (-not $nina) { throw "NINA API not found. Start NINA and enable Advanced API first." }
+    Assert-NinaOperationalSession -Base $nina
 
     Load-NinaSequence -Base $nina
     $state = Invoke-Nina -Base $nina -Path "/sequence/state" -TimeoutSec 20
@@ -1068,6 +1140,7 @@ if ($Mode -eq "FreshMeasurement") {
 if ($Mode -eq "Stability") {
     $nina = Find-Nina
     if (-not $nina) { throw "NINA API not found. Start NINA and enable Advanced API first." }
+    Assert-NinaOperationalSession -Base $nina
     if ($SequencePath) {
         Load-NinaSequence -Base $nina
         Log "Loaded the requested stability sequence before validating its UPAS pre-seat and start-position settings."
@@ -1093,6 +1166,7 @@ if ($Mode -eq "Stability") {
         $completed = 0
         for ($cycle = 1; $cycle -le $Cycles; $cycle++) {
             if (Test-StopWindow) { break }
+            Assert-NinaOperationalSession -Base $nina
             Log "Stability block ${block}, TPPA ${cycle}/${Cycles}: starting same-position fresh measurement"
             Start-NinaSequence -Base $nina
             $started = Get-Date
@@ -1150,6 +1224,7 @@ if ($Mode -eq "Stability") {
 if ($Mode -eq "BurstThenDrift") {
     $nina = Find-Nina
     if (-not $nina) { throw "NINA API not found. Start NINA and enable Advanced API first." }
+    Assert-NinaOperationalSession -Base $nina
     if (-not (Test-Port -HostName $Phd2Host -Port $Phd2Port)) { throw "PHD2 TCP port is closed. Start PHD2 first." }
     $completedBursts = 0
     for ($burst = 1; $burst -le $RepeatBursts; $burst++) {
@@ -1158,6 +1233,7 @@ if ($Mode -eq "BurstThenDrift") {
         $completed = 0
         for ($cycle = 1; $cycle -le $Cycles; $cycle++) {
             if (Test-StopWindow) { break }
+            Assert-NinaOperationalSession -Base $nina
             Log "Full cycle ${burst}/${RepeatBursts}, TPPA ${cycle}/${Cycles}: starting TPPA sequence"
             Start-NinaSequence -Base $nina
             if (-not (Wait-NinaDone -Base $nina)) {
@@ -1199,8 +1275,10 @@ if ($Mode -eq "BurstThenDrift") {
 if ($Mode -eq "Cycle") {
     $nina = Find-Nina
     if (-not $nina) { throw "NINA API not found. Start NINA and enable Advanced API first." }
+    Assert-NinaOperationalSession -Base $nina
     if (-not (Test-Port -HostName $Phd2Host -Port $Phd2Port)) { throw "PHD2 TCP port is closed. Start PHD2 first." }
     for ($cycle = 1; $cycle -le $Cycles; $cycle++) {
+        Assert-NinaOperationalSession -Base $nina
         Log "Cycle ${cycle}/${Cycles}: starting TPPA sequence"
         Start-NinaSequence -Base $nina
         if (-not (Wait-NinaDone -Base $nina)) {
