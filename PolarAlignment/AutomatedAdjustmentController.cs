@@ -1346,7 +1346,13 @@ namespace NINA.Plugins.PolarAlignment {
             }
 
             var protectAltitudeWhileAzimuthRemainsLarger = ShouldProtectAltitudeWhileAzimuthRemainsLarger(currentObservation);
-            var probeXAxis = protectAltitudeWhileAzimuthRemainsLarger || ShouldUseXAcquisition(currentObservation) || xExcitation <= yExcitation;
+            var bootstrapObservableYAfterUnresponsiveX = ShouldBootstrapObservableYAfterUnresponsiveX(
+                protectAltitudeWhileAzimuthRemainsLarger,
+                yExcitation);
+            var probeXAxis = !bootstrapObservableYAfterUnresponsiveX
+                             && (protectAltitudeWhileAzimuthRemainsLarger
+                                 || ShouldUseXAcquisition(currentObservation)
+                                 || xExcitation <= yExcitation);
             if (IsProbeAxisExhausted(probeXAxis)) {
                 if (protectAltitudeWhileAzimuthRemainsLarger && probeXAxis) {
                     return AutomatedAdjustmentPlan.Skip("Azimuth remains larger than altitude while altitude is near target; refusing to probe altitude as a substitute for azimuth correction.");
@@ -1363,10 +1369,25 @@ namespace NINA.Plugins.PolarAlignment {
                                                    $"Probing azimuth response (attempt {rejectedXProbeCount + 1})");
             }
 
-            return new AutomatedAdjustmentPlan(0,
-                                               GetProbeMagnitude(false),
-                                               true,
-                                               $"Probing altitude response (attempt {rejectedYProbeCount + 1})");
+            var yMagnitude = bootstrapObservableYAfterUnresponsiveX
+                ? TppaDirectBootstrapRouteQualification.BootstrapYProbeUnits
+                : GetProbeMagnitude(false);
+            var reason = bootstrapObservableYAfterUnresponsiveX
+                ? "Probing observable altitude response after an unresponsive azimuth probe"
+                : $"Probing altitude response (attempt {rejectedYProbeCount + 1})";
+            return new AutomatedAdjustmentPlan(0, yMagnitude, true, reason);
+        }
+
+        private bool ShouldBootstrapObservableYAfterUnresponsiveX(
+                bool protectAltitudeWhileAzimuthRemainsLarger,
+                double yExcitation) {
+            return UseUpasEngagementController
+                   && !protectAltitudeWhileAzimuthRemainsLarger
+                   && rejectedXProbeCount > 0
+                   && rejectedYProbeCount == 0
+                   && yExcitation <= 0
+                   && Math.Abs(currentObservation.AltitudeErrorDegrees)
+                       > Math.Abs(currentObservation.AzimuthErrorDegrees);
         }
 
 

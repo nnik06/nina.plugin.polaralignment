@@ -64,6 +64,15 @@ namespace NINA.Plugins.PolarAlignment {
                 Properties.Settings.Default.UpdateSettings = false;
                 settingsChanged = true;
             }
+            var configuredSystem = Properties.Settings.Default.SelectedPolarAlignmentSystem;
+            var resolvedSystem = TppaAlignmentSystemSelectionPolicy.ResolvePersistedSelection(
+                configuredSystem,
+                Properties.Settings.Default.UseAvalonPolarAlignmentSystem);
+            if (resolvedSystem != configuredSystem) {
+                Properties.Settings.Default.SelectedPolarAlignmentSystem = resolvedSystem;
+                Logger.Info("Migrated the legacy UPAS-enabled setting to the active UPAS selector.");
+                settingsChanged = true;
+            }
             var configuredTolerance = Properties.Settings.Default.AlignmentTolerance;
             var resolvedTolerance =
                 TppaAlignmentTolerancePolicy.ResolvePersistedSetting(configuredTolerance);

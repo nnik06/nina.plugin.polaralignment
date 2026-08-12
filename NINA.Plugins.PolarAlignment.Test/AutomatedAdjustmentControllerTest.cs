@@ -1538,6 +1538,25 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public void AutomatedAdjustmentController_UsesObservableYProbeAfterUnresponsiveXWhenAltitudeDominates() {
+            var controller = new AutomatedAdjustmentController(useUpasEngagementController: true);
+            controller.UpdateObservation(3.0 / 60.0, 30.0 / 60.0);
+
+            var xProbe = controller.CreatePlan();
+            xProbe.XMagnitude.Should().Be(4);
+            xProbe.YMagnitude.Should().Be(0);
+            controller.NoteSuccessfulExecution(xProbe);
+
+            // The immediate fresh determination did not resolve a sky response from X.
+            controller.UpdateObservation(3.0 / 60.0, 30.0 / 60.0);
+
+            var yProbe = controller.CreatePlan();
+            yProbe.XMagnitude.Should().Be(0);
+            yProbe.YMagnitude.Should().Be(TppaDirectBootstrapRouteQualification.BootstrapYProbeUnits);
+            yProbe.Reason.Should().Contain("after an unresponsive azimuth probe");
+        }
+
+        [Test]
         public void AutomatedAdjustmentController_PromotesStrongIndependentBootstrapToSessionLocalCoarseCorrection() {
             var controller = CreateBootstrapController();
             controller.UpdateObservation(5, -5);
