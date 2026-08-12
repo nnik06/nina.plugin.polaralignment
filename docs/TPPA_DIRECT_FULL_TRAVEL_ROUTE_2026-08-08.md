@@ -55,7 +55,7 @@ Do not invent an ALT/Y value. A route with a fresh, trusted X column can begin
 with the existing bounded bootstrap path:
 
 1. Enter the measured X column, physical marker bounds, X/Y per-move limits,
-   and the current-session marker positions; attest the reviewed route.
+   and the current-session marker positions; review the enabled route values.
 2. Obtain the two agreeing fresh TPPA determinations required before motion.
 3. Let TPPA issue its one bounded 20-unit Y bootstrap probe and wait for its
    fresh three-point feedback.
