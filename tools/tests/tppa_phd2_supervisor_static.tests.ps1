@@ -38,8 +38,11 @@ Assert-Contains 'function Assert-NinaOperationalSession' "supervisor must expose
 Assert-Contains 'Assert-NinaOperationalSession -Base $nina' "sequence-starting modes must require a healthy NINA operational session"
 Assert-Contains 'if (-not (Wait-NinaSequenceIdle -Base $Base))' "fresh TPPA stop must confirm NINA is idle before another sequence load"
 Assert-Contains 'refusing to reload it' "idle timeout must fail closed instead of racing a sequence reload"
-Assert-Contains '"/sequence/json" -TimeoutSec 3' "idle confirmation must fall back to the bounded sequence JSON endpoint"
-Assert-Contains 'confirmed idle state through /sequence/json fallback' "JSON fallback must only accept explicit non-running terminality"
+Assert-Contains '"/sequence/json" -TimeoutSec 3' "idle confirmation must use the bounded sequence JSON endpoint"
+Assert-Contains 'confirmed idle state through /sequence/json:' "JSON lifecycle polling must only accept explicit non-running terminality"
+if ($text.Contains('"/sequence/state"')) {
+    throw 'Assertion failed: supervisor lifecycle polling must not call NINA heavy /sequence/state.'
+}
 Assert-Contains '$seenRunningSequence = $false' "fresh-measurement monitoring must distinguish a not-yet-started sequence from a terminal one"
 Assert-Contains 'Advanced Sequence starting|Starting Category: Polar Alignment' "fresh-measurement terminal detection must tolerate a sequence that finishes between compact-status polls"
 Assert-Contains 'SequenceTerminatedWithoutFreshResult' "fresh-measurement monitoring must stop promptly when NINA terminates without a result"

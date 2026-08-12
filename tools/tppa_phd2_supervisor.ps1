@@ -229,7 +229,7 @@ function Find-Nina {
             $portBase = ("http://{0}:{1}" -f $hostName, $port)
             foreach ($prefix in @("", "/v2/api", "/api")) {
                 $base = $portBase + $prefix
-                foreach ($path in @("/version", "/version/nina", "/sequence/state", "/application/logs")) {
+                foreach ($path in @("/version", "/version/nina", "/sequence/json", "/application/logs")) {
                     try { Invoke-Nina -Base $base -Path $path -TimeoutSec 2 | Out-Null; Log "Found NINA API at $base using $path"; return $base }
                     catch {}
                 }
@@ -646,25 +646,17 @@ function Wait-NinaSequenceIdle {
     while ((Get-Date) -lt $deadline) {
         if (Test-StopWindow) { return $false }
         try {
-            $state = Invoke-Nina -Base $Base -Path "/sequence/state" -TimeoutSec 3
+            # /sequence/state can embed image-heavy state and block under load.
+            # Lifecycle decisions only need the compact status tree.
+            $state = Invoke-Nina -Base $Base -Path "/sequence/json" -TimeoutSec 3
             $statuses = @(Get-NinaSequenceStatuses -Node $state.Response)
             if ($statuses.Count -gt 0 -and -not ($statuses -contains "RUNNING")) {
-                Log "NINA sequence reached confirmed idle state: $($statuses -join ',')"
+                Log "NINA sequence reached confirmed idle state through /sequence/json: $($statuses -join ',')"
                 return $true
             }
         } catch {
             $stateFailure = $_.Exception.Message
-            try {
-                $sequence = Invoke-Nina -Base $Base -Path "/sequence/json" -TimeoutSec 3
-                $statuses = @(Get-NinaSequenceStatuses -Node $sequence.Response)
-                if ($statuses.Count -gt 0 -and -not ($statuses -contains "RUNNING")) {
-                    Log "NINA sequence reached confirmed idle state through /sequence/json fallback after /sequence/state failure: $($statuses -join ',')"
-                    return $true
-                }
-                Log "Waiting for NINA sequence idle state: /sequence/state failed ($stateFailure); /sequence/json statuses=$($statuses -join ',')"
-            } catch {
-                Log "Waiting for NINA sequence idle state: /sequence/state failed ($stateFailure); /sequence/json fallback failed: $($_.Exception.Message)"
-            }
+            Log "Waiting for NINA sequence idle state: /sequence/json failed: $stateFailure"
         }
         Start-Sleep -Seconds 2
     }
@@ -1047,7 +1039,7 @@ function Wait-NinaDone {
             $autoStopSent = $true
         }
         try {
-            $state = Invoke-Nina -Base $Base -Path "/sequence/state" -TimeoutSec 3
+            $state = Invoke-Nina -Base $Base -Path "/sequence/json" -TimeoutSec 3
             $statuses = @(Get-NinaSequenceStatuses -Node $state.Response)
             $hasRunningStatus = $statuses -contains "RUNNING"
             Log "NINA sequence status summary: $($statuses -join ',')"
@@ -1085,10 +1077,10 @@ if ($Mode -eq "Probe") {
             ($assessment.Reasons -join ' | '))
         foreach ($path in @("/version", "/version/nina", "/application/logs")) { try { Log ("NINA $path OK: " + ((Invoke-Nina -Base $nina -Path $path -TimeoutSec 5) | ConvertTo-Json -Depth 5 -Compress)) } catch { Log "NINA $path failed: $($_.Exception.Message)" } }
         try {
-            $state = Invoke-Nina -Base $nina -Path "/sequence/state" -TimeoutSec 20
+            $state = Invoke-Nina -Base $nina -Path "/sequence/json" -TimeoutSec 8
             $statuses = @(Get-NinaSequenceStatuses -Node $state.Response)
-            Log "NINA /sequence/state OK. Status summary: $($statuses -join ',')"
-        } catch { Log "NINA /sequence/state failed: $($_.Exception.Message)" }
+            Log "NINA /sequence/json OK. Status summary: $($statuses -join ',')"
+        } catch { Log "NINA /sequence/json failed: $($_.Exception.Message)" }
     } else { Log "NINA API not found" }
 
     if (Test-Port -HostName $Phd2Host -Port $Phd2Port) {
@@ -1112,7 +1104,7 @@ if ($Mode -eq "FreshMeasurement") {
     Assert-NinaOperationalSession -Base $nina
 
     Load-NinaSequence -Base $nina
-    $state = Invoke-Nina -Base $nina -Path "/sequence/state" -TimeoutSec 20
+    $state = Invoke-Nina -Base $nina -Path "/sequence/json" -TimeoutSec 8
     $stateJson = $state.Response | ConvertTo-Json -Depth 30 -Compress
     if ($stateJson -match '"PreSeatAzimuthBeforeMeasurement":true') {
         throw "The loaded TPPA sequence has UPAS azimuth pre-seat enabled. FreshMeasurement mode refuses to start."
@@ -1145,7 +1137,7 @@ if ($Mode -eq "Stability") {
         Load-NinaSequence -Base $nina
         Log "Loaded the requested stability sequence before validating its UPAS pre-seat and start-position settings."
     }
-    $state = Invoke-Nina -Base $nina -Path "/sequence/state" -TimeoutSec 20
+    $state = Invoke-Nina -Base $nina -Path "/sequence/json" -TimeoutSec 8
     $stateJson = $state.Response | ConvertTo-Json -Depth 30 -Compress
     if ($stateJson -match '"PreSeatAzimuthBeforeMeasurement":true') {
         throw "The loaded TPPA sequence has UPAS azimuth pre-seat enabled. Stability mode refuses to start."
