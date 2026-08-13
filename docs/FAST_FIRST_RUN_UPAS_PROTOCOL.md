@@ -36,12 +36,7 @@ as a physical position after reset.
    move of 20 units. Settle and take a fresh determination. The resulting
    Y-only response must pass the response and conditioning gates.
 5. Only after both independent response columns qualify may the controller
-   calculate a damped correction. An accepted post-move fresh response may
-   authorize only the immediately next bounded correction when its total
-   improvement and component cross-axis regression gates passed. That authority is
-   consumable and is revoked by a pause, timeout, reconfiguration, a different
-   motion epoch, a new intervening determination, expiry, or any state that
-   cannot be positively validated. Every proposed move remains subject to the
+   calculate a damped correction. Every proposed move remains subject to the
    signed physical envelope, regression, response, settle, cancellation, and
    runtime guards.
 6. Complete with independent fresh stationary verification. A failed response,
@@ -52,14 +47,11 @@ as a physical position after reset.
 
 The direct-field reservation is 40 seconds for a fresh three-point
 determination and 15 seconds for a bounded UPAS action. The nominal first-run
-path can reserve six fresh determinations and four actions: initial, X
-feedback, Y feedback, two correction feedbacks, and stationary confirmation.
-That is exactly 300 seconds. The fourth action is available only after the
-fresh X/Y identification completion and a positively validated, one-shot
-dynamic authority token. If any observed cadence or action exceeds its
-reservation, the runtime planner declines the next action rather than borrowing
-time. A pause, slow solve, failed response gate, or unsafe command is not
-waived to meet five minutes; it stops the route without declaring alignment.
+path therefore reserves five fresh determinations and three actions: initial,
+X feedback, Y feedback, correction feedback, and stationary confirmation.
+That is 245 seconds before observed-cadence slack. A pause, slow solve, failed
+response gate, or unsafe command is not waived to meet five minutes; it stops
+the route without declaring alignment.
 
 ## Field Evidence To Record
 

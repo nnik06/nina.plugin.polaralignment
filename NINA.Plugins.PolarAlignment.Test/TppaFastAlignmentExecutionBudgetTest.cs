@@ -200,30 +200,9 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
-        public void FourthMoveCanBeEvaluatedOnlyWithDynamicAuthorityAllowance() {
-            var allowed = TppaFastAlignmentExecutionBudget.EvaluateBeforeDynamicAuthorityMove(
-                TimeSpan.FromSeconds(205),
-                observedFreshDeterminationSeconds: 35,
-                completedMoves: 3,
-                qualifiedFreshDeterminationReserveSeconds:
-                    TppaFastAlignmentExecutionBudget.DirectFieldFreshDeterminationReserveSeconds);
-            allowed.CanStart.Should().BeTrue(allowed.Reason);
-
+        public void FourthMoveCannotBeEvaluated() {
             var action = () => TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
-                TimeSpan.FromSeconds(205), 35, completedMoves: 3,
-                maximumFreshFeedbackMoves: 4);
-
-            action.Should().Throw<ArgumentOutOfRangeException>();
-        }
-
-        [Test]
-        public void DynamicAuthorityBudgetRejectsMovesBeforeTwoFreshResponses() {
-            var action = () => TppaFastAlignmentExecutionBudget.EvaluateBeforeDynamicAuthorityMove(
-                TimeSpan.FromSeconds(120),
-                observedFreshDeterminationSeconds: 35,
-                completedMoves: 1,
-                qualifiedFreshDeterminationReserveSeconds:
-                    TppaFastAlignmentExecutionBudget.DirectFieldFreshDeterminationReserveSeconds);
+                TimeSpan.FromSeconds(150), 70, completedMoves: 3);
 
             action.Should().Throw<ArgumentOutOfRangeException>();
         }
@@ -272,7 +251,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 TimeSpan.FromSeconds(60),
                 observedFreshDeterminationSeconds: 35,
                 completedMoves: 0,
-                maximumFreshFeedbackMoves: 5);
+                maximumFreshFeedbackMoves: 4);
 
             action.Should().Throw<ArgumentOutOfRangeException>();
         }
