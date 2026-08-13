@@ -147,12 +147,13 @@ namespace NINA.Plugins.PolarAlignment {
             var observedCadenceSeconds = ResolveObservedCadenceSeconds(
                 observedFreshDeterminationSeconds,
                 qualifiedFreshDeterminationReserveSeconds);
-            var remainingMoveSlots = maximumFreshFeedbackMoves - completedMoves;
-            // Each remaining move needs its independent fresh response. A run
-            // may finish only after one final stationary confirmation, which is
-            // intentionally separate from the response used to steer a move.
-            var requiredReserveSeconds = remainingMoveSlots * UpasMoveReserveSeconds
-                + (remainingMoveSlots + 1) * observedCadenceSeconds;
+            // Admit the next bounded move on the evidence it must itself
+            // produce: a fresh response and one stationary completion check.
+            // Do not reserve hypothetical later corrections here. Each later
+            // move is independently re-admitted after its predecessor's fresh
+            // response, while the absolute move-count cap remains in force.
+            var requiredReserveSeconds = UpasMoveReserveSeconds
+                + 2 * observedCadenceSeconds;
             return Evaluate(
                 elapsed,
                 requiredReserveSeconds,

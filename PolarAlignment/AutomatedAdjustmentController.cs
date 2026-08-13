@@ -5,6 +5,12 @@ using System.Linq;
 using NINA.Core.Utility;
 
 namespace NINA.Plugins.PolarAlignment {
+    internal sealed record UpasResponseModelSnapshot(
+        double AzimuthDeltaPerXUnit,
+        double AzimuthDeltaPerYUnit,
+        double AltitudeDeltaPerXUnit,
+        double AltitudeDeltaPerYUnit);
+
     /// <summary>
     /// Learns a local linear actuator model from observed error changes and uses that model
     /// to choose bounded correction moves.
@@ -195,6 +201,26 @@ namespace NINA.Plugins.PolarAlignment {
         /// </summary>
         public bool HasResponseModel {
             get => TryBuildResponseModel(out _);
+        }
+
+        /// <summary>
+        /// Exports the response matrix only after fresh, independent X and Y probes.
+        /// Persistence of this snapshot is configuration plumbing, never motion authority.
+        /// </summary>
+        internal bool TryGetFirstRunResponseModel(out UpasResponseModelSnapshot model) {
+            model = null;
+            var hasX = samples.Any(sample => Math.Abs(sample.XMagnitude) > 1e-9
+                                              && Math.Abs(sample.YMagnitude) <= 1e-9);
+            if (!hasX || !HasObservedYResponse() || !TryBuildResponseModel(out var responseModel)) {
+                return false;
+            }
+
+            model = new UpasResponseModelSnapshot(
+                responseModel.AzimuthDeltaPerXUnit,
+                responseModel.AzimuthDeltaPerYUnit,
+                responseModel.AltitudeDeltaPerXUnit,
+                responseModel.AltitudeDeltaPerYUnit);
+            return true;
         }
 
         public bool HasRememberedXAzimuthResponse => rememberedXAzimuthDeltaPerUnit.HasValue;

@@ -131,6 +131,41 @@ namespace NINA.Plugins.PolarAlignment {
             lastContinuousEstimateStable = true;
         }
 
+        /// <summary>
+        /// Promotes the two fresh first-run identification columns into the direct
+        /// route configuration. This is deliberately one-way: existing calibrated
+        /// values are never overwritten by a bootstrap run.
+        /// </summary>
+        internal bool PersistFirstRunResponseCalibrationIfQualified() {
+            ConfigureAutomatedAdjustmentControllerForActiveSystem();
+            if (ActiveAlignmentSystemVM is not NINA.Plugins.PolarAlignment.Avalon.UniversalPolarAlignmentVM
+                || Properties.Settings.Default.AvalonCalibratedAzimuthDeltaPerXUnit != 0
+                || Properties.Settings.Default.AvalonCalibratedAzimuthDeltaPerYUnit != 0
+                || Properties.Settings.Default.AvalonCalibratedAltitudeDeltaPerXUnit != 0
+                || Properties.Settings.Default.AvalonCalibratedAltitudeDeltaPerYUnit != 0
+                || !automatedAdjustmentController.TryGetFirstRunResponseModel(out var model)) {
+                return false;
+            }
+
+            Properties.Settings.Default.AvalonCalibratedAzimuthDeltaPerXUnit = model.AzimuthDeltaPerXUnit;
+            Properties.Settings.Default.AvalonCalibratedAzimuthDeltaPerYUnit = model.AzimuthDeltaPerYUnit;
+            Properties.Settings.Default.AvalonCalibratedAltitudeDeltaPerXUnit = model.AltitudeDeltaPerXUnit;
+            Properties.Settings.Default.AvalonCalibratedAltitudeDeltaPerYUnit = model.AltitudeDeltaPerYUnit;
+            // 80 logical units is 2.00 deg X and 1.76 deg Y per bounded command.
+            // Three damped iterations remain inside the visually confirmed +/-5.4 deg envelope.
+            Properties.Settings.Default.AvalonCalibratedMaximumXUnitsPerMove = 80.0;
+            Properties.Settings.Default.AvalonCalibratedMaximumYUnitsPerMove = 80.0;
+            CoreUtil.SaveSettings(Properties.Settings.Default);
+            Logger.Info(
+                "Persisted first-run UPAS two-axis response calibration: " +
+                $"Az/X={model.AzimuthDeltaPerXUnit * 60.0:F4}'/unit, " +
+                $"Az/Y={model.AzimuthDeltaPerYUnit * 60.0:F4}'/unit, " +
+                $"Alt/X={model.AltitudeDeltaPerXUnit * 60.0:F4}'/unit, " +
+                $"Alt/Y={model.AltitudeDeltaPerYUnit * 60.0:F4}'/unit; " +
+                "max X/Y=80 units per move.");
+            return true;
+        }
+
         internal void AbortBoundedYBootstrapProbeAfterRegression() {
             if (PolarErrorDetermination == null) {
                 return;

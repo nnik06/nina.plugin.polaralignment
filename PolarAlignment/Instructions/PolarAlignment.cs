@@ -798,6 +798,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 : await PolarAlignmentActuatorConnectionGate.SuppressAsync(
                     TimeSpan.FromSeconds(15),
                     token).ConfigureAwait(false);
+            var fastRuntimeContractArmed = false;
             try {
                 if (VerificationOnly && DriftValidationOnly) {
                     throw new InvalidOperationException(PolarAlignmentExecutionPolicy.ConflictingDiagnosticModesIssue);
@@ -813,7 +814,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                 - alignmentRuntime.Elapsed.TotalSeconds));
                         fastRuntimeDeadlineCTS.CancelAfter(remaining);
                         Logger.Info(
-                            $"TPPA five-minute automated runtime contract armed: " +
+                            $"TPPA automated runtime phase armed: " +
                             $"elapsed={alignmentRuntime.Elapsed.TotalSeconds:F1}s; " +
                             $"remaining={remaining.TotalSeconds:F1}s.");
                     }
@@ -1285,6 +1286,8 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     var directFirstRunBootstrapBaselineEligible = !supervisorCampaignMode
                         && TPAPAVM.HasPendingFirstRunTwoAxisBootstrapProbe
                         && directPreMoveFreshDetermination != null;
+                    fastRuntimeContractArmed = enforceFastRuntimeBudget
+                        && !directFirstRunBootstrapBaselineEligible;
                     var directPostMoveFeedbackEligibleForReuse = false;
                     var directPostMoveFeedbackAge = new Stopwatch();
                     var directUpasMotionEpoch = 0;
@@ -1575,7 +1578,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                 }
                                 localCTS.Token.ThrowIfCancellationRequested();
                                 if (TPAPAVM.AutomatedAdjustmentRequiresFreshMeasurementFeedback
-                                        && enforceFastRuntimeBudget
+                                        && fastRuntimeContractArmed
                                         && freshFeedbackMoveCount >= freshFeedbackMoveLimit) {
                                     throw new InvalidOperationException($"UPAS five-minute automated alignment stopped after {freshFeedbackMoveLimit} fresh-measured moves without converging. No further UPAS movement was authorized.");
                                 }
@@ -1585,7 +1588,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                     throw new InvalidOperationException($"UPAS automated alignment stopped after {MaximumExtendedFreshFeedbackMoves} fresh-measured moves without converging.");
                                 }
 
-                                if (enforceFastRuntimeBudget
+                                if (fastRuntimeContractArmed
                                         && executionPolicy.AllowActuatorMovement
                                         && TPAPAVM.ActiveAlignmentSystemVM?.DoAutomatedAdjustments == true) {
                                     var firstRunBootstrapProbe = !supervisorCampaignMode
@@ -1799,7 +1802,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                         && TPAPAVM.MayRequireBoundedYBootstrapProbe
                                         ? TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMovesAfterBoundedYBootstrapProbe
                                         : freshFeedbackMoveLimit;
-                                    if (enforceFastRuntimeBudget) {
+                                    if (fastRuntimeContractArmed) {
                                         var directMoveBudget = TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
                                             alignmentRuntime.Elapsed,
                                             maximumObservedFreshDeterminationSeconds,
@@ -1884,11 +1887,13 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                         ["totalImprovementMinutes"] = responseDecision.TotalImprovementMinutes,
                                         ["requiredImprovementMinutes"] = responseDecision.RequiredImprovementMinutes
                                     });
+                                    var firstRunBootstrapProbeAwaitingFeedback =
+                                        TPAPAVM.LastAutomatedAdjustmentWasFirstRunBootstrapProbe;
                                     var responseDisposition = TppaPostMoveResponsePolicy.DispositionForMode(
                                         responseDecision,
-                                        enforceFastRuntimeBudget);
+                                        fastRuntimeContractArmed && !firstRunBootstrapProbeAwaitingFeedback);
 
-                                    if (boundedYBootstrapProbeAwaitingFeedback && enforceFastRuntimeBudget) {
+                                    if (boundedYBootstrapProbeAwaitingFeedback && fastRuntimeContractArmed) {
                                         if (responseDecision.Classification == TppaPostMoveResponseClassification.Regressed) {
                                             TPAPAVM.AbortBoundedYBootstrapProbeAfterRegression();
                                             throw new SequenceEntityFailedException(
@@ -1919,7 +1924,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                             FailureMessage: null);
                                     }
 
-                                    if (enforceFastRuntimeBudget
+                                    if (fastRuntimeContractArmed
                                             && responseDecision.CouldAuthorizeAnotherMove
                                             && freshFeedbackMoveCount >= freshFeedbackMoveLimit) {
                                         throw new SequenceEntityFailedException($"The maximum {freshFeedbackMoveLimit} bounded UPAS moves produced meaningful improvement but remained above tolerance. The run stopped on fresh evidence without authorizing another move.");
@@ -1934,6 +1939,24 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                             // baseline for the required Y identification probe.
                                             directFirstRunBootstrapBaselineEligible = true;
                                             Logger.Info("Fresh first-run probe feedback is eligible once as the next response-identification baseline.");
+                                        }
+
+                                        if (!fastRuntimeContractArmed
+                                                && enforceFastRuntimeBudget
+                                                && !TPAPAVM.HasPendingFirstRunTwoAxisBootstrapProbe
+                                                && TPAPAVM.PersistFirstRunResponseCalibrationIfQualified()) {
+                                            fastRuntimeContractArmed = true;
+                                            alignmentRuntime.Restart();
+                                            freshFeedbackMoveCount = 0;
+                                            freshFeedbackMoveLimit = TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMoves;
+                                            fastRuntimeDeadlineCTS.CancelAfter(
+                                                TimeSpan.FromSeconds(TppaFastAlignmentExecutionBudget.MaximumRuntimeSeconds));
+                                            Logger.Info(
+                                                "TPPA first-run UPAS response calibration completed. " +
+                                                "The five-minute correction runtime contract is now armed with a persisted measured two-axis response model.");
+                                            TryLogFastRunEvent("response-calibration-completed", new Dictionary<string, object> {
+                                                ["phase"] = "first-run-two-axis-bootstrap"
+                                            });
                                         }
                                     }
 
@@ -1955,7 +1978,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         }
                     } while (!localCTS.Token.IsCancellationRequested);
 
-                    if (enforceFastRuntimeBudget) {
+                    if (fastRuntimeContractArmed) {
                         EnsureFastRuntimeBudget("successful completion", 0);
                         var finalVector = qualifiedFinalVector
                             ?? throw new SequenceEntityFailedException(
@@ -1979,7 +2002,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     return;
                 }
             } catch (OperationCanceledException) {
-                if (enforceFastRuntimeBudget
+                if (fastRuntimeContractArmed
                         && !token.IsCancellationRequested
                         && fastRuntimeDeadlineCTS?.IsCancellationRequested == true) {
                     TryLogFastRunEvent("failed", new Dictionary<string, object> {

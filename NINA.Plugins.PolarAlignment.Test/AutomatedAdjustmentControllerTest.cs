@@ -1612,6 +1612,31 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public void AutomatedAdjustmentController_ExportsOnlyAQualifiedTwoAxisFirstRunResponseModel() {
+            var controller = new AutomatedAdjustmentController(useUpasEngagementController: true);
+            controller.ConfigureFirstRunTwoAxisBootstrap(true);
+            controller.SeedXSeating(1);
+            controller.UpdateObservation(1.0, 1.0);
+
+            var x = controller.CreatePlan();
+            controller.NoteSuccessfulExecution(x);
+            controller.UpdateObservation(0.8, 1.0);
+
+            controller.TryGetFirstRunResponseModel(out _).Should().BeFalse(
+                "one response column cannot identify a two-axis direct route");
+
+            var y = controller.CreatePlan();
+            controller.NoteSuccessfulExecution(y);
+            controller.UpdateObservation(0.8, 0.8);
+
+            controller.TryGetFirstRunResponseModel(out var model).Should().BeTrue();
+            model.AzimuthDeltaPerXUnit.Should().BeApproximately(-0.01, 1e-9);
+            model.AzimuthDeltaPerYUnit.Should().BeApproximately(0, 1e-9);
+            model.AltitudeDeltaPerXUnit.Should().BeApproximately(0, 1e-9);
+            model.AltitudeDeltaPerYUnit.Should().BeApproximately(-0.01, 1e-9);
+        }
+
+        [Test]
         public void AutomatedAdjustmentController_PromotesStrongIndependentBootstrapToSessionLocalCoarseCorrection() {
             var controller = CreateBootstrapController();
             controller.UpdateObservation(5, -5);
