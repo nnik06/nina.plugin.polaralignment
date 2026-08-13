@@ -11,7 +11,10 @@ namespace NINA.Plugins.PolarAlignment {
         // physical +/-5.4 degree envelope; it does not require the external
         // supervisor campaign or its provenance paperwork.
         public const double MaximumInitialErrorArcMinutes = 120.0;
-        public const double MaximumFieldInitialAxisErrorArcMinutes = 324.0;
+        // Keep a clear operational margin inside the +/-5.4 degree physical
+        // envelope. A fresh determination outside +/-5 degrees is still
+        // reported, but it cannot authorize an automatic UPAS correction.
+        public const double MaximumFieldInitialAxisErrorArcMinutes = 300.0;
         public const double MaximumFieldInitialTotalErrorArcMinutes = 458.205195;
 
         // Retained for compatibility with the supervisor campaign vocabulary.

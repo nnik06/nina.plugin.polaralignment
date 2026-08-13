@@ -60,19 +60,19 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
-        public void RouteSelectorAdmitsFullEnvelopeForQualifiedFirstRunIdentification() {
+        public void RouteSelectorRejectsAxisAboveFiveDegreesEvenForQualifiedFirstRunIdentification() {
             var decision = AutomatedAdjustmentInputPolicy.EvaluateForRoute(
                 324.0, -324.0, 458.205195, supervisorCoarseRoute: false,
                 qualifiedDirectFullTravelRoute: false, qualifiedFirstRunBootstrapRoute: true);
 
-            decision.IsEligible.Should().BeTrue();
-            decision.Reason.Should().Contain("first-run full-travel");
+            decision.IsEligible.Should().BeFalse();
+            decision.Reason.Should().Contain("300'");
         }
 
         [Test]
         public void RouteSelectorAdmitsWideAzimuthButKeepsUncalibratedAltitudeClamped() {
             var eligible = AutomatedAdjustmentInputPolicy.EvaluateForRoute(
-                300.0, 120.0, 323.11, supervisorCoarseRoute: false,
+                300.0, 120.0, 323.0, supervisorCoarseRoute: false,
                 qualifiedDirectFullTravelRoute: false, qualifiedDirectAzimuthRoute: true);
             var rejectedAltitude = AutomatedAdjustmentInputPolicy.EvaluateForRoute(
                 300.0, 120.1, 323.15, supervisorCoarseRoute: false,
@@ -101,21 +101,21 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
-        public void SupervisorCoarseRouteAcceptsFullFieldEnvelope() {
+        public void SupervisorCoarseRouteAcceptsFiveDegreeAxisBoundary() {
             var decision = AutomatedAdjustmentInputPolicy.EvaluateSupervisorCoarse(
-                324.0, -324.0, 458.205195);
+                300.0, -300.0, 424.264);
 
             decision.IsEligible.Should().BeTrue();
             decision.Reason.Should().Contain("supervisor coarse-correction");
         }
 
         [Test]
-        public void SupervisorCoarseRouteRejectsAxisAboveFivePointFourDegrees() {
+        public void SupervisorCoarseRouteRejectsAxisAboveFiveDegrees() {
             var decision = AutomatedAdjustmentInputPolicy.EvaluateSupervisorCoarse(
-                -324.1, 0.0, 324.1);
+                -300.1, 0.0, 300.1);
 
             decision.IsEligible.Should().BeFalse();
-            decision.Reason.Should().Contain("324'");
+            decision.Reason.Should().Contain("300'");
         }
 
         [TestCase(double.NaN, 0.0, 1.0)]

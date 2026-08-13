@@ -55,7 +55,10 @@ namespace NINA.Plugins.PolarAlignment {
             MoveAndFreshFeedbackReserveSeconds + FreshDeterminationReserveSeconds;
         public const double ContinuousSolveReserveSeconds = 20;
         public const double UnconditionalQualifiedSettleSeconds = 30;
-        public const double MaximumFastExposureSeconds = 3;
+        // Field plate solving on the balcony can require five seconds under
+        // bright urban sky. Keep the fast-path bound finite while accepting
+        // the proven operational exposure.
+        public const double MaximumFastExposureSeconds = 5;
 
         public static TppaFastAlignmentConfigurationDecision EvaluateConfiguration(
                 double resolvedSettleSeconds,

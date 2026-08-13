@@ -286,7 +286,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
 
         [Test]
         public void AcceptsQualifiedFiveMinuteConfiguration() {
-            var result = TppaFastAlignmentExecutionBudget.EvaluateConfiguration(30, 3, false);
+            var result = TppaFastAlignmentExecutionBudget.EvaluateConfiguration(30, 5, false);
 
             result.IsEligible.Should().BeTrue(result.Reason);
         }
@@ -304,7 +304,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [TestCase(0)]
-        [TestCase(3.001)]
+        [TestCase(5.001)]
         [TestCase(double.PositiveInfinity)]
         public void RejectsUnqualifiedExposureForFiveMinuteMode(double exposureSeconds) {
             var result = TppaFastAlignmentExecutionBudget.EvaluateConfiguration(
