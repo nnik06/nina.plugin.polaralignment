@@ -221,6 +221,18 @@ namespace NINA.Plugins.PolarAlignment {
         /// </summary>
         public bool HasQualifiedSessionLocalYBootstrapResponse => HasQualifiedBootstrapYResponse();
 
+        /// <summary>
+        /// True while a qualified first-run route still needs an X or Y response
+        /// identification probe. These probes establish the session-local model;
+        /// they are not corrective moves.
+        /// </summary>
+        public bool HasPendingFirstRunTwoAxisBootstrapProbe =>
+            firstRunTwoAxisBootstrapEnabled
+            && currentObservation != null
+            && (!samples.Any(sample => Math.Abs(sample.XMagnitude) > 1e-9
+                                        && Math.Abs(sample.YMagnitude) <= 1e-9)
+                || !HasObservedYResponse());
+
         public void ConfigureFirstRunTwoAxisBootstrap(bool enabled) {
             firstRunTwoAxisBootstrapEnabled = enabled;
         }
@@ -827,7 +839,8 @@ namespace NINA.Plugins.PolarAlignment {
                     direction * TppaFirstRunBootstrapRouteQualification.IdentificationProbeUnits,
                     0,
                     true,
-                    "First-run bounded X response identification");
+                    "First-run bounded X response identification",
+                    isFirstRunBootstrapProbe: true);
                 return true;
             }
             if (!hasY) {
@@ -835,7 +848,8 @@ namespace NINA.Plugins.PolarAlignment {
                     0,
                     TppaFirstRunBootstrapRouteQualification.IdentificationProbeUnits,
                     true,
-                    "First-run bounded Y response identification");
+                    "First-run bounded Y response identification",
+                    isFirstRunBootstrapProbe: true);
                 return true;
             }
 
@@ -2428,6 +2442,7 @@ namespace NINA.Plugins.PolarAlignment {
                                        bool isProbe,
                                        string reason,
                                        bool isBoundedYBootstrapProbe = false,
+                                       bool isFirstRunBootstrapProbe = false,
                                        bool isClampLimitedTravelRecovery = false,
                                        double expectedAzimuthDeltaDegrees = 0,
                                        double expectedAltitudeDeltaDegrees = 0) {
@@ -2436,6 +2451,7 @@ namespace NINA.Plugins.PolarAlignment {
             IsProbe = isProbe;
             Reason = reason;
             IsBoundedYBootstrapProbe = isBoundedYBootstrapProbe;
+            IsFirstRunBootstrapProbe = isFirstRunBootstrapProbe;
             IsClampLimitedTravelRecovery = isClampLimitedTravelRecovery;
             ExpectedAzimuthDeltaDegrees = expectedAzimuthDeltaDegrees;
             ExpectedAltitudeDeltaDegrees = expectedAltitudeDeltaDegrees;
@@ -2445,6 +2461,7 @@ namespace NINA.Plugins.PolarAlignment {
         public double YMagnitude { get; }
         public bool IsProbe { get; }
         public bool IsBoundedYBootstrapProbe { get; }
+        public bool IsFirstRunBootstrapProbe { get; }
         public bool IsClampLimitedTravelRecovery { get; }
         public double ExpectedAzimuthDeltaDegrees { get; }
         public double ExpectedAltitudeDeltaDegrees { get; }

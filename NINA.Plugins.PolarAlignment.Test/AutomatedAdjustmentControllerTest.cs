@@ -1591,12 +1591,14 @@ namespace NINA.Plugins.PolarAlignment.Test {
             controller.SeedXSeating(1);
             controller.ConfigureFirstRunTwoAxisBootstrap(true);
             controller.UpdateObservation(1.0, 1.0);
+            controller.HasPendingFirstRunTwoAxisBootstrapProbe.Should().BeTrue();
 
             var x = controller.CreatePlan();
             x.XMagnitude.Should().Be(TppaFirstRunBootstrapRouteQualification.IdentificationProbeUnits);
             x.YMagnitude.Should().Be(0);
             controller.NoteSuccessfulExecution(x);
             controller.UpdateObservation(0.8, 1.0);
+            controller.HasPendingFirstRunTwoAxisBootstrapProbe.Should().BeTrue();
 
             var y = controller.CreatePlan();
             y.XMagnitude.Should().Be(0);
@@ -1604,6 +1606,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
             controller.NoteSuccessfulExecution(y);
             controller.UpdateObservation(0.8, 0.8);
 
+            controller.HasPendingFirstRunTwoAxisBootstrapProbe.Should().BeFalse();
             controller.HasResponseModel.Should().BeTrue();
             controller.CreatePlan().Reason.Should().NotContain("First-run bounded");
         }

@@ -86,7 +86,14 @@ namespace NINA.Plugins.PolarAlignment {
                 return automatedAdjustmentController.HasQualifiedSessionLocalYBootstrapResponse;
             }
         }
+        internal bool HasPendingFirstRunTwoAxisBootstrapProbe {
+            get {
+                ConfigureAutomatedAdjustmentControllerForActiveSystem();
+                return automatedAdjustmentController.HasPendingFirstRunTwoAxisBootstrapProbe;
+            }
+        }
         internal bool LastAutomatedAdjustmentWasBoundedYBootstrapProbe { get; private set; }
+        internal bool LastAutomatedAdjustmentWasFirstRunBootstrapProbe { get; private set; }
 
         internal void SetDirectFullTravelTarget(double targetMinutes) {
             var tier = TppaOperationalAlignmentTierPolicy.Evaluate(targetMinutes);
@@ -508,6 +515,7 @@ namespace NINA.Plugins.PolarAlignment {
 
         public async Task<bool> MoveCloser(IProgress<ApplicationStatus> progress, CancellationToken token) {
             LastAutomatedAdjustmentWasBoundedYBootstrapProbe = false;
+            LastAutomatedAdjustmentWasFirstRunBootstrapProbe = false;
             var activeSystem = ActiveAlignmentSystemVM;
             if (activeSystem == null || !activeSystem.DoAutomatedAdjustments) {
                 LastAutomatedAdjustmentDecisionReason = "Automated adjustments are disabled or no alignment system is active.";
@@ -604,8 +612,10 @@ namespace NINA.Plugins.PolarAlignment {
                 executedY,
                 plan.IsProbe,
                 plan.Reason,
-                plan.IsBoundedYBootstrapProbe));
+                plan.IsBoundedYBootstrapProbe,
+                plan.IsFirstRunBootstrapProbe));
             LastAutomatedAdjustmentWasBoundedYBootstrapProbe = plan.IsBoundedYBootstrapProbe;
+            LastAutomatedAdjustmentWasFirstRunBootstrapProbe = plan.IsFirstRunBootstrapProbe;
             await CoreUtil.Wait(TimeSpan.FromSeconds(activeSystem.AutomatedAdjustmentSettleTime), token, progress, "Settling");
             LastAutomatedAdjustmentDecisionReason = $"Executed {plan.Reason}: X {Math.Round(executedX, 2)}, Y {Math.Round(executedY, 2)}.";
             return true;

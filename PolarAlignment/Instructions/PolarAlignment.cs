@@ -1279,6 +1279,12 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     PolarErrorDetermination directPreMoveFreshDetermination = supervisorCampaignMode
                         ? null
                         : determination;
+                    // The initial determination was freshly solved, geometry-qualified, and
+                    // rebased immediately above. A first-run response probe may consume it
+                    // once as a baseline; it is never reused for a corrective move.
+                    var directFirstRunBootstrapBaselineEligible = !supervisorCampaignMode
+                        && TPAPAVM.HasPendingFirstRunTwoAxisBootstrapProbe
+                        && directPreMoveFreshDetermination != null;
                     var directPostMoveFeedbackEligibleForReuse = false;
                     var directPostMoveFeedbackAge = new Stopwatch();
                     var directUpasMotionEpoch = 0;
@@ -1294,6 +1300,14 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         directPostMoveFeedbackAge.Reset();
                         Logger.Info($"Discarding direct post-move feedback reuse eligibility: {reason}");
                     }
+                    void InvalidateDirectFirstRunBootstrapBaseline(string reason) {
+                        if (!directFirstRunBootstrapBaselineEligible) {
+                            return;
+                        }
+
+                        directFirstRunBootstrapBaselineEligible = false;
+                        Logger.Info($"Discarding first-run bootstrap baseline reuse eligibility: {reason}");
+                    }
                     var freshFeedbackMoveCount = 0;
                     var freshFeedbackMoveLimit = TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMoves;
                     var maximumObservedFreshDeterminationSeconds = alignmentRuntime.Elapsed.TotalSeconds;
@@ -1302,6 +1316,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     do {
                         if (await WaitIfPaused(localCTS.Token, progress)) {
                             InvalidateDirectPostMoveFeedback("the sequence was paused");
+                            InvalidateDirectFirstRunBootstrapBaseline("the sequence was paused");
                         }
 
                         if (TPAPAVM.AutomatedAdjustmentRequiresFreshMeasurementFeedback
@@ -1573,6 +1588,9 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                 if (enforceFastRuntimeBudget
                                         && executionPolicy.AllowActuatorMovement
                                         && TPAPAVM.ActiveAlignmentSystemVM?.DoAutomatedAdjustments == true) {
+                                    var firstRunBootstrapProbe = !supervisorCampaignMode
+                                        && directFirstRunBootstrapBaselineEligible
+                                        && TPAPAVM.HasPendingFirstRunTwoAxisBootstrapProbe;
                                     var directFeedbackCanSeedAgreement = !supervisorCampaignMode
                                         && directPostMoveFeedbackEligibleForReuse
                                         && directPostMoveFeedbackMotionEpoch == directUpasMotionEpoch
@@ -1585,6 +1603,13 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                             freshFeedbackMoveCount,
                                             qualifiedFreshDeterminationReserveSeconds,
                                             maximumFreshFeedbackMoves: freshFeedbackMoveLimit)
+                                        : firstRunBootstrapProbe
+                                            ? TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
+                                                alignmentRuntime.Elapsed,
+                                                maximumObservedFreshDeterminationSeconds,
+                                                freshFeedbackMoveCount,
+                                                qualifiedFreshDeterminationReserveSeconds,
+                                                maximumFreshFeedbackMoves: freshFeedbackMoveLimit)
                                         : directFeedbackCanSeedAgreement
                                             ? TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
                                                 alignmentRuntime.Elapsed,
@@ -1680,12 +1705,19 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                         localCTS.Token);
                                     activeObservedDeterminations.Clear();
                                 } else {
+                                    var firstRunBootstrapProbe = directFirstRunBootstrapBaselineEligible
+                                        && TPAPAVM.HasPendingFirstRunTwoAxisBootstrapProbe;
                                     var directFeedbackCanSeedAgreement = directPostMoveFeedbackEligibleForReuse
                                         && directPostMoveFeedbackMotionEpoch == directUpasMotionEpoch
                                         && directPostMoveFeedbackAge.Elapsed.TotalSeconds
                                             <= TppaFastAlignmentExecutionBudget.DirectFeedbackReuseMaximumAgeSeconds;
                                     PolarErrorDetermination firstDirectDetermination;
-                                    if (directFeedbackCanSeedAgreement) {
+                                    if (firstRunBootstrapProbe) {
+                                        firstDirectDetermination = directPreMoveFreshDetermination
+                                            ?? throw new InvalidOperationException(
+                                                "First-run UPAS bootstrap lost its fresh baseline before identification.");
+                                        Logger.Info("Using the one-shot, geometry-qualified fresh baseline for first-run UPAS response identification.");
+                                    } else if (directFeedbackCanSeedAgreement) {
                                         firstDirectDetermination = directPreMoveFreshDetermination;
                                         Logger.Info("Reusing the accepted, settled post-move fresh determination as the first member of the next direct movement agreement pair.");
                                     } else if (directPostMoveFeedbackEligibleForReuse) {
@@ -1709,43 +1741,52 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                         firstDirectDetermination = directPreMoveFreshDetermination
                                             ?? TPAPAVM.PolarErrorDetermination;
                                     }
-                                    Logger.Info("Acquiring an independent fresh TPPA determination before direct field movement authority.");
-                                    var directFreshStopwatch = Stopwatch.StartNew();
-                                    var secondDirectDetermination = await MeasureFreshThreePointForActiveCampaign(
-                                        TPAPAVM,
-                                        automatedVerificationStartPointing,
-                                        automatedVerificationEastDirection,
-                                        progress,
-                                        localCTS.Token);
-                                    directFreshStopwatch.Stop();
-                                    maximumObservedFreshDeterminationSeconds = Math.Max(
-                                        maximumObservedFreshDeterminationSeconds,
-                                        directFreshStopwatch.Elapsed.TotalSeconds);
-                                    var directAgreement = FreshPolarAlignmentAgreementPolicy.EvaluateForCoarseAcquisition(
-                                        firstDirectDetermination.InitialMountAxisAzimuthError.ArcMinutes,
-                                        firstDirectDetermination.InitialMountAxisAltitudeError.ArcMinutes,
-                                        firstDirectDetermination.InitialMountAxisTotalError.ArcMinutes,
-                                        secondDirectDetermination.InitialMountAxisAzimuthError.ArcMinutes,
-                                        secondDirectDetermination.InitialMountAxisAltitudeError.ArcMinutes,
-                                        secondDirectDetermination.InitialMountAxisTotalError.ArcMinutes,
-                                        AlignmentTolerance);
-                                    Logger.Info(
-                                        "TPPA direct pre-move agreement: " +
-                                        $"first=(Az {firstDirectDetermination.InitialMountAxisAzimuthError.ArcMinutes:F3}', " +
-                                        $"Alt {firstDirectDetermination.InitialMountAxisAltitudeError.ArcMinutes:F3}', " +
-                                        $"Tot {firstDirectDetermination.InitialMountAxisTotalError.ArcMinutes:F3}'); " +
-                                        $"second=(Az {secondDirectDetermination.InitialMountAxisAzimuthError.ArcMinutes:F3}', " +
-                                        $"Alt {secondDirectDetermination.InitialMountAxisAltitudeError.ArcMinutes:F3}', " +
-                                        $"Tot {secondDirectDetermination.InitialMountAxisTotalError.ArcMinutes:F3}'); " +
-                                        $"delta=(Az {directAgreement.AzimuthDeltaMinutes:F3}', " +
-                                        $"Alt {directAgreement.AltitudeDeltaMinutes:F3}', " +
-                                        $"vector {directAgreement.VectorDeltaMinutes:F3}' / threshold {directAgreement.ThresholdMinutes:F3}'); " +
-                                        $"repeatable={directAgreement.IsRepeatable}; reason={directAgreement.Reason}.");
-                                    if (!directAgreement.IsRepeatable) {
-                                        throw new SequenceEntityFailedException(
-                                            "Two independent fresh TPPA determinations do not agree; no direct UPAS movement was authorized. " +
-                                            $"Vector delta {directAgreement.VectorDeltaMinutes:F3}' exceeds threshold " +
-                                            $"{directAgreement.ThresholdMinutes:F3}' ({directAgreement.Reason}).");
+                                    PolarErrorDetermination secondDirectDetermination;
+                                    if (firstRunBootstrapProbe) {
+                                        // This is a bounded identification probe, not a correction.
+                                        // Its independent post-move determination is mandatory before
+                                        // another action, including the next identification probe.
+                                        secondDirectDetermination = firstDirectDetermination;
+                                        Logger.Info("Consuming the first-run baseline for one bounded UPAS response-identification probe.");
+                                    } else {
+                                        Logger.Info("Acquiring an independent fresh TPPA determination before direct field movement authority.");
+                                        var directFreshStopwatch = Stopwatch.StartNew();
+                                        secondDirectDetermination = await MeasureFreshThreePointForActiveCampaign(
+                                            TPAPAVM,
+                                            automatedVerificationStartPointing,
+                                            automatedVerificationEastDirection,
+                                            progress,
+                                            localCTS.Token);
+                                        directFreshStopwatch.Stop();
+                                        maximumObservedFreshDeterminationSeconds = Math.Max(
+                                            maximumObservedFreshDeterminationSeconds,
+                                            directFreshStopwatch.Elapsed.TotalSeconds);
+                                        var directAgreement = FreshPolarAlignmentAgreementPolicy.EvaluateForCoarseAcquisition(
+                                            firstDirectDetermination.InitialMountAxisAzimuthError.ArcMinutes,
+                                            firstDirectDetermination.InitialMountAxisAltitudeError.ArcMinutes,
+                                            firstDirectDetermination.InitialMountAxisTotalError.ArcMinutes,
+                                            secondDirectDetermination.InitialMountAxisAzimuthError.ArcMinutes,
+                                            secondDirectDetermination.InitialMountAxisAltitudeError.ArcMinutes,
+                                            secondDirectDetermination.InitialMountAxisTotalError.ArcMinutes,
+                                            AlignmentTolerance);
+                                        Logger.Info(
+                                            "TPPA direct pre-move agreement: " +
+                                            $"first=(Az {firstDirectDetermination.InitialMountAxisAzimuthError.ArcMinutes:F3}', " +
+                                            $"Alt {firstDirectDetermination.InitialMountAxisAltitudeError.ArcMinutes:F3}', " +
+                                            $"Tot {firstDirectDetermination.InitialMountAxisTotalError.ArcMinutes:F3}'); " +
+                                            $"second=(Az {secondDirectDetermination.InitialMountAxisAzimuthError.ArcMinutes:F3}', " +
+                                            $"Alt {secondDirectDetermination.InitialMountAxisAltitudeError.ArcMinutes:F3}', " +
+                                            $"Tot {secondDirectDetermination.InitialMountAxisTotalError.ArcMinutes:F3}'); " +
+                                            $"delta=(Az {directAgreement.AzimuthDeltaMinutes:F3}', " +
+                                            $"Alt {directAgreement.AltitudeDeltaMinutes:F3}', " +
+                                            $"vector {directAgreement.VectorDeltaMinutes:F3}' / threshold {directAgreement.ThresholdMinutes:F3}'); " +
+                                            $"repeatable={directAgreement.IsRepeatable}; reason={directAgreement.Reason}.");
+                                        if (!directAgreement.IsRepeatable) {
+                                            throw new SequenceEntityFailedException(
+                                                "Two independent fresh TPPA determinations do not agree; no direct UPAS movement was authorized. " +
+                                                $"Vector delta {directAgreement.VectorDeltaMinutes:F3}' exceeds threshold " +
+                                                $"{directAgreement.ThresholdMinutes:F3}' ({directAgreement.Reason}).");
+                                        }
                                     }
                                     TPAPAVM.PolarErrorDetermination = secondDirectDetermination;
                                     BindFreshGeometryQualification(
@@ -1775,6 +1816,8 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                         secondDirectDetermination.InitialMountAxisAzimuthError.ArcMinutes,
                                         secondDirectDetermination.InitialMountAxisAltitudeError.ArcMinutes,
                                         secondDirectDetermination.InitialMountAxisTotalError.ArcMinutes);
+                                    InvalidateDirectFirstRunBootstrapBaseline(
+                                        "a first-run UPAS response-identification probe is about to execute");
                                     InvalidateDirectPostMoveFeedback("a new direct UPAS move is about to execute");
                                     moved = executionPolicy.AllowActuatorMovement
                                         && await TppaFastActuatorAdmissionGate.ExecuteIfAuthorizedAsync(
@@ -1884,6 +1927,14 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
 
                                     if (responseDisposition.UpdateController) {
                                         TPAPAVM.UpdateAutomatedAdjustmentFromFreshDetermination();
+                                        if (!supervisorCampaignMode
+                                                && TPAPAVM.HasPendingFirstRunTwoAxisBootstrapProbe
+                                                && directPreMoveFreshDetermination != null) {
+                                            // The accepted X-probe feedback becomes the one-shot
+                                            // baseline for the required Y identification probe.
+                                            directFirstRunBootstrapBaselineEligible = true;
+                                            Logger.Info("Fresh first-run probe feedback is eligible once as the next response-identification baseline.");
+                                        }
                                     }
 
                                     if (responseDisposition.ContinueToStationaryConfirmation) {
