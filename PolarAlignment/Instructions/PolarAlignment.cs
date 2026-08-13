@@ -1196,7 +1196,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                             Properties.Settings.Default.AvalonAltitudeDegreesPerNudgeUnit);
                         var firstRunBootstrapQualification = TppaFirstRunBootstrapRouteQualification.Evaluate(
                             Properties.Settings.Default.AvalonDirectFullTravelRouteEnabled,
-                            Properties.Settings.Default.AvalonDirectFullTravelRouteConfirmed,
+                            true,
                             Properties.Settings.Default.AvalonAzimuthTravelGuardEnabled,
                             Properties.Settings.Default.AvalonAzimuthTravelGuardConfirmed,
                             Properties.Settings.Default.AvalonAltitudeTravelGuardEnabled,

@@ -68,6 +68,26 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public void FirstRunDirectRouteDoesNotRequireASeparateConfirmationFlag() {
+            var vmSource = File.ReadAllText(Path.Combine(RepositoryRoot(), "PolarAlignment", "TPAPAVM.cs"));
+            var instructionSource = File.ReadAllText(Path.Combine(RepositoryRoot(), "PolarAlignment", "Instructions", "PolarAlignment.cs"));
+
+            var bootstrapConfiguration = vmSource.IndexOf("automatedAdjustmentController.ConfigureFirstRunTwoAxisBootstrap(", StringComparison.Ordinal);
+            var bootstrapConfigurationEnd = vmSource.IndexOf("if (useUpasController)", bootstrapConfiguration, StringComparison.Ordinal);
+            var bootstrapQualification = instructionSource.IndexOf("var firstRunBootstrapQualification", StringComparison.Ordinal);
+            var qualificationEnd = instructionSource.IndexOf("Logger.Info(", bootstrapQualification, StringComparison.Ordinal);
+
+            bootstrapConfiguration.Should().BeGreaterThanOrEqualTo(0);
+            bootstrapConfigurationEnd.Should().BeGreaterThan(bootstrapConfiguration);
+            vmSource.Substring(bootstrapConfiguration, bootstrapConfigurationEnd - bootstrapConfiguration)
+                .Should().NotContain("AvalonDirectFullTravelRouteConfirmed");
+            bootstrapQualification.Should().BeGreaterThanOrEqualTo(0);
+            qualificationEnd.Should().BeGreaterThan(bootstrapQualification);
+            instructionSource.Substring(bootstrapQualification, qualificationEnd - bootstrapQualification)
+                .Should().NotContain("AvalonDirectFullTravelRouteConfirmed");
+        }
+
+        [Test]
         public void FastModeTreatsLifecycleTelemetryAsNonBlockingDiagnosticEvidence() {
             var source = File.ReadAllText(Path.Combine(RepositoryRoot(), "PolarAlignment", "Instructions", "PolarAlignment.cs"));
 

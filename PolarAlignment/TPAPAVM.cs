@@ -467,7 +467,6 @@ namespace NINA.Plugins.PolarAlignment {
             automatedAdjustmentController.ConfigureFirstRunTwoAxisBootstrap(
                 useUpasController
                 && Properties.Settings.Default.AvalonDirectFullTravelRouteEnabled
-                && Properties.Settings.Default.AvalonDirectFullTravelRouteConfirmed
                 && Properties.Settings.Default.AvalonAzimuthTravelGuardEnabled
                 && Properties.Settings.Default.AvalonAzimuthTravelGuardConfirmed
                 && Properties.Settings.Default.AvalonAltitudeTravelGuardEnabled
