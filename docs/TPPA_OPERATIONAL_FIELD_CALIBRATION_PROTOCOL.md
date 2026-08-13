@@ -84,5 +84,16 @@ to guess the Y gain or widen the input cap.
    below `0.79 arcsec/min`, or with round stars across the sensor in a real
    900-second guided narrowband sub.
 
+## Reliability Claim
+
+Do not call the path reliable from a single good run. Record exactly five
+initiated field attempts under this protocol. Four must satisfy the complete
+fresh-confirmed imaging-tier result within 300 seconds. Every failure must have
+passed all motion safety gates and either left no displacement or produced a
+documented no-worse restoration. Finally, one independent outcome must pass:
+unguided DEC drift at or below `0.79 arcsec/min`, or a real guided 900-second
+sub with round stars across the sensor. `TppaOperationalReliabilityCampaign`
+is a report-only evaluator for this claim; it never authorizes a move.
+
 The completed dataset and these outcome measurements, not a green synthetic
 test, establish field readiness.
