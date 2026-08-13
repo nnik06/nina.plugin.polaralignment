@@ -5,13 +5,13 @@ using Newtonsoft.Json.Linq;
 namespace NINA.Plugins.PolarAlignment.Test {
     public class PolarAlignmentInstructionPersistenceTest {
         [Test]
-        public void VerificationOnlyDefaultsToFalse() {
+        public void OperationalModesDefaultToExpectedValues() {
             var instruction = CreateInstruction();
 
             instruction.VerificationOnly.Should().BeFalse();
             instruction.OverdeterminedShadowModelCheck.Should().BeFalse();
             instruction.DriftValidationOnly.Should().BeFalse();
-            instruction.EnforceFiveMinuteRuntimeBudget.Should().BeFalse();
+            instruction.EnforceFiveMinuteRuntimeBudget.Should().BeTrue();
         }
 
         [Test]
@@ -30,6 +30,15 @@ namespace NINA.Plugins.PolarAlignment.Test {
             clone.AlignmentTolerance.Should().Be(3.5);
             clone.VerificationPointSettleTimeSeconds.Should().Be(10.0);
             clone.EnforceFiveMinuteRuntimeBudget.Should().BeFalse();
+        }
+
+        [Test]
+        public void MissingFastBudgetJsonRetainsNewInstructionDefault() {
+            var instruction = CreateInstruction();
+
+            JsonConvert.PopulateObject("{}", instruction);
+
+            instruction.EnforceFiveMinuteRuntimeBudget.Should().BeTrue();
         }
 
         [Test]
