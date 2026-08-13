@@ -69,7 +69,10 @@ never treat a missing log record as authority to bypass a physical motion guard.
 ## Performance Run
 
 Run only after the calibration values are present and a new baseline pair
-agrees. The normal objective is <=120 arcminutes initial TPPA error, <=3
-arcminutes on two independent fresh determinations within 300 seconds. A move
+agrees. The imaging-critical objective is <=3 arcminutes on two independent
+fresh determinations within 300 seconds. The ordinary uncalibrated direct
+route remains limited to <=120 arcminutes; the attended first-run or measured
+2x2 direct route is the path that may admit the physical +/-5.4 degree vector
+and must reduce it to <=24 arcminutes without touching tripod bolts. A move
 whose post-move response regresses, disagrees, or exhausts runtime stops the
 run; it does not authorize another correction.

@@ -56,6 +56,31 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public void FourthFastMoveRequiresCompletedFirstRunIdentificationAndConsumableDynamicAuthority() {
+            var source = File.ReadAllText(Path.Combine(RepositoryRoot(), "PolarAlignment", "Instructions", "PolarAlignment.cs"));
+            var identificationComplete = source.IndexOf(
+                "var directFirstRunIdentificationCompleted = false;", StringComparison.Ordinal);
+            var identificationEvidence = source.IndexOf(
+                "TPPA first-run X/Y response identification completed on fresh evidence.", StringComparison.Ordinal);
+            var grant = source.IndexOf(
+                "TPPA dynamic authority token granted after qualified X/Y response identification", StringComparison.Ordinal);
+            var consume = source.IndexOf(
+                "Consumed the single-use direct dynamic correction authority.", StringComparison.Ordinal);
+            var directBudget = source.IndexOf(
+                "EvaluateBeforeDynamicAuthorityMove(", StringComparison.Ordinal);
+
+            identificationComplete.Should().BeGreaterThanOrEqualTo(0);
+            identificationEvidence.Should().BeGreaterThan(identificationComplete);
+            grant.Should().BeGreaterThan(identificationEvidence);
+            consume.Should().BeGreaterThanOrEqualTo(0);
+            directBudget.Should().BeGreaterThanOrEqualTo(0);
+            source.Should().Contain("&& directFirstRunIdentificationCompleted");
+            source.Should().Contain("directDynamicAuthorityGranted = false;");
+            source.Should().Contain("directFreshMeasurementSequence");
+            source.Should().Contain("directDynamicAuthorityFeedbackMoveCount");
+        }
+
+        [Test]
         public void FastModeTreatsLifecycleTelemetryAsNonBlockingDiagnosticEvidence() {
             var source = File.ReadAllText(Path.Combine(RepositoryRoot(), "PolarAlignment", "Instructions", "PolarAlignment.cs"));
 
