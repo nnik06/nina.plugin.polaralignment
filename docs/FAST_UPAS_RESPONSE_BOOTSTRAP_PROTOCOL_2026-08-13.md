@@ -81,3 +81,29 @@ provide either performance claim merely because it was allowed to identify its
 X and Y columns. A move whose post-move response regresses, disagrees, or
 exhausts runtime stops the active run; it does not authorize another
 correction.
+
+## Regression And Retreat Rule
+
+The shipped fast route does not automatically reverse a regressing UPAS
+command. A controller-command inverse is not a physical inverse across
+backlash, stiction, or an unobserved reversal clearance. The current response
+is therefore to revoke motion authority for the active run and preserve the
+evidence for attended recovery.
+
+Any future one-shot automatic retreat is a separate, default-off capability.
+It may be enabled only after the current session has established all of the
+following for the single axis used by the failed command:
+
+1. accepted signed response samples in both directions;
+2. a measured and bounded reversal-clearance distance for the proposed retreat
+   direction;
+3. two fresh determinations confirming that the command, rather than one bad
+   solve, materially regressed the residual;
+4. no intervening actuator command, remaining signed physical headroom, and an
+   unused one-retreat token.
+
+The plan must retain the existing travel, settling, cancellation, fresh-solve,
+and runtime guards. A two-axis, bootstrap, calibrated-full-travel,
+clamp-limited, or retreat regression remains terminal. A post-retreat fresh
+determination is mandatory. Until field calibration proves these conditions,
+do not substitute a blind opposite command for attended recovery.
