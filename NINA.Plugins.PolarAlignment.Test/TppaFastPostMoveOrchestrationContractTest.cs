@@ -56,28 +56,15 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
-        public void FourthFastMoveRequiresCompletedFirstRunIdentificationAndConsumableDynamicAuthority() {
+        public void FirstRunBootstrapRemainsWithinTheThreeMoveFastContract() {
             var source = File.ReadAllText(Path.Combine(RepositoryRoot(), "PolarAlignment", "Instructions", "PolarAlignment.cs"));
-            var identificationComplete = source.IndexOf(
-                "var directFirstRunIdentificationCompleted = false;", StringComparison.Ordinal);
-            var identificationEvidence = source.IndexOf(
-                "TPPA first-run X/Y response identification completed on fresh evidence.", StringComparison.Ordinal);
-            var grant = source.IndexOf(
-                "TPPA dynamic authority token granted after qualified X/Y response identification", StringComparison.Ordinal);
-            var consume = source.IndexOf(
-                "Consumed the single-use direct dynamic correction authority.", StringComparison.Ordinal);
-            var directBudget = source.IndexOf(
-                "EvaluateBeforeDynamicAuthorityMove(", StringComparison.Ordinal);
-
-            identificationComplete.Should().BeGreaterThanOrEqualTo(0);
-            identificationEvidence.Should().BeGreaterThan(identificationComplete);
-            grant.Should().BeGreaterThan(identificationEvidence);
-            consume.Should().BeGreaterThanOrEqualTo(0);
-            directBudget.Should().BeGreaterThanOrEqualTo(0);
-            source.Should().Contain("&& directFirstRunIdentificationCompleted");
-            source.Should().Contain("directDynamicAuthorityGranted = false;");
-            source.Should().Contain("directFreshMeasurementSequence");
-            source.Should().Contain("directDynamicAuthorityFeedbackMoveCount");
+            source.Should().Contain("var freshFeedbackMoveLimit = TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMoves;");
+            source.Should().Contain("MaximumFreshFeedbackMovesAfterBoundedYBootstrapProbe");
+            source.Should().Contain("The bounded Y bootstrap probe did not produce a qualified independent fresh response.");
+            source.Should().Contain("independent fresh completion confirmation");
+            source.Should().NotContain("EvaluateBeforeDynamicAuthorityMove(");
+            source.Should().NotContain("directDynamicAuthorityGranted");
+            source.Should().NotContain("directDynamicAuthorityFeedbackMoveCount");
         }
 
         [Test]

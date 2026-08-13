@@ -60,6 +60,10 @@ the route without declaring alignment.
 - Each fresh TPPA result, response sample, model condition, and guard decision.
 - The final two stationary TPPA determinations and the elapsed runtime.
 
-The first-run route is a field calibration path. It is not an authority to
-claim sub-arcminute absolute accuracy; it is intended to reach the operational
-imaging target only when the final independent TPPA verification agrees.
+The first-run route is a field calibration path. It may make the one bounded
+calculated correction in this protocol when the evidence permits, but it is not
+evidence that the full UPAS envelope can meet the five-minute imaging contract.
+Promote the rig to that performance route only after recording a qualified
+measured 2x2 response and completing that route's own independent fresh
+verification. It is never an authority to claim sub-arcminute absolute
+accuracy.
