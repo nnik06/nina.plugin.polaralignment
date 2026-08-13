@@ -75,6 +75,47 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public void Evaluate_RequiresASeparateFineRunAfterWorstCaseBulkAcquisition() {
+            var bulk = TppaDirectFullTravelFeasibilityPolicy.Evaluate(
+                300, -300,
+                0.05, 0,
+                0, 0.05,
+                81, 81,
+                initialAgreementSeconds: 80,
+                perMoveFreshFeedbackSeconds: 40,
+                terminalConfirmationSeconds: 40,
+                perMoveOverheadSeconds: 15,
+                terminalErrorMinutes: TppaOperationalAlignmentTierPolicy.TripodFreeCoarseMaximumTotalMinutes);
+            var fine = TppaDirectFullTravelFeasibilityPolicy.Evaluate(
+                13, -13,
+                0.05, 0,
+                0, 0.05,
+                81, 81,
+                initialAgreementSeconds: 80,
+                perMoveFreshFeedbackSeconds: 40,
+                terminalConfirmationSeconds: 40,
+                perMoveOverheadSeconds: 15,
+                terminalErrorMinutes: TppaOperationalAlignmentTierPolicy.ImagingReadyMaximumTotalMinutes);
+            var singlePassFine = TppaDirectFullTravelFeasibilityPolicy.Evaluate(
+                300, -300,
+                0.05, 0,
+                0, 0.05,
+                81, 81,
+                initialAgreementSeconds: 80,
+                perMoveFreshFeedbackSeconds: 40,
+                terminalConfirmationSeconds: 40,
+                perMoveOverheadSeconds: 15,
+                terminalErrorMinutes: TppaOperationalAlignmentTierPolicy.ImagingReadyMaximumTotalMinutes);
+
+            bulk.IsFeasible.Should().BeTrue();
+            bulk.RequiredMoveCount.Should().Be(3);
+            fine.IsFeasible.Should().BeTrue();
+            fine.RequiredMoveCount.Should().BeLessOrEqualTo(2);
+            singlePassFine.IsFeasible.Should().BeFalse();
+            singlePassFine.Reason.Should().Contain("requires 4 fresh-feedback moves");
+        }
+
+        [Test]
         public void Evaluate_RejectsRouteThatFitsMoveCountButExceedsRuntime() {
             var result = TppaDirectFullTravelFeasibilityPolicy.Evaluate(
                 3, 3, 1, 0, 0, 1, 100, 100,
