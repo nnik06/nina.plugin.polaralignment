@@ -28,9 +28,12 @@ as a physical position after reset.
 
 1. Pre-seat AZ by at least 24 units in the configured direction.
 2. Take a fresh three-point TPPA determination.
-3. Move X by 20 units in the same seated direction, settle, and take a fresh
-   determination. The resulting X-only response must pass the response gates.
-4. Move Y by 20 units, settle, and take a fresh determination. The resulting
+3. Consume that initial, geometry-qualified determination once as the baseline
+   for an X move of 20 units in the same seated direction. Settle and take a
+   fresh determination. The resulting X-only response must pass the response
+   gates; it cannot authorize a correction.
+4. Consume the accepted X-response determination once as the baseline for a Y
+   move of 20 units. Settle and take a fresh determination. The resulting
    Y-only response must pass the response and conditioning gates.
 5. Only after both independent response columns qualify may the controller
    calculate a damped correction. Every proposed move remains subject to the
@@ -39,6 +42,16 @@ as a physical position after reset.
 6. Complete with independent fresh stationary verification. A failed response,
    invalid model, unsafe envelope, worsening move, or missing verification
    revokes motion authority for the run.
+
+## Runtime Contract
+
+The direct-field reservation is 40 seconds for a fresh three-point
+determination and 15 seconds for a bounded UPAS action. The nominal first-run
+path therefore reserves five fresh determinations and three actions: initial,
+X feedback, Y feedback, correction feedback, and stationary confirmation.
+That is 245 seconds before observed-cadence slack. A pause, slow solve, failed
+response gate, or unsafe command is not waived to meet five minutes; it stops
+the route without declaring alignment.
 
 ## Field Evidence To Record
 
