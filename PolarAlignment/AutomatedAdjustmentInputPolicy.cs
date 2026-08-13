@@ -38,9 +38,17 @@ namespace NINA.Plugins.PolarAlignment {
             bool supervisorCoarseRoute,
             bool qualifiedDirectFullTravelRoute,
             bool qualifiedDirectAzimuthRoute = false,
-            bool qualifiedDirectBootstrapRoute = false) {
+            bool qualifiedDirectBootstrapRoute = false,
+            bool qualifiedFirstRunBootstrapRoute = false) {
             if (qualifiedDirectFullTravelRoute) {
                 return EvaluateCalibratedDirectFullTravel(
+                    azimuthErrorArcMinutes,
+                    altitudeErrorArcMinutes,
+                    totalErrorArcMinutes);
+            }
+
+            if (qualifiedFirstRunBootstrapRoute) {
+                return EvaluateFirstRunFullTravel(
                     azimuthErrorArcMinutes,
                     altitudeErrorArcMinutes,
                     totalErrorArcMinutes);
@@ -108,6 +116,19 @@ namespace NINA.Plugins.PolarAlignment {
                 MaximumFieldInitialAxisErrorArcMinutes,
                 MaximumFieldInitialTotalErrorArcMinutes,
                 "calibrated direct full-travel");
+        }
+
+        private static AutomatedAdjustmentInputDecision EvaluateFirstRunFullTravel(
+            double azimuthErrorArcMinutes,
+            double altitudeErrorArcMinutes,
+            double totalErrorArcMinutes) {
+            return EvaluateWithLimit(
+                azimuthErrorArcMinutes,
+                altitudeErrorArcMinutes,
+                totalErrorArcMinutes,
+                MaximumFieldInitialAxisErrorArcMinutes,
+                MaximumFieldInitialTotalErrorArcMinutes,
+                "attended first-run full-travel identification");
         }
 
         private static AutomatedAdjustmentInputDecision EvaluateMixedDirectEnvelope(

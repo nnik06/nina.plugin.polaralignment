@@ -60,6 +60,16 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public void RouteSelectorAdmitsFullEnvelopeForQualifiedFirstRunIdentification() {
+            var decision = AutomatedAdjustmentInputPolicy.EvaluateForRoute(
+                324.0, -324.0, 458.205195, supervisorCoarseRoute: false,
+                qualifiedDirectFullTravelRoute: false, qualifiedFirstRunBootstrapRoute: true);
+
+            decision.IsEligible.Should().BeTrue();
+            decision.Reason.Should().Contain("first-run full-travel");
+        }
+
+        [Test]
         public void RouteSelectorAdmitsWideAzimuthButKeepsUncalibratedAltitudeClamped() {
             var eligible = AutomatedAdjustmentInputPolicy.EvaluateForRoute(
                 300.0, 120.0, 323.11, supervisorCoarseRoute: false,

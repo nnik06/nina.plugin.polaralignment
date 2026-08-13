@@ -1239,7 +1239,8 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                             supervisorCoarseRoute: supervisorCampaignMode,
                             qualifiedDirectFullTravelRoute: directFullTravelQualification.IsQualified,
                             qualifiedDirectAzimuthRoute: directAzimuthQualification.IsQualified,
-                            qualifiedDirectBootstrapRoute: directBootstrapQualification.IsQualified);
+                            qualifiedDirectBootstrapRoute: directBootstrapQualification.IsQualified,
+                            qualifiedFirstRunBootstrapRoute: firstRunBootstrapQualification.IsQualified);
                         Logger.Info(
                             $"TPPA automated-adjustment input qualification: " +
                             $"{(inputDecision.IsEligible ? "PASS" : "FAIL")}; {inputDecision.Reason}.");
