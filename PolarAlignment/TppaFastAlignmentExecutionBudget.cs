@@ -22,6 +22,10 @@ namespace NINA.Plugins.PolarAlignment {
         // three bounded moves, their independent responses, and a final
         // stationary confirmation inside the five-minute contract.
         public const int MaximumFreshFeedbackMoves = 3;
+        // A qualified first-run X/Y identification pair may earn exactly one
+        // additional correction through the consumable dynamic authority token.
+        // It is never the default allowance for a direct route.
+        public const int MaximumFreshFeedbackMovesWithDynamicAuthority = 4;
         public const int MaximumFreshFeedbackMovesAfterBoundedYBootstrapProbe =
             MaximumFreshFeedbackMoves;
 
@@ -154,6 +158,40 @@ namespace NINA.Plugins.PolarAlignment {
                 elapsed,
                 requiredReserveSeconds,
                 maximumRuntimeSeconds);
+        }
+
+        /// <summary>
+        /// Reserves a fourth move only while the direct route is actively
+        /// consuming a separately validated dynamic-authority token. Keeping
+        /// this out of the generic overload prevents other routes from opting
+        /// into a fourth move merely by changing an allowance value.
+        /// </summary>
+        public static TppaFastAlignmentBudgetDecision EvaluateBeforeDynamicAuthorityMove(
+                TimeSpan elapsed,
+                double observedFreshDeterminationSeconds,
+                int completedMoves,
+                double qualifiedFreshDeterminationReserveSeconds = FreshDeterminationReserveSeconds,
+                double maximumRuntimeSeconds = MaximumRuntimeSeconds) {
+            if (completedMoves < 2
+                    || completedMoves >= MaximumFreshFeedbackMovesWithDynamicAuthority) {
+                throw new ArgumentOutOfRangeException(nameof(completedMoves));
+            }
+            if (!double.IsFinite(observedFreshDeterminationSeconds)
+                    || observedFreshDeterminationSeconds <= 0) {
+                throw new ArgumentOutOfRangeException(nameof(observedFreshDeterminationSeconds));
+            }
+            if (!double.IsFinite(qualifiedFreshDeterminationReserveSeconds)
+                    || qualifiedFreshDeterminationReserveSeconds <= 0
+                    || qualifiedFreshDeterminationReserveSeconds > FreshDeterminationReserveSeconds) {
+                throw new ArgumentOutOfRangeException(nameof(qualifiedFreshDeterminationReserveSeconds));
+            }
+            var observedCadenceSeconds = ResolveObservedCadenceSeconds(
+                observedFreshDeterminationSeconds,
+                qualifiedFreshDeterminationReserveSeconds);
+            var remainingMoveSlots = MaximumFreshFeedbackMovesWithDynamicAuthority - completedMoves;
+            var requiredReserveSeconds = remainingMoveSlots * UpasMoveReserveSeconds
+                + (remainingMoveSlots + 1) * observedCadenceSeconds;
+            return Evaluate(elapsed, requiredReserveSeconds, maximumRuntimeSeconds);
         }
 
         public static TppaFastAlignmentBudgetDecision EvaluateBeforeFreshAgreement(

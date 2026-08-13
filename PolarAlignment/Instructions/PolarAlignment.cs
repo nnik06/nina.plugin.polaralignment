@@ -1289,6 +1289,12 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     var directPostMoveFeedbackAge = new Stopwatch();
                     var directUpasMotionEpoch = 0;
                     var directPostMoveFeedbackMotionEpoch = -1;
+                    var directFreshMeasurementSequence = 1;
+                    var directDynamicAuthorityGranted = false;
+                    var directDynamicAuthorityMotionEpoch = -1;
+                    var directDynamicAuthorityFreshMeasurementSequence = -1;
+                    var directDynamicAuthorityFeedbackMoveCount = -1;
+                    var directFirstRunIdentificationCompleted = false;
                     void InvalidateDirectPostMoveFeedback(string reason) {
                         if (!directPostMoveFeedbackEligibleForReuse) {
                             return;
@@ -1298,6 +1304,10 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         directPreMoveFreshDetermination = null;
                         directPostMoveFeedbackMotionEpoch = -1;
                         directPostMoveFeedbackAge.Reset();
+                        directDynamicAuthorityGranted = false;
+                        directDynamicAuthorityMotionEpoch = -1;
+                        directDynamicAuthorityFreshMeasurementSequence = -1;
+                        directDynamicAuthorityFeedbackMoveCount = -1;
                         Logger.Info($"Discarding direct post-move feedback reuse eligibility: {reason}");
                     }
                     void InvalidateDirectFirstRunBootstrapBaseline(string reason) {
@@ -1596,6 +1606,22 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                         && directPostMoveFeedbackMotionEpoch == directUpasMotionEpoch
                                         && directPostMoveFeedbackAge.Elapsed.TotalSeconds
                                             <= TppaFastAlignmentExecutionBudget.DirectFeedbackReuseMaximumAgeSeconds;
+                                    var directDynamicAuthority = !supervisorCampaignMode
+                                        && !TPAPAVM.HasPendingFirstRunTwoAxisBootstrapProbe
+                                        ? TppaDirectDynamicCorrectionAuthority.Evaluate(
+                                            directDynamicAuthorityGranted,
+                                            directPreMoveFreshDetermination != null,
+                                            directUpasMotionEpoch,
+                                            directDynamicAuthorityMotionEpoch,
+                                            directFreshMeasurementSequence,
+                                            directDynamicAuthorityFreshMeasurementSequence,
+                                            freshFeedbackMoveCount,
+                                            directDynamicAuthorityFeedbackMoveCount,
+                                            directPostMoveFeedbackAge.Elapsed.TotalSeconds,
+                                            TppaFastAlignmentExecutionBudget.DirectFeedbackReuseMaximumAgeSeconds)
+                                        : new TppaDirectDynamicCorrectionAuthorityDecision(
+                                            false,
+                                            "first-run X/Y identification is incomplete");
                                     var moveDecision = supervisorCampaignMode
                                         ? TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
                                             alignmentRuntime.Elapsed,
@@ -1610,6 +1636,12 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                                 freshFeedbackMoveCount,
                                                 qualifiedFreshDeterminationReserveSeconds,
                                                 maximumFreshFeedbackMoves: freshFeedbackMoveLimit)
+                                        : directDynamicAuthority.CanAuthorize
+                                            ? TppaFastAlignmentExecutionBudget.EvaluateBeforeDynamicAuthorityMove(
+                                                alignmentRuntime.Elapsed,
+                                                maximumObservedFreshDeterminationSeconds,
+                                                freshFeedbackMoveCount,
+                                                qualifiedFreshDeterminationReserveSeconds)
                                         : directFeedbackCanSeedAgreement
                                             ? TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
                                                 alignmentRuntime.Elapsed,
@@ -1711,12 +1743,30 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                         && directPostMoveFeedbackMotionEpoch == directUpasMotionEpoch
                                         && directPostMoveFeedbackAge.Elapsed.TotalSeconds
                                             <= TppaFastAlignmentExecutionBudget.DirectFeedbackReuseMaximumAgeSeconds;
+                                    var directDynamicAuthority = !TPAPAVM.HasPendingFirstRunTwoAxisBootstrapProbe
+                                        ? TppaDirectDynamicCorrectionAuthority.Evaluate(
+                                            directDynamicAuthorityGranted,
+                                            directPreMoveFreshDetermination != null,
+                                            directUpasMotionEpoch,
+                                            directDynamicAuthorityMotionEpoch,
+                                            directFreshMeasurementSequence,
+                                            directDynamicAuthorityFreshMeasurementSequence,
+                                            freshFeedbackMoveCount,
+                                            directDynamicAuthorityFeedbackMoveCount,
+                                            directPostMoveFeedbackAge.Elapsed.TotalSeconds,
+                                            TppaFastAlignmentExecutionBudget.DirectFeedbackReuseMaximumAgeSeconds)
+                                        : new TppaDirectDynamicCorrectionAuthorityDecision(
+                                            false,
+                                            "first-run X/Y identification is incomplete");
                                     PolarErrorDetermination firstDirectDetermination;
                                     if (firstRunBootstrapProbe) {
                                         firstDirectDetermination = directPreMoveFreshDetermination
                                             ?? throw new InvalidOperationException(
                                                 "First-run UPAS bootstrap lost its fresh baseline before identification.");
                                         Logger.Info("Using the one-shot, geometry-qualified fresh baseline for first-run UPAS response identification.");
+                                    } else if (directDynamicAuthority.CanAuthorize) {
+                                        firstDirectDetermination = directPreMoveFreshDetermination;
+                                        Logger.Info("Consuming the accepted post-move response as one-shot direct authority for the immediately next bounded correction.");
                                     } else if (directFeedbackCanSeedAgreement) {
                                         firstDirectDetermination = directPreMoveFreshDetermination;
                                         Logger.Info("Reusing the accepted, settled post-move fresh determination as the first member of the next direct movement agreement pair.");
@@ -1742,12 +1792,18 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                             ?? TPAPAVM.PolarErrorDetermination;
                                     }
                                     PolarErrorDetermination secondDirectDetermination;
-                                    if (firstRunBootstrapProbe) {
-                                        // This is a bounded identification probe, not a correction.
-                                        // Its independent post-move determination is mandatory before
-                                        // another action, including the next identification probe.
+                                    var consumingDirectDynamicAuthority = directDynamicAuthority.CanAuthorize;
+                                    if (firstRunBootstrapProbe || directDynamicAuthority.CanAuthorize) {
+                                        // Both paths still require an independent fresh post-move
+                                        // determination before another action. Dynamic authority is
+                                        // consumed now and cannot survive this action.
                                         secondDirectDetermination = firstDirectDetermination;
-                                        Logger.Info("Consuming the first-run baseline for one bounded UPAS response-identification probe.");
+                                        if (directDynamicAuthority.CanAuthorize) {
+                                            directDynamicAuthorityGranted = false;
+                                            Logger.Info("Consumed the single-use direct dynamic correction authority.");
+                                        } else {
+                                            Logger.Info("Consuming the first-run baseline for one bounded UPAS response-identification probe.");
+                                        }
                                     } else {
                                         Logger.Info("Acquiring an independent fresh TPPA determination before direct field movement authority.");
                                         var directFreshStopwatch = Stopwatch.StartNew();
@@ -1758,6 +1814,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                             progress,
                                             localCTS.Token);
                                         directFreshStopwatch.Stop();
+                                        directFreshMeasurementSequence++;
                                         maximumObservedFreshDeterminationSeconds = Math.Max(
                                             maximumObservedFreshDeterminationSeconds,
                                             directFreshStopwatch.Elapsed.TotalSeconds);
@@ -1800,12 +1857,18 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                         ? TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMovesAfterBoundedYBootstrapProbe
                                         : freshFeedbackMoveLimit;
                                     if (enforceFastRuntimeBudget) {
-                                        var directMoveBudget = TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
-                                            alignmentRuntime.Elapsed,
-                                            maximumObservedFreshDeterminationSeconds,
-                                            freshFeedbackMoveCount,
-                                            qualifiedFreshDeterminationReserveSeconds,
-                                            maximumFreshFeedbackMoves: prospectiveMoveLimit);
+                                        var directMoveBudget = consumingDirectDynamicAuthority
+                                            ? TppaFastAlignmentExecutionBudget.EvaluateBeforeDynamicAuthorityMove(
+                                                alignmentRuntime.Elapsed,
+                                                maximumObservedFreshDeterminationSeconds,
+                                                freshFeedbackMoveCount,
+                                                qualifiedFreshDeterminationReserveSeconds)
+                                            : TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
+                                                alignmentRuntime.Elapsed,
+                                                maximumObservedFreshDeterminationSeconds,
+                                                freshFeedbackMoveCount,
+                                                qualifiedFreshDeterminationReserveSeconds,
+                                                maximumFreshFeedbackMoves: prospectiveMoveLimit);
                                         if (!directMoveBudget.CanStart) {
                                             throw new SequenceEntityFailedException(
                                                 "The two required direct fresh TPPA determinations consumed the remaining movement budget: " +
@@ -1847,6 +1910,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                                                                                                     progress,
                                                                                                                     localCTS.Token);
                                     freshDeterminationStopwatch.Stop();
+                                    directFreshMeasurementSequence++;
                                     maximumObservedFreshDeterminationSeconds = Math.Max(
                                         maximumObservedFreshDeterminationSeconds,
                                         freshDeterminationStopwatch.Elapsed.TotalSeconds);
@@ -1928,6 +1992,12 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                     if (responseDisposition.UpdateController) {
                                         TPAPAVM.UpdateAutomatedAdjustmentFromFreshDetermination();
                                         if (!supervisorCampaignMode
+                                                && TPAPAVM.LastAutomatedAdjustmentWasFirstRunBootstrapProbe
+                                                && !TPAPAVM.HasPendingFirstRunTwoAxisBootstrapProbe) {
+                                            directFirstRunIdentificationCompleted = true;
+                                            Logger.Info("TPPA first-run X/Y response identification completed on fresh evidence.");
+                                        }
+                                        if (!supervisorCampaignMode
                                                 && TPAPAVM.HasPendingFirstRunTwoAxisBootstrapProbe
                                                 && directPreMoveFreshDetermination != null) {
                                             // The accepted X-probe feedback becomes the one-shot
@@ -1935,6 +2005,23 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                             directFirstRunBootstrapBaselineEligible = true;
                                             Logger.Info("Fresh first-run probe feedback is eligible once as the next response-identification baseline.");
                                         }
+                                    }
+
+                                    if (enforceFastRuntimeBudget
+                                            && !supervisorCampaignMode
+                                            && directFirstRunIdentificationCompleted
+                                            && !TPAPAVM.HasPendingFirstRunTwoAxisBootstrapProbe
+                                            && responseDecision.CouldAuthorizeAnotherMove
+                                            && responseDisposition.FailureMessage == null
+                                            && freshFeedbackMoveCount >= 2
+                                            && freshFeedbackMoveCount
+                                                < TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMovesWithDynamicAuthority) {
+                                        directDynamicAuthorityGranted = true;
+                                        directDynamicAuthorityMotionEpoch = directUpasMotionEpoch;
+                                        directDynamicAuthorityFreshMeasurementSequence = directFreshMeasurementSequence;
+                                        directDynamicAuthorityFeedbackMoveCount = freshFeedbackMoveCount;
+                                        freshFeedbackMoveLimit = TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMovesWithDynamicAuthority;
+                                        Logger.Info("TPPA dynamic authority token granted after qualified X/Y response identification; one immediately-next bounded correction may reuse this fresh response.");
                                     }
 
                                     if (responseDisposition.ContinueToStationaryConfirmation) {
