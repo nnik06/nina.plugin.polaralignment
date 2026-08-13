@@ -15,6 +15,9 @@ That admission is enforced by commit `e13e2e5`.
 1. NINA has loaded the hash-verified plugin and the mount, camera, and UPAS
    bridge are healthy. Weather, Safety Monitor, and flat panel remain
    disconnected.
+   Launch NINA from the logged-in interactive desktop (for example, the Mele
+   NoMachine session). A `Start-Process` sent through SSH does not establish a
+   usable WPF desktop session and is not a field-start recovery path.
 2. Confirm the signed physical AZ and ALT marker positions and usable headroom
    from current P20 evidence. Never use GRBL MPos as physical position after a
    reset.
@@ -23,6 +26,15 @@ That admission is enforced by commit `e13e2e5`.
    do not qualify a response route.
 4. Use fixed refraction settings, a qualified three-point arc, and two agreeing
    fresh baseline determinations.
+
+## Evidence To Preserve
+
+Every accepted response sample now logs `TPPA_UPAS_FRESH_RESPONSE_SAMPLE` with
+the command, observed axis deltas, fitted local 2x2 response when qualified,
+probe-rejection counts, and the next bounded probe size. A sub-floor probe also
+logs `TPPA_UPAS_PROBE_REJECTED`. These records are report-only: use them to
+populate or review the calibrated response fields after an attended block, but
+never treat a missing log record as authority to bypass a physical motion guard.
 
 ## Attended X Measurement
 
