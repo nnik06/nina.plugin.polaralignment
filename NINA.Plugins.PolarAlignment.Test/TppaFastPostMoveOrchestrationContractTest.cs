@@ -121,6 +121,17 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 "a verified X move followed by a denied Y move is an incomplete diagonal, not a successful correction");
         }
 
+        [Test]
+        public void ResponseLearningExportsModelAndProbeFloorEvidenceWithoutAddingMotionAuthority() {
+            var source = File.ReadAllText(Path.Combine(RepositoryRoot(), "PolarAlignment", "AutomatedAdjustmentController.cs"));
+
+            source.Should().Contain("TPPA_UPAS_FRESH_RESPONSE_SAMPLE");
+            source.Should().Contain("modelQualified=true");
+            source.Should().Contain("rejectedXProbes=");
+            source.Should().Contain("TPPA_UPAS_PROBE_REJECTED");
+            source.Should().Contain("This is report-only field evidence. It deliberately has no authority over motion.");
+        }
+
         private static string RepositoryRoot() {
             var directory = new DirectoryInfo(AppContext.BaseDirectory);
             while (directory != null && !Directory.Exists(Path.Combine(directory.FullName, "PolarAlignment"))) {

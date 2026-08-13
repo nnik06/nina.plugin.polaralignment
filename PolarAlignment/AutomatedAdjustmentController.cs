@@ -1108,7 +1108,25 @@ namespace NINA.Plugins.PolarAlignment {
             return $"TPPA_UPAS_FRESH_RESPONSE_SAMPLE axis={axis}, X={FormatTelemetry(sample.XMagnitude)}, Y={FormatTelemetry(sample.YMagnitude)}, "
                    + $"deltaAz={FormatTelemetry(sample.AzimuthDeltaDegrees * 60.0)}', deltaAlt={FormatTelemetry(sample.AltitudeDeltaDegrees * 60.0)}', "
                    + $"xAzPerUnit={FormatResponse(xAzimuthPerUnit)}, xAltPerUnit={FormatResponse(xAltitudePerUnit)}, "
-                   + $"yAzPerUnit={FormatResponse(yAzimuthPerUnit)}, yAltPerUnit={FormatResponse(yAltitudePerUnit)}, samples={samples.Count}";
+                   + $"yAzPerUnit={FormatResponse(yAzimuthPerUnit)}, yAltPerUnit={FormatResponse(yAltitudePerUnit)}, samples={samples.Count}, "
+                   + BuildResponseModelTelemetry();
+        }
+
+        // This is report-only field evidence. It deliberately has no authority over motion.
+        private string BuildResponseModelTelemetry() {
+            var nextXProbeUnits = GetProbeMagnitude(true);
+            var nextYProbeUnits = GetProbeMagnitude(false);
+            if (!TryBuildResponseModel(out var responseModel)) {
+                return $"modelQualified=false, rejectedXProbes={rejectedXProbeCount}, rejectedYProbes={rejectedYProbeCount}, "
+                       + $"nextXProbeUnits={FormatTelemetry(nextXProbeUnits)}, nextYProbeUnits={FormatTelemetry(nextYProbeUnits)}";
+            }
+
+            return $"modelQualified=true, modelAzPerX={FormatResponse(responseModel.AzimuthDeltaPerXUnit * 60.0)}, "
+                   + $"modelAzPerY={FormatResponse(responseModel.AzimuthDeltaPerYUnit * 60.0)}, "
+                   + $"modelAltPerX={FormatResponse(responseModel.AltitudeDeltaPerXUnit * 60.0)}, "
+                   + $"modelAltPerY={FormatResponse(responseModel.AltitudeDeltaPerYUnit * 60.0)}, "
+                   + $"rejectedXProbes={rejectedXProbeCount}, rejectedYProbes={rejectedYProbeCount}, "
+                   + $"nextXProbeUnits={FormatTelemetry(nextXProbeUnits)}, nextYProbeUnits={FormatTelemetry(nextYProbeUnits)}";
         }
 
         private static string FormatResponse(double value) {
@@ -1187,12 +1205,20 @@ namespace NINA.Plugins.PolarAlignment {
             if (Math.Abs(plan.XMagnitude) > 0) {
                 rejectedXProbeCount = Math.Min(MaxRejectedProbeAttempts, rejectedXProbeCount + 1);
                 Logger.Warning($"Automated X probe response was below the measurement floor. Rejected attempts: {rejectedXProbeCount}/{MaxRejectedProbeAttempts}.");
+                Logger.Info(BuildRejectedProbeTelemetry("X", plan.XMagnitude, rejectedXProbeCount, GetProbeMagnitude(true)));
             }
 
             if (Math.Abs(plan.YMagnitude) > 0) {
                 rejectedYProbeCount = Math.Min(MaxRejectedProbeAttempts, rejectedYProbeCount + 1);
                 Logger.Warning($"Automated Y probe response was below the measurement floor. Rejected attempts: {rejectedYProbeCount}/{MaxRejectedProbeAttempts}.");
+                Logger.Info(BuildRejectedProbeTelemetry("Y", plan.YMagnitude, rejectedYProbeCount, GetProbeMagnitude(false)));
             }
+        }
+
+        private static string BuildRejectedProbeTelemetry(string axis, double attemptedUnits, int rejectedAttempts, double nextProbeUnits) {
+            return $"TPPA_UPAS_PROBE_REJECTED axis={axis}, attemptedUnits={FormatTelemetry(attemptedUnits)}, "
+                   + $"rejectedAttempts={rejectedAttempts}/{MaxRejectedProbeAttempts}, nextProbeUnits={FormatTelemetry(nextProbeUnits)}, "
+                   + $"responseFloorArcMinutes={FormatTelemetry(MinimumSampleResponseDegrees * 60.0)}";
         }
 
         private void ResetProbeRejectionCount(AutomatedAdjustmentPlan plan) {
