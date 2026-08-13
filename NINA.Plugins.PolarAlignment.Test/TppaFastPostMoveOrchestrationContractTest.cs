@@ -106,6 +106,21 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 "Angle.ByDegree(Accord.Math.Tools.Hypotenuse(altitudeError.Degree, azimuthError.Degree))");
         }
 
+        [Test]
+        public void PartialDiagonalExecutionStopsTheRunInsteadOfClaimingACompletedCorrection() {
+            var source = File.ReadAllText(Path.Combine(RepositoryRoot(), "PolarAlignment", "TPAPAVM.cs"));
+            var yDenied = source.IndexOf("Y command was denied", StringComparison.Ordinal);
+            var partialAbort = source.IndexOf("TPPA_UPAS_PARTIAL_DIAGONAL_ABORT", yDenied, StringComparison.Ordinal);
+            var failedReturn = source.IndexOf("return false;", partialAbort, StringComparison.Ordinal);
+            var nextSuccessfulReturn = source.IndexOf("return true;", partialAbort, StringComparison.Ordinal);
+
+            yDenied.Should().BeGreaterThanOrEqualTo(0);
+            partialAbort.Should().BeGreaterThan(yDenied);
+            failedReturn.Should().BeGreaterThan(partialAbort);
+            (nextSuccessfulReturn < 0 || nextSuccessfulReturn > failedReturn).Should().BeTrue(
+                "a verified X move followed by a denied Y move is an incomplete diagonal, not a successful correction");
+        }
+
         private static string RepositoryRoot() {
             var directory = new DirectoryInfo(AppContext.BaseDirectory);
             while (directory != null && !Directory.Exists(Path.Combine(directory.FullName, "PolarAlignment"))) {
