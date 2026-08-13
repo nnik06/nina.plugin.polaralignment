@@ -1201,6 +1201,19 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                             $"TPPA calibrated direct Y-bootstrap qualification: " +
                             $"{(directBootstrapQualification.IsQualified ? "PASS" : "FAIL")}; " +
                             $"{directBootstrapQualification.Reason}.");
+                        var fastRouteAdmission = TppaFastOperationalRouteAdmissionPolicy.Evaluate(
+                            enforceFastRuntimeBudget,
+                            directFullTravelQualification.IsQualified,
+                            directBootstrapQualification.IsQualified);
+                        Logger.Info(
+                            $"TPPA five-minute direct-motion admission: " +
+                            $"{(fastRouteAdmission.IsEligible ? "PASS" : "FAIL")}; " +
+                            $"{fastRouteAdmission.Reason}.");
+                        if (!fastRouteAdmission.IsEligible) {
+                            throw new SequenceEntityFailedException(
+                                $"Automated polar-alignment correction was denied because {fastRouteAdmission.Reason}. " +
+                                "Calibrate the X response and physical Y probe bound, then obtain a new qualified measurement.");
+                        }
                         var inputDecision = AutomatedAdjustmentInputPolicy.EvaluateForRoute(
                             determination.InitialMountAxisAzimuthError.ArcMinutes,
                             determination.InitialMountAxisAltitudeError.ArcMinutes,
