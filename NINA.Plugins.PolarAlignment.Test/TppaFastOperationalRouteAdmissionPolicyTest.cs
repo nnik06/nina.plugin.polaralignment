@@ -35,6 +35,18 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public void FastMotionAcceptsAttendedFirstRunIdentificationWithoutStaticResponse() {
+            var decision = TppaFastOperationalRouteAdmissionPolicy.Evaluate(
+                fastMotionRequested: true,
+                qualifiedDirectFullTravelRoute: false,
+                qualifiedDirectBootstrapRoute: false,
+                qualifiedFirstRunBootstrapRoute: true);
+
+            decision.IsEligible.Should().BeTrue();
+            decision.Reason.Should().Contain("first-run");
+        }
+
+        [Test]
         public void FastMotionRejectsAnUnmeasuredYCorrectionPath() {
             var decision = TppaFastOperationalRouteAdmissionPolicy.Evaluate(
                 fastMotionRequested: true,

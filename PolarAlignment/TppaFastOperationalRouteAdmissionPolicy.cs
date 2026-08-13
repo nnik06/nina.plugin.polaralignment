@@ -12,7 +12,8 @@ namespace NINA.Plugins.PolarAlignment {
         public static TppaFastOperationalRouteAdmissionDecision Evaluate(
                 bool fastMotionRequested,
                 bool qualifiedDirectFullTravelRoute,
-                bool qualifiedDirectBootstrapRoute) {
+                bool qualifiedDirectBootstrapRoute,
+                bool qualifiedFirstRunBootstrapRoute = false) {
             if (!fastMotionRequested) {
                 return new(true, "The five-minute direct-motion route is not active.");
             }
@@ -25,8 +26,12 @@ namespace NINA.Plugins.PolarAlignment {
                 return new(true, "The measured X response and bounded Y bootstrap are qualified.");
             }
 
+            if (qualifiedFirstRunBootstrapRoute) {
+                return new(true, "The attended first-run route may measure bounded X and Y responses before calculating a correction.");
+            }
+
             return new(false,
-                "five-minute UPAS motion requires either a measured 2x2 response or a measured X response with a physically bounded Y bootstrap; no correction was sized from an unmeasured Y axis");
+                "five-minute UPAS motion requires a measured 2x2 response, a measured X response with bounded Y bootstrap, or an attended bounded first-run X/Y identification route; no correction was sized from an unmeasured Y axis");
         }
     }
 }

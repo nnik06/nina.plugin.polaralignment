@@ -1193,6 +1193,23 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                             Properties.Settings.Default.AvalonCalibratedAltitudeDeltaPerXUnit,
                             Properties.Settings.Default.AvalonCalibratedMaximumYUnitsPerMove,
                             Properties.Settings.Default.AvalonAltitudeDegreesPerNudgeUnit);
+                        var firstRunBootstrapQualification = TppaFirstRunBootstrapRouteQualification.Evaluate(
+                            Properties.Settings.Default.AvalonDirectFullTravelRouteEnabled,
+                            Properties.Settings.Default.AvalonDirectFullTravelRouteConfirmed,
+                            Properties.Settings.Default.AvalonAzimuthTravelGuardEnabled,
+                            Properties.Settings.Default.AvalonAzimuthTravelGuardConfirmed,
+                            Properties.Settings.Default.AvalonAltitudeTravelGuardEnabled,
+                            Properties.Settings.Default.AvalonAltitudeTravelGuardConfirmed,
+                            Properties.Settings.Default.AvalonPreSeatAzimuthBeforeMeasurement,
+                            Properties.Settings.Default.AvalonAzimuthPreSeatUnits,
+                            Properties.Settings.Default.AvalonAzimuthStartingPositionDegrees,
+                            Properties.Settings.Default.AvalonAzimuthMinimumDegrees,
+                            Properties.Settings.Default.AvalonAzimuthMaximumDegrees,
+                            Properties.Settings.Default.AvalonAltitudeStartingPositionDegrees,
+                            Properties.Settings.Default.AvalonAltitudeMinimumDegrees,
+                            Properties.Settings.Default.AvalonAltitudeMaximumDegrees,
+                            Properties.Settings.Default.AvalonAzimuthDegreesPerNudgeUnit,
+                            Properties.Settings.Default.AvalonAltitudeDegreesPerNudgeUnit);
                         Logger.Info(
                             $"TPPA calibrated direct full-travel qualification: " +
                             $"{(directFullTravelQualification.IsQualified ? "PASS" : "FAIL")}; " +
@@ -1204,7 +1221,8 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         var fastRouteAdmission = TppaFastOperationalRouteAdmissionPolicy.Evaluate(
                             enforceFastRuntimeBudget,
                             directFullTravelQualification.IsQualified,
-                            directBootstrapQualification.IsQualified);
+                            directBootstrapQualification.IsQualified,
+                            firstRunBootstrapQualification.IsQualified);
                         Logger.Info(
                             $"TPPA five-minute direct-motion admission: " +
                             $"{(fastRouteAdmission.IsEligible ? "PASS" : "FAIL")}; " +

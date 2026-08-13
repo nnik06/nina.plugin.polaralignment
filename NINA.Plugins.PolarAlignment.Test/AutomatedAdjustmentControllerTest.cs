@@ -1299,6 +1299,27 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public void AutomatedAdjustmentController_BlocksXMoveBeyondConservativeAzimuthEnvelope() {
+            var controller = new AutomatedAdjustmentController(useUpasEngagementController: true);
+            controller.ConfigureAzimuthTravelGuard(true, true, 5.0, -5.4, 5.4, 0.025, 1);
+
+            controller.CanExecuteAzimuthTravel(20, out var reason).Should().BeFalse();
+
+            reason.Should().Contain("conservative physical interval");
+        }
+
+        [Test]
+        public void AutomatedAdjustmentController_TracksSignedAzimuthIntervalAfterExecutedMove() {
+            var controller = new AutomatedAdjustmentController(useUpasEngagementController: true);
+            controller.ConfigureAzimuthTravelGuard(true, true, 0, -5.4, 5.4, 0.025, 1);
+
+            controller.NoteExternalAzimuthTravel(20, "test first-run X identification");
+
+            controller.AzimuthPossibleMinimumDegrees.Should().BeApproximately(0, 0.0001);
+            controller.AzimuthPossibleMaximumDegrees.Should().BeApproximately(0.5, 0.0001);
+        }
+
+        [Test]
         public void AutomatedAdjustmentController_BlocksYMoveUntilPhysicalAltitudeMarkerIsConfirmed() {
             var controller = new AutomatedAdjustmentController(useUpasEngagementController: true);
             controller.ConfigureAltitudeTravelGuard(true, false, 0, -5, 5, 0.022, 1);
@@ -1554,6 +1575,37 @@ namespace NINA.Plugins.PolarAlignment.Test {
             yProbe.XMagnitude.Should().Be(0);
             yProbe.YMagnitude.Should().Be(TppaDirectBootstrapRouteQualification.BootstrapYProbeUnits);
             yProbe.Reason.Should().Contain("after an unresponsive azimuth probe");
+        }
+
+        [Test]
+        public void AutomatedAdjustmentController_FirstRunBootstrapMeasuresXThenYBeforeCorrection() {
+            var controller = new AutomatedAdjustmentController(useUpasEngagementController: true);
+            controller.ConfigureCalibratedDirectFullTravelRoute(
+                enabled: true, operatorConfirmed: true,
+                azimuthStartingPositionDegrees: 0, azimuthMinimumDegrees: -5.4, azimuthMaximumDegrees: 5.4,
+                altitudeStartingPositionDegrees: 0, altitudeMinimumDegrees: -5.4, altitudeMaximumDegrees: 5.4,
+                azimuthDeltaPerXUnitDegrees: 0, azimuthDeltaPerYUnitDegrees: 0,
+                altitudeDeltaPerXUnitDegrees: 0, altitudeDeltaPerYUnitDegrees: 0,
+                maximumXUnitsPerMove: 0, maximumYUnitsPerMove: 0,
+                physicalAzimuthDegreesPerXUnit: 0.025, physicalAltitudeDegreesPerYUnit: 0.022);
+            controller.SeedXSeating(1);
+            controller.ConfigureFirstRunTwoAxisBootstrap(true);
+            controller.UpdateObservation(1.0, 1.0);
+
+            var x = controller.CreatePlan();
+            x.XMagnitude.Should().Be(TppaFirstRunBootstrapRouteQualification.IdentificationProbeUnits);
+            x.YMagnitude.Should().Be(0);
+            controller.NoteSuccessfulExecution(x);
+            controller.UpdateObservation(0.8, 1.0);
+
+            var y = controller.CreatePlan();
+            y.XMagnitude.Should().Be(0);
+            y.YMagnitude.Should().Be(TppaFirstRunBootstrapRouteQualification.IdentificationProbeUnits);
+            controller.NoteSuccessfulExecution(y);
+            controller.UpdateObservation(0.8, 0.8);
+
+            controller.HasResponseModel.Should().BeTrue();
+            controller.CreatePlan().Reason.Should().NotContain("First-run bounded");
         }
 
         [Test]

@@ -134,6 +134,10 @@ namespace NINA.Plugins.PolarAlignment {
         private int? committedXDirection;
         private double committedXTravelSinceReversal;
         private double azimuthTravelUsedDegrees;
+        private bool azimuthTravelGuardInitialized;
+        private bool azimuthTravelGuardWasConfirmed;
+        private double azimuthPossibleMinimumDegrees;
+        private double azimuthPossibleMaximumDegrees;
         private bool altitudeTravelGuardInitialized;
         private bool altitudeTravelGuardWasConfirmed;
         private double altitudePossibleMinimumDegrees;
@@ -158,6 +162,7 @@ namespace NINA.Plugins.PolarAlignment {
         // without being mistaken for a second physical X movement.
         private ResponseSample calibratedDirectAzimuthResponseSeed;
         private bool sessionLocalCoarseFrozen;
+        private bool firstRunTwoAxisBootstrapEnabled;
         private bool motionAuthorityAborted;
         private string motionAuthorityAbortReason;
 
@@ -166,6 +171,12 @@ namespace NINA.Plugins.PolarAlignment {
         public double AzimuthTravelLimitDegrees { get; set; }
         public double AzimuthDegreesPerXUnit { get; set; } = 0.025;
         public double AzimuthTravelUsedDegrees => azimuthTravelUsedDegrees;
+        public double AzimuthStartingPositionDegrees { get; private set; }
+        public double AzimuthMinimumDegrees { get; private set; } = -5.0;
+        public double AzimuthMaximumDegrees { get; private set; } = 5.0;
+        public int AzimuthCommandDirectionMultiplier { get; private set; } = 1;
+        public double AzimuthPossibleMinimumDegrees => azimuthPossibleMinimumDegrees;
+        public double AzimuthPossibleMaximumDegrees => azimuthPossibleMaximumDegrees;
         public bool AltitudeTravelGuardEnabled { get; private set; }
         public bool AltitudeTravelGuardConfirmed { get; private set; }
         public double AltitudeStartingPositionDegrees { get; private set; }
@@ -209,6 +220,10 @@ namespace NINA.Plugins.PolarAlignment {
         /// large and independent second response column for a coarse two-axis correction.
         /// </summary>
         public bool HasQualifiedSessionLocalYBootstrapResponse => HasQualifiedBootstrapYResponse();
+
+        public void ConfigureFirstRunTwoAxisBootstrap(bool enabled) {
+            firstRunTwoAxisBootstrapEnabled = enabled;
+        }
 
         /// <summary>
         /// True while the most recent automated azimuth action has not produced a
@@ -274,6 +289,46 @@ namespace NINA.Plugins.PolarAlignment {
 
             azimuthDeltaPerXUnit = 0;
             return false;
+        }
+
+        public void ConfigureAzimuthTravelGuard(
+            bool enabled,
+            bool confirmed,
+            double startingPositionDegrees,
+            double minimumDegrees,
+            double maximumDegrees,
+            double degreesPerXUnit,
+            int commandDirectionMultiplier) {
+            var normalizedDirection = commandDirectionMultiplier < 0 ? -1 : 1;
+            var configurationChanged =
+                AzimuthStartingPositionDegrees != startingPositionDegrees
+                || AzimuthMinimumDegrees != minimumDegrees
+                || AzimuthMaximumDegrees != maximumDegrees
+                || AzimuthDegreesPerXUnit != degreesPerXUnit
+                || AzimuthCommandDirectionMultiplier != normalizedDirection;
+
+            AzimuthTravelGuardEnabled = enabled;
+            AzimuthTravelGuardConfirmed = confirmed;
+            AzimuthStartingPositionDegrees = startingPositionDegrees;
+            AzimuthMinimumDegrees = minimumDegrees;
+            AzimuthMaximumDegrees = maximumDegrees;
+            AzimuthDegreesPerXUnit = degreesPerXUnit;
+            AzimuthCommandDirectionMultiplier = normalizedDirection;
+
+            if (!enabled || !confirmed) {
+                azimuthTravelGuardInitialized = false;
+                azimuthTravelGuardWasConfirmed = confirmed;
+                return;
+            }
+
+            if (configurationChanged || !azimuthTravelGuardInitialized || !azimuthTravelGuardWasConfirmed) {
+                azimuthPossibleMinimumDegrees = startingPositionDegrees;
+                azimuthPossibleMaximumDegrees = startingPositionDegrees;
+                azimuthTravelGuardInitialized = true;
+                Logger.Info($"UPAS azimuth travel guard initialized from visually confirmed AZ {Math.Round(startingPositionDegrees, 3)} deg; permitted range {Math.Round(minimumDegrees, 3)}..{Math.Round(maximumDegrees, 3)} deg; scale {Math.Round(degreesPerXUnit, 6)} deg/X unit; command direction multiplier {normalizedDirection}.");
+            }
+
+            azimuthTravelGuardWasConfirmed = true;
         }
 
         public void ConfigureAltitudeTravelGuard(
@@ -428,8 +483,40 @@ namespace NINA.Plugins.PolarAlignment {
             }
 
             if (!AzimuthTravelGuardConfirmed) {
-                reason = "UPAS azimuth travel guard is enabled, but the visual marker confirmation is not checked.";
+                reason = "UPAS azimuth travel guard is enabled, but the visual marker confirmation for the physical AZ position is not checked.";
                 return false;
+            }
+
+            if (azimuthTravelGuardInitialized) {
+                if (!double.IsFinite(AzimuthMinimumDegrees)
+                    || !double.IsFinite(AzimuthMaximumDegrees)
+                    || AzimuthMinimumDegrees >= AzimuthMaximumDegrees) {
+                    reason = "UPAS azimuth travel guard has an invalid physical range.";
+                    return false;
+                }
+
+                if (!double.IsFinite(AzimuthStartingPositionDegrees)
+                    || AzimuthStartingPositionDegrees < AzimuthMinimumDegrees
+                    || AzimuthStartingPositionDegrees > AzimuthMaximumDegrees) {
+                    reason = "UPAS azimuth travel guard starting position is outside its physical range.";
+                    return false;
+                }
+
+                var signedDegreesPerUnit = Math.Abs(AzimuthDegreesPerXUnit);
+                if (!double.IsFinite(signedDegreesPerUnit) || signedDegreesPerUnit <= 0) {
+                    reason = "UPAS azimuth travel guard has an invalid degrees-per-X-unit calibration.";
+                    return false;
+                }
+
+                var physicalDelta = xMagnitude * signedDegreesPerUnit * AzimuthCommandDirectionMultiplier;
+                var predictedMinimum = azimuthPossibleMinimumDegrees + Math.Min(0, physicalDelta);
+                var predictedMaximum = azimuthPossibleMaximumDegrees + Math.Max(0, physicalDelta);
+                if (predictedMinimum < AzimuthMinimumDegrees || predictedMaximum > AzimuthMaximumDegrees) {
+                    reason = $"UPAS azimuth travel guard refused X {Math.Round(xMagnitude, 3)} because the conservative physical interval would become {Math.Round(predictedMinimum, 3)}..{Math.Round(predictedMaximum, 3)} deg outside {Math.Round(AzimuthMinimumDegrees, 3)}..{Math.Round(AzimuthMaximumDegrees, 3)} deg.";
+                    return false;
+                }
+
+                return true;
             }
 
             var limitDegrees = Math.Abs(AzimuthTravelLimitDegrees);
@@ -648,6 +735,10 @@ namespace NINA.Plugins.PolarAlignment {
                 return ApplyAzimuthTravelGuard(bootstrapPlan);
             }
 
+            if (TryCreateFirstRunTwoAxisBootstrapPlan(out var firstRunBootstrapPlan)) {
+                return ApplyAzimuthTravelGuard(firstRunBootstrapPlan);
+            }
+
             if (TryCreateSessionLocalCoarsePlan(out var sessionLocalCoarsePlan)) {
                 return ApplyAzimuthTravelGuard(sessionLocalCoarsePlan);
             }
@@ -720,6 +811,36 @@ namespace NINA.Plugins.PolarAlignment {
 
         private static double GetCalibratedAltitudeBootstrapMagnitude() {
             return TppaDirectBootstrapRouteQualification.BootstrapYProbeUnits;
+        }
+
+        private bool TryCreateFirstRunTwoAxisBootstrapPlan(out AutomatedAdjustmentPlan plan) {
+            plan = null;
+            if (!firstRunTwoAxisBootstrapEnabled || currentObservation == null) {
+                return false;
+            }
+
+            var hasX = samples.Any(sample => Math.Abs(sample.XMagnitude) > 1e-9 && Math.Abs(sample.YMagnitude) <= 1e-9);
+            var hasY = HasObservedYResponse();
+            if (!hasX) {
+                var direction = preferredXAcquisitionDirection ?? 1;
+                plan = new AutomatedAdjustmentPlan(
+                    direction * TppaFirstRunBootstrapRouteQualification.IdentificationProbeUnits,
+                    0,
+                    true,
+                    "First-run bounded X response identification");
+                return true;
+            }
+            if (!hasY) {
+                plan = new AutomatedAdjustmentPlan(
+                    0,
+                    TppaFirstRunBootstrapRouteQualification.IdentificationProbeUnits,
+                    true,
+                    "First-run bounded Y response identification");
+                return true;
+            }
+
+            firstRunTwoAxisBootstrapEnabled = false;
+            return false;
         }
 
         private bool TryCreateSessionLocalCoarsePlan(out AutomatedAdjustmentPlan plan) {
@@ -1183,6 +1304,14 @@ namespace NINA.Plugins.PolarAlignment {
 
             var used = Math.Abs(xMagnitude) * degreesPerUnit;
             azimuthTravelUsedDegrees += used;
+            if (azimuthTravelGuardInitialized) {
+                var physicalDelta = xMagnitude * degreesPerUnit * AzimuthCommandDirectionMultiplier;
+                azimuthPossibleMinimumDegrees += Math.Min(0, physicalDelta);
+                azimuthPossibleMaximumDegrees += Math.Max(0, physicalDelta);
+                Logger.Info($"UPAS azimuth travel guard recorded conservative physical delta {Math.Round(physicalDelta, 3)} deg for {context}; possible AZ interval {Math.Round(azimuthPossibleMinimumDegrees, 3)}..{Math.Round(azimuthPossibleMaximumDegrees, 3)} deg within {Math.Round(AzimuthMinimumDegrees, 3)}..{Math.Round(AzimuthMaximumDegrees, 3)} deg.");
+                return;
+            }
+
             Logger.Info($"UPAS azimuth travel guard recorded {Math.Round(used, 3)} deg for {context}; cumulative {Math.Round(azimuthTravelUsedDegrees, 3)}/{Math.Round(Math.Abs(AzimuthTravelLimitDegrees), 3)} deg.");
         }
 

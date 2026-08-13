@@ -381,10 +381,15 @@ namespace NINA.Plugins.PolarAlignment {
         private void ConfigureAutomatedAdjustmentControllerForActiveSystem() {
             var useUpasController = ActiveAlignmentSystemVM is NINA.Plugins.PolarAlignment.Avalon.UniversalPolarAlignmentVM;
             automatedAdjustmentController.UseUpasEngagementController = useUpasController;
-            automatedAdjustmentController.AzimuthTravelGuardEnabled = useUpasController && Properties.Settings.Default.AvalonAzimuthTravelGuardEnabled;
-            automatedAdjustmentController.AzimuthTravelGuardConfirmed = Properties.Settings.Default.AvalonAzimuthTravelGuardConfirmed;
+            automatedAdjustmentController.ConfigureAzimuthTravelGuard(
+                useUpasController && Properties.Settings.Default.AvalonAzimuthTravelGuardEnabled,
+                Properties.Settings.Default.AvalonAzimuthTravelGuardConfirmed,
+                Properties.Settings.Default.AvalonAzimuthStartingPositionDegrees,
+                Properties.Settings.Default.AvalonAzimuthMinimumDegrees,
+                Properties.Settings.Default.AvalonAzimuthMaximumDegrees,
+                Properties.Settings.Default.AvalonAzimuthDegreesPerNudgeUnit,
+                Properties.Settings.Default.AvalonReverseAzimuth ? -1 : 1);
             automatedAdjustmentController.AzimuthTravelLimitDegrees = Properties.Settings.Default.AvalonAzimuthTravelLimitDegrees;
-            automatedAdjustmentController.AzimuthDegreesPerXUnit = Properties.Settings.Default.AvalonAzimuthDegreesPerNudgeUnit;
 
             automatedAdjustmentController.ConfigureAltitudeTravelGuard(
                 useUpasController && Properties.Settings.Default.AvalonAltitudeTravelGuardEnabled,
@@ -417,6 +422,20 @@ namespace NINA.Plugins.PolarAlignment {
                 Properties.Settings.Default.AvalonClampLimitedRecoveryEnabled,
                 Properties.Settings.Default.AvalonCalibratedResponseRelativeUncertainty,
                 directFullTravelTargetMinutes);
+            automatedAdjustmentController.ConfigureFirstRunTwoAxisBootstrap(
+                useUpasController
+                && Properties.Settings.Default.AvalonDirectFullTravelRouteEnabled
+                && Properties.Settings.Default.AvalonDirectFullTravelRouteConfirmed
+                && Properties.Settings.Default.AvalonAzimuthTravelGuardEnabled
+                && Properties.Settings.Default.AvalonAzimuthTravelGuardConfirmed
+                && Properties.Settings.Default.AvalonAltitudeTravelGuardEnabled
+                && Properties.Settings.Default.AvalonAltitudeTravelGuardConfirmed
+                && Properties.Settings.Default.AvalonPreSeatAzimuthBeforeMeasurement
+                && Math.Abs(Properties.Settings.Default.AvalonAzimuthPreSeatUnits) >= 24.0
+                && Properties.Settings.Default.AvalonCalibratedAzimuthDeltaPerXUnit == 0
+                && Properties.Settings.Default.AvalonCalibratedAzimuthDeltaPerYUnit == 0
+                && Properties.Settings.Default.AvalonCalibratedAltitudeDeltaPerXUnit == 0
+                && Properties.Settings.Default.AvalonCalibratedAltitudeDeltaPerYUnit == 0);
 
             if (useUpasController) {
                 Logger.Info(
