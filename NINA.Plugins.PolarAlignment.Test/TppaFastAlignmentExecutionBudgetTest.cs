@@ -200,6 +200,31 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public void FirstRunIdentificationReservesOnlyItsMandatoryFreshResponse() {
+            var result = TppaFastAlignmentExecutionBudget.EvaluateBeforeFirstRunIdentificationProbe(
+                TimeSpan.FromSeconds(98.5),
+                observedFreshDeterminationSeconds: 83.0,
+                qualifiedFreshDeterminationReserveSeconds:
+                    TppaFastAlignmentExecutionBudget.DirectFieldFreshDeterminationReserveSeconds);
+
+            result.CanStart.Should().BeTrue(result.Reason);
+            result.RemainingSeconds.Should().BeApproximately(201.5, 0.001);
+            result.RequiredReserveSeconds.Should().Be(103.0);
+        }
+
+        [Test]
+        public void FirstRunIdentificationStillRejectsWhenItsOwnResponseCannotFit() {
+            var result = TppaFastAlignmentExecutionBudget.EvaluateBeforeFirstRunIdentificationProbe(
+                TimeSpan.FromSeconds(198),
+                observedFreshDeterminationSeconds: 83.0,
+                qualifiedFreshDeterminationReserveSeconds:
+                    TppaFastAlignmentExecutionBudget.DirectFieldFreshDeterminationReserveSeconds);
+
+            result.CanStart.Should().BeFalse(result.Reason);
+            result.RequiredReserveSeconds.Should().Be(103.0);
+        }
+
+        [Test]
         public void FourthMoveCannotBeEvaluated() {
             var action = () => TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
                 TimeSpan.FromSeconds(150), 70, completedMoves: 3);

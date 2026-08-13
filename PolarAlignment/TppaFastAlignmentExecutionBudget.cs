@@ -159,6 +159,36 @@ namespace NINA.Plugins.PolarAlignment {
                 maximumRuntimeSeconds);
         }
 
+        /// <summary>
+        /// A first-run identification probe is calibration, not a polar-alignment
+        /// correction. It needs one bounded move and one independent fresh response;
+        /// it must not reserve hypothetical later corrections or a terminal
+        /// completion claim before a response model exists.
+        /// </summary>
+        public static TppaFastAlignmentBudgetDecision EvaluateBeforeFirstRunIdentificationProbe(
+                TimeSpan elapsed,
+                double observedFreshDeterminationSeconds,
+                double qualifiedFreshDeterminationReserveSeconds = FreshDeterminationReserveSeconds,
+                double maximumRuntimeSeconds = MaximumRuntimeSeconds) {
+            if (!double.IsFinite(observedFreshDeterminationSeconds)
+                    || observedFreshDeterminationSeconds <= 0) {
+                throw new ArgumentOutOfRangeException(nameof(observedFreshDeterminationSeconds));
+            }
+            if (!double.IsFinite(qualifiedFreshDeterminationReserveSeconds)
+                    || qualifiedFreshDeterminationReserveSeconds <= 0
+                    || qualifiedFreshDeterminationReserveSeconds > FreshDeterminationReserveSeconds) {
+                throw new ArgumentOutOfRangeException(nameof(qualifiedFreshDeterminationReserveSeconds));
+            }
+
+            var responseReserveSeconds = ResolveObservedCadenceSeconds(
+                observedFreshDeterminationSeconds,
+                qualifiedFreshDeterminationReserveSeconds);
+            return Evaluate(
+                elapsed,
+                UpasMoveReserveSeconds + responseReserveSeconds,
+                maximumRuntimeSeconds);
+        }
+
         public static TppaFastAlignmentBudgetDecision EvaluateBeforeFreshAgreement(
                 TimeSpan elapsed,
                 double observedFreshDeterminationSeconds,

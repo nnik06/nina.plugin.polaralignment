@@ -1604,12 +1604,10 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                             qualifiedFreshDeterminationReserveSeconds,
                                             maximumFreshFeedbackMoves: freshFeedbackMoveLimit)
                                         : firstRunBootstrapProbe
-                                            ? TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
+                                            ? TppaFastAlignmentExecutionBudget.EvaluateBeforeFirstRunIdentificationProbe(
                                                 alignmentRuntime.Elapsed,
                                                 maximumObservedFreshDeterminationSeconds,
-                                                freshFeedbackMoveCount,
-                                                qualifiedFreshDeterminationReserveSeconds,
-                                                maximumFreshFeedbackMoves: freshFeedbackMoveLimit)
+                                                qualifiedFreshDeterminationReserveSeconds)
                                         : directFeedbackCanSeedAgreement
                                             ? TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
                                                 alignmentRuntime.Elapsed,
@@ -1631,11 +1629,13 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                                     qualifiedFreshDeterminationReserveSeconds,
                                                     maximumFreshFeedbackMoves: freshFeedbackMoveLimit);
                                     Logger.Info(
-                                        $"TPPA_FAST_RUNTIME_BUDGET operation=bounded UPAS move {freshFeedbackMoveCount + 1}, independent fresh response, and terminal verify-only determination; " +
+                                        $"TPPA_FAST_RUNTIME_BUDGET operation={(firstRunBootstrapProbe ? "first-run UPAS identification probe and mandatory fresh response" : $"bounded UPAS move {freshFeedbackMoveCount + 1}, independent fresh response, and terminal verify-only determination")}; " +
                                         $"elapsedSeconds={moveDecision.ElapsedSeconds:F1}; remainingSeconds={moveDecision.RemainingSeconds:F1}; " +
                                         $"requiredReserveSeconds={moveDecision.RequiredReserveSeconds:F1}; allowed={moveDecision.CanStart}.");
                                     if (!moveDecision.CanStart) {
-                                        throw new SequenceEntityFailedException($"Automated polar alignment cannot complete bounded UPAS move {freshFeedbackMoveCount + 1}, its fresh response, and a terminal verify-only determination inside the five-minute runtime contract: {moveDecision.Reason}. No UPAS movement was authorized.");
+                                        throw new SequenceEntityFailedException(firstRunBootstrapProbe
+                                            ? $"First-run UPAS response identification cannot complete its bounded probe and mandatory fresh response inside the five-minute runtime contract: {moveDecision.Reason}. No UPAS movement was authorized."
+                                            : $"Automated polar alignment cannot complete bounded UPAS move {freshFeedbackMoveCount + 1}, its fresh response, and a terminal verify-only determination inside the five-minute runtime contract: {moveDecision.Reason}. No UPAS movement was authorized.");
                                     }
                                 }
                                 var preMoveFreshVector = TppaPolarErrorVector.FromMinutes(
