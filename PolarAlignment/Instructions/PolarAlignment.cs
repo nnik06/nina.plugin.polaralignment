@@ -1202,6 +1202,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                             Properties.Settings.Default.AvalonAltitudeTravelGuardConfirmed,
                             Properties.Settings.Default.AvalonPreSeatAzimuthBeforeMeasurement,
                             Properties.Settings.Default.AvalonAzimuthPreSeatUnits,
+                            Properties.Settings.Default.AvalonAzimuthPreSeatDirection,
                             Properties.Settings.Default.AvalonAzimuthStartingPositionDegrees,
                             Properties.Settings.Default.AvalonAzimuthMinimumDegrees,
                             Properties.Settings.Default.AvalonAzimuthMaximumDegrees,

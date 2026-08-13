@@ -24,7 +24,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 enabled: true, operatorConfirmed: true,
                 azimuthTravelGuardEnabled: true, azimuthTravelGuardConfirmed: true,
                 altitudeTravelGuardEnabled: true, altitudeTravelGuardConfirmed: true,
-                azimuthPreSeatEnabled: false, azimuthPreSeatUnits: 24,
+                azimuthPreSeatEnabled: false, azimuthPreSeatUnits: 24, azimuthPreSeatDirection: 1,
                 azimuthStartingPositionDegrees: 0, azimuthMinimumDegrees: -5.4, azimuthMaximumDegrees: 5.4,
                 altitudeStartingPositionDegrees: 0, altitudeMinimumDegrees: -5.4, altitudeMaximumDegrees: 5.4,
                 physicalAzimuthDegreesPerXUnit: 0.025, physicalAltitudeDegreesPerYUnit: 0.022);
@@ -41,6 +41,14 @@ namespace NINA.Plugins.PolarAlignment.Test {
             decision.Reason.Should().Contain("two-sided headroom");
         }
 
+        [Test]
+        public void DirectionalPreSeatAndProbeHeadroomIsRequired() {
+            var decision = Evaluate(azimuthStartingPositionDegrees: 4.8);
+
+            decision.IsQualified.Should().BeFalse();
+            decision.Reason.Should().Contain("pre-seat plus same-direction");
+        }
+
         private static TppaFirstRunBootstrapRouteQualification Evaluate(
                 bool altitudeTravelGuardConfirmed = true,
                 double azimuthStartingPositionDegrees = 0) =>
@@ -48,7 +56,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 enabled: true, operatorConfirmed: true,
                 azimuthTravelGuardEnabled: true, azimuthTravelGuardConfirmed: true,
                 altitudeTravelGuardEnabled: true, altitudeTravelGuardConfirmed: altitudeTravelGuardConfirmed,
-                azimuthPreSeatEnabled: true, azimuthPreSeatUnits: 24,
+                azimuthPreSeatEnabled: true, azimuthPreSeatUnits: 24, azimuthPreSeatDirection: 1,
                 azimuthStartingPositionDegrees, azimuthMinimumDegrees: -5.4, azimuthMaximumDegrees: 5.4,
                 altitudeStartingPositionDegrees: 0, altitudeMinimumDegrees: -5.4, altitudeMaximumDegrees: 5.4,
                 physicalAzimuthDegreesPerXUnit: 0.025, physicalAltitudeDegreesPerYUnit: 0.022);

@@ -18,6 +18,7 @@ namespace NINA.Plugins.PolarAlignment {
                 bool altitudeTravelGuardConfirmed,
                 bool azimuthPreSeatEnabled,
                 double azimuthPreSeatUnits,
+                int azimuthPreSeatDirection,
                 double azimuthStartingPositionDegrees,
                 double azimuthMinimumDegrees,
                 double azimuthMaximumDegrees,
@@ -49,6 +50,13 @@ namespace NINA.Plugins.PolarAlignment {
             if (!HasTwoSidedHeadroom(azimuthStartingPositionDegrees, azimuthMinimumDegrees, azimuthMaximumDegrees, xProbeDegrees)
                 || !HasTwoSidedHeadroom(altitudeStartingPositionDegrees, altitudeMinimumDegrees, altitudeMaximumDegrees, yProbeDegrees)) {
                 return Deny("the signed UPAS envelope lacks two-sided headroom for 20-unit X and Y identification moves");
+            }
+            var xPreSeatAndProbeDegrees = (Math.Abs(azimuthPreSeatUnits) + IdentificationProbeUnits)
+                * Math.Abs(physicalAzimuthDegreesPerXUnit);
+            var preSeatDirection = azimuthPreSeatDirection < 0 ? -1 : 1;
+            var xRequiredPosition = azimuthStartingPositionDegrees + preSeatDirection * xPreSeatAndProbeDegrees;
+            if (xRequiredPosition < azimuthMinimumDegrees || xRequiredPosition > azimuthMaximumDegrees) {
+                return Deny("the signed UPAS envelope lacks headroom for the configured azimuth pre-seat plus same-direction X identification move");
             }
 
             return new(true, "the attended first-run route has bounded X/Y identification headroom; no unmeasured correction is authorized");
