@@ -5,14 +5,14 @@ the 2026-08-13 packet for direct attended TPPA-to-UPAS alignment.
 
 ## Runtime
 
-- Source commit: `cf7da5e9fdf2d51626c348e276cb6e606633780d`
-- Plugin version: `2.2.6.123`
+- Source commit: `fe2127c67cd13d1dd4be94389e30b358a3466515`
+- Plugin version: `2.2.6.124`
 - Plugin SHA-256:
-  `452578FDE9B6F705E1A0D4BBA055080F4E3D411635431702E5545450EC533D02`
+  `11869303405F7B945D48661EB5F244335D6A4D29F4A0FD6125361C9D55053BAB`
 - Qualification core SHA-256:
-  `D801BF415E7E9ADFD9C4970A9EF107611DF60B3109E6581A1077330BCD49F799`
+  `EE7834FA7105A71E0AA4942AF8D669136282F15B5849D4D8D9B1F0D0C1A6A7FA`
 - Runtime manifest SHA-256:
-  `4ED08680FBD5811574FD00693A819C14FE1ADB847CC4EF84D504B82306F0ADF8`
+  `52D89E2C3071839A055A7F3EF5962D9ECD31B81F577EF185BC1931756223DA0B`
 
 ## Objective
 
@@ -54,12 +54,16 @@ requirements for this attended direct route.
    available, allow the controller's bounded X and Y identification probes.
 2. After every UPAS command, require command completion, settle, and a fresh
    three-point response before any subsequent command.
-3. Once response identification is complete, allow the measured model to
+3. Reuse an accepted, current-epoch post-move determination directly for the
+   next modeled correction. Do not add another pre-move sweep or legacy
+   continuous-frame solve; completion still receives its independent fresh
+   confirmation.
+4. Once response identification is complete, allow the measured model to
    correct either direction. Backlash/reversal handling remains active.
-4. Continue while fresh evidence supports improvement. Permit no more than
+5. Continue while fresh evidence supports improvement. Permit no more than
    twelve measured moves in the correction phase and never exceed the signed
    physical travel envelope.
-5. Finish only after two consecutive stationary fresh determinations are both
+6. Finish only after two consecutive stationary fresh determinations are both
    at or below `3'` and satisfy the existing repeatability threshold.
 
 Do not stop or restart merely because five, six, or seven minutes elapsed.
