@@ -1,3 +1,12 @@
+## Version 2.2.6.120
+
+- Let calibrated full-travel and single-axis UPAS routes converge through as
+  many as eight bounded, freshly measured correction iterations.
+- Treat predicted and observed runtime as telemetry rather than movement
+  authority while establishing the effective field protocol; retain finite
+  move, response, regression, travel, settling, cancellation, and terminal
+  verification stops.
+
 ## Version 2.2.6.119
 
 - Keep the fresh-measurement terminality gate while using bounded sequence JSON

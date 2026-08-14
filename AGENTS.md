@@ -14,7 +14,10 @@ This repository contains the N.I.N.A. "Three Point Polar Alignment" plugin, its 
 
 - `PolarAlignment/Instructions/PolarAlignment.cs`: core workflow. This is the sequence item implementation and the real runtime entry point for the plugin logic.
 - `QualificationCore/NINA.Plugins.PolarAlignment.QualificationCore.csproj`: headless qualification boundary. Plugin, tests, and CLI consume it by `ProjectReference`; do not restore source globs.
-- `PolarAlignment/TppaFastAlignmentExecutionBudget.cs`: the 300-second automated runtime gate. Five-minute mode admits only the qualified 30-second settle, at most 3-second solve exposures, and no auto-pause; every move reserves motion plus two clean fresh determinations.
+- `PolarAlignment/TppaFastAlignmentExecutionBudget.cs`: shared operational
+  iteration ceiling and legacy timing-estimation helpers. The live route allows
+  at most eight freshly measured correction moves; elapsed time is telemetry
+  while field convergence is being established.
 - `PolarAlignment/Dockables/DockablePolarAlignmentVM.cs`: imaging-tab tool wrapper. It instantiates the same `Instructions.PolarAlignment` class, blocks the camera while running, and exposes message-broker start/stop control.
 - `PolarAlignment/TPAPAVM.cs`: long-lived UI/view-model for step state, reference-star tracking, overlays, continuous error updates, and `PolarErrorDetermination`.
 - `PolarAlignment/Vector3.cs` and `PolarAlignment/RefractionParameters.cs`: core math helpers for vector transforms, Rodrigues rotation, and atmospheric defaults.
@@ -31,7 +34,10 @@ This repository contains the N.I.N.A. "Three Point Polar Alignment" plugin, its 
 - After the three-point solve, the code enters a continuous capture/solve/update loop that recomputes the current error against the chosen reference star.
 - If an alignment system is selected, the plugin connects to it after the third measurement point.
 - If automated adjustments are enabled, movement authority requires qualified fresh three-point geometry and settling. Every UPAS move is followed by an independent fresh three-point response; completion requires a further stationary fresh confirmation.
-- The five-minute wall clock starts at sequence-item entry. No success is allowed after 300 seconds. A move may start only when its motion plus fresh-feedback reserve fits; the later confirmation is admitted separately from actual elapsed time.
+- The operational route has no elapsed-time veto. It stops after at most eight
+  freshly measured correction moves, or earlier on completion, cancellation,
+  unsafe travel, invalid response, or regression. Runtime remains recorded for
+  subsequent optimization toward the five-minute guideline.
 - Validation lives in `PolarAlignment.Validate()`. If start behavior looks wrong in the dockable or the sequence item, inspect validation first.
 
 ## Message Broker Contracts
