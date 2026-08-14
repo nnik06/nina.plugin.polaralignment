@@ -133,6 +133,7 @@ namespace NINA.Plugins.PolarAlignment {
         private int? lastExecutedXDirection;
         private int? pendingXReversalDirection;
         private int? preferredXAcquisitionDirection;
+        private bool allowImmediateXReversalAfterFirstRunIdentification;
         private int? learnedXAcquisitionDirection;
         private double? rememberedXAzimuthDeltaPerUnit;
         private readonly Queue<double> positiveXAzimuthResponses = new Queue<double>();
@@ -261,6 +262,9 @@ namespace NINA.Plugins.PolarAlignment {
 
         public void ConfigureFirstRunTwoAxisBootstrap(bool enabled) {
             firstRunTwoAxisBootstrapEnabled = enabled;
+            if (!enabled) {
+                allowImmediateXReversalAfterFirstRunIdentification = false;
+            }
         }
 
         /// <summary>
@@ -880,6 +884,15 @@ namespace NINA.Plugins.PolarAlignment {
             }
 
             firstRunTwoAxisBootstrapEnabled = false;
+            // The fixed identification direction establishes response sign; it is
+            // not a permitted-direction constraint for the resulting correction.
+            // Let the measured model choose either X direction, while the normal
+            // reversal-clearance logic still handles backlash. The first modeled
+            // correction may reverse immediately because both response columns
+            // have already established its sign; an unchanged-sky debounce solve
+            // cannot add evidence and would terminate the live adjustment path.
+            preferredXAcquisitionDirection = null;
+            allowImmediateXReversalAfterFirstRunIdentification = true;
             return false;
         }
 
@@ -1417,6 +1430,7 @@ namespace NINA.Plugins.PolarAlignment {
             rejectedXProbeCount = 0;
             lastExecutedXDirection = null;
             pendingXReversalDirection = null;
+            allowImmediateXReversalAfterFirstRunIdentification = false;
             if (!preserveLearnedDirection) {
                 learnedXAcquisitionDirection = null;
             }
@@ -1480,7 +1494,15 @@ namespace NINA.Plugins.PolarAlignment {
 
             var requestedDirection = Math.Sign(plan.XMagnitude);
             if (requestedDirection == lastExecutedXDirection.Value) {
+                allowImmediateXReversalAfterFirstRunIdentification = false;
                 pendingXReversalDirection = null;
+                return false;
+            }
+
+            if (allowImmediateXReversalAfterFirstRunIdentification) {
+                allowImmediateXReversalAfterFirstRunIdentification = false;
+                pendingXReversalDirection = null;
+                Logger.Info("Allowing the first modeled X correction to reverse immediately after two-axis response identification.");
                 return false;
             }
 

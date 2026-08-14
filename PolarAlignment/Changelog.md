@@ -1,3 +1,15 @@
+## Version 2.2.6.122
+
+- Release the first-run X identification-direction preference after both UPAS
+  response columns are measured, allowing the learned model to command the
+  corrective reverse direction with the existing backlash-clearance policy.
+- Expand the finite feedback ceiling from eight to twelve moves, matching the
+  controller's response-sample window while retaining response, regression,
+  per-move, and physical-travel stops.
+- Add a regression replay of the 2026-08-13 field vector proving first-run X/Y
+  identification and feedback correction can converge below 3 arcminutes
+  within the bounded move ceiling and physical travel envelope.
+
 ## Version 2.2.6.121
 
 - Treat the qualified settle value as a minimum instead of requiring an exact

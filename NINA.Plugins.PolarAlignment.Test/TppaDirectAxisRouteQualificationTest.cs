@@ -47,15 +47,16 @@ namespace NINA.Plugins.PolarAlignment.Test {
             var result = TppaDirectAxisRouteQualification.Evaluate(
                 true, true,
                 0, -5.4, 5.4,
-                physicalDegreesPerUnit: 0.003,
-                azimuthErrorDeltaPerUnitDegrees: 0.003,
+                physicalDegreesPerUnit: 0.002,
+                azimuthErrorDeltaPerUnitDegrees: 0.002,
                 altitudeErrorDeltaPerUnitDegrees: 0,
                 maximumUnitsPerMove: 81,
                 azimuthErrorMinutes: 324,
                 altitudeErrorMinutes: 0);
 
             result.IsQualified.Should().BeFalse();
-            result.Reason.Should().Contain("permits at most 8");
+            result.Reason.Should().Contain(
+                $"permits at most {TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMoves}");
         }
 
         private static TppaDirectAxisRouteQualification Evaluate(

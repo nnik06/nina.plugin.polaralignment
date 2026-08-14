@@ -1617,6 +1617,55 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public void AutomatedAdjustmentController_FirstRunBootstrapConvergesLastFieldVectorWithinMoveCeiling() {
+            const double azimuthResponsePerXUnitDegrees = -0.025;
+            const double altitudeResponsePerYUnitDegrees = -0.022;
+            var controller = new AutomatedAdjustmentController(useUpasEngagementController: true);
+            controller.ConfigureCalibratedDirectFullTravelRoute(
+                enabled: true, operatorConfirmed: true,
+                azimuthStartingPositionDegrees: 0, azimuthMinimumDegrees: -5.4, azimuthMaximumDegrees: 5.4,
+                altitudeStartingPositionDegrees: 0, altitudeMinimumDegrees: -5.4, altitudeMaximumDegrees: 5.4,
+                azimuthDeltaPerXUnitDegrees: 0, azimuthDeltaPerYUnitDegrees: 0,
+                altitudeDeltaPerXUnitDegrees: 0, altitudeDeltaPerYUnitDegrees: 0,
+                maximumXUnitsPerMove: 0, maximumYUnitsPerMove: 0,
+                physicalAzimuthDegreesPerXUnit: 0.025, physicalAltitudeDegreesPerYUnit: 0.022);
+            controller.SeedXSeating(1);
+            controller.ConfigureFirstRunTwoAxisBootstrap(true);
+
+            var azimuthErrorDegrees = -34.502364573021396 / 60.0;
+            var altitudeErrorDegrees = 38.22095542503256 / 60.0;
+            var azimuthPositionDegrees = 0.0;
+            var altitudePositionDegrees = 0.0;
+            var moveCount = 0;
+            controller.UpdateObservation(azimuthErrorDegrees, altitudeErrorDegrees);
+
+            while (Math.Sqrt(
+                       azimuthErrorDegrees * azimuthErrorDegrees
+                       + altitudeErrorDegrees * altitudeErrorDegrees) * 60.0 > 3.0
+                   && moveCount < TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMoves) {
+                var plan = controller.CreatePlan();
+                plan.HasMovement.Should().BeTrue(plan.Reason);
+
+                controller.NoteSuccessfulExecution(plan);
+                azimuthErrorDegrees += plan.XMagnitude * azimuthResponsePerXUnitDegrees;
+                altitudeErrorDegrees += plan.YMagnitude * altitudeResponsePerYUnitDegrees;
+                azimuthPositionDegrees += plan.XMagnitude * 0.025;
+                altitudePositionDegrees += plan.YMagnitude * 0.022;
+                controller.UpdateObservation(azimuthErrorDegrees, altitudeErrorDegrees);
+                moveCount++;
+            }
+
+            var finalTotalMinutes = Math.Sqrt(
+                azimuthErrorDegrees * azimuthErrorDegrees
+                + altitudeErrorDegrees * altitudeErrorDegrees) * 60.0;
+            finalTotalMinutes.Should().BeLessThanOrEqualTo(3.0);
+            moveCount.Should().BeLessThanOrEqualTo(
+                TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMoves);
+            azimuthPositionDegrees.Should().BeInRange(-5.4, 5.4);
+            altitudePositionDegrees.Should().BeInRange(-5.4, 5.4);
+        }
+
+        [Test]
         public void AutomatedAdjustmentController_ExportsOnlyAQualifiedTwoAxisFirstRunResponseModel() {
             var controller = new AutomatedAdjustmentController(useUpasEngagementController: true);
             controller.ConfigureFirstRunTwoAxisBootstrap(true);
