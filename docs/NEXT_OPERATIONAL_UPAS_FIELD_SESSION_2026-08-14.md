@@ -5,14 +5,15 @@ the 2026-08-13 packet for direct attended TPPA-to-UPAS alignment.
 
 ## Runtime
 
-- Source commit: `f8ba1bf882b4ef16ececba99e806ebd68f4bb063`
-- Plugin version: `2.2.6.125`
+- Source commit: `d631e30e40eecb0a67c6edb27baec708c2c70705`
+- Plugin version: `2.2.6.126`
 - Plugin SHA-256:
-  `859BBE115E64A0CC0A04AD87CBC91041910DAD2A32A6BED389DF6D3CE839FB1F`
+  `3B9C4FA59415AD62BD22BC60245D9C570BC53F828DB33D03B29067F7B6F2B301`
 - Qualification core SHA-256:
-  `3744B7582A3ACBAC6995638AF0980DC3C3DFCBF648A2C1BC8BBD24645CB06BBF`
+  `1B2001DB0D72953DF1A6CE762C5CADD7E80610361FFEBBBCD4D98A663A29B91E`
 - Runtime manifest SHA-256:
-  `75D958BFCCF003C41B4C6132D8E448ED8AFEBFD1C8C911E6A378188DC28101B6`
+  `F58C072D601787956FEC85B238AA2FCB7A52FD425EFD89FC299238680A48AE3A`
+- Automated test suites: `1115/1115` Debug and `1115/1115` Release.
 
 ## Objective
 
@@ -36,7 +37,7 @@ metrology claim.
    verification settle between `5 s` and `120 s` that is sufficient for the
    mount to be stationary.
 5. Set alignment tolerance to `3'` and leave `Enforce five-minute runtime
-   budget` off while establishing the reliable protocol. Version 2.2.6.125
+   budget` off while establishing the reliable protocol. Version 2.2.6.126
    keeps the same initial-error admission, response validation, calibration,
    terminal confirmation, and bounded move ceiling with this option off;
    elapsed time remains telemetry only.
@@ -54,6 +55,10 @@ requirements for this attended direct route.
 
 1. Start from a fresh TPPA determination. If the two-axis response model is not
    available, allow the controller's bounded X and Y identification probes.
+   Once both fresh responses are independently measurable and well-conditioned,
+   2.2.6.126 promotes that session-local model directly into damped two-axis
+   coarse correction. Each component is capped at 80 logical units and remains
+   constrained by the signed physical travel envelope.
 2. After every UPAS command, require command completion, settle, and a fresh
    three-point response before any subsequent command.
 3. Reuse an accepted, current-epoch post-move determination directly for the
