@@ -5,14 +5,14 @@ the 2026-08-13 packet for direct attended TPPA-to-UPAS alignment.
 
 ## Runtime
 
-- Source commit: `fe2127c67cd13d1dd4be94389e30b358a3466515`
-- Plugin version: `2.2.6.124`
+- Source commit: `f8ba1bf882b4ef16ececba99e806ebd68f4bb063`
+- Plugin version: `2.2.6.125`
 - Plugin SHA-256:
-  `11869303405F7B945D48661EB5F244335D6A4D29F4A0FD6125361C9D55053BAB`
+  `859BBE115E64A0CC0A04AD87CBC91041910DAD2A32A6BED389DF6D3CE839FB1F`
 - Qualification core SHA-256:
-  `EE7834FA7105A71E0AA4942AF8D669136282F15B5849D4D8D9B1F0D0C1A6A7FA`
+  `3744B7582A3ACBAC6995638AF0980DC3C3DFCBF648A2C1BC8BBD24645CB06BBF`
 - Runtime manifest SHA-256:
-  `52D89E2C3071839A055A7F3EF5962D9ECD31B81F577EF185BC1931756223DA0B`
+  `75D958BFCCF003C41B4C6132D8E448ED8AFEBFD1C8C911E6A378188DC28101B6`
 
 ## Objective
 
@@ -35,9 +35,11 @@ metrology claim.
 4. Set `Adjust for refraction=True`, `AutoPause=False`, exposure `5 s`, and a
    verification settle between `5 s` and `120 s` that is sufficient for the
    mount to be stationary.
-5. Set alignment tolerance to `3'`. The historical five-minute option may
-   remain enabled to select the operational route, but elapsed time is
-   telemetry only.
+5. Set alignment tolerance to `3'` and leave `Enforce five-minute runtime
+   budget` off while establishing the reliable protocol. Version 2.2.6.125
+   keeps the same initial-error admission, response validation, calibration,
+   terminal confirmation, and bounded move ceiling with this option off;
+   elapsed time remains telemetry only.
 6. Confirm the physical UPAS marker readings, signed movement directions, and
    headroom inside the configured `-5.4..+5.4 deg` envelope. MPos after reset
    is not physical-position evidence.
