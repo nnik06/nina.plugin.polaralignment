@@ -70,9 +70,11 @@ namespace NINA.Plugins.PolarAlignment {
                     || qualifiedSettleSeconds > UnconditionalQualifiedSettleSeconds) {
                 reasons.Add("qualified settle authority is invalid");
             } else if (!double.IsFinite(resolvedSettleSeconds)
-                    || Math.Abs(resolvedSettleSeconds - qualifiedSettleSeconds) > 0.001) {
+                    || resolvedSettleSeconds < qualifiedSettleSeconds
+                    || resolvedSettleSeconds > TppaVerificationSettlePolicy.MaximumOverrideSeconds) {
                 reasons.Add(
-                    $"resolved point settle must be {qualifiedSettleSeconds:F0}s; received {resolvedSettleSeconds:F3}s");
+                    $"resolved point settle must be between {qualifiedSettleSeconds:F0}s and " +
+                    $"{TppaVerificationSettlePolicy.MaximumOverrideSeconds:F0}s; received {resolvedSettleSeconds:F3}s");
             }
             if (!double.IsFinite(exposureSeconds)
                     || exposureSeconds <= 0
@@ -91,8 +93,8 @@ namespace NINA.Plugins.PolarAlignment {
                 exposureSeconds,
                 autoPauseEnabled,
                 eligible
-                    ? "five-minute configuration is eligible"
-                    : "five-minute configuration is ineligible: " + string.Join("; ", reasons));
+                    ? "operational configuration is eligible"
+                    : "operational configuration is ineligible: " + string.Join("; ", reasons));
         }
 
         public static TppaFastAlignmentBudgetDecision EvaluateInitialTotal(

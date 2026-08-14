@@ -1,3 +1,10 @@
+## Version 2.2.6.121
+
+- Treat the qualified settle value as a minimum instead of requiring an exact
+  match, so longer stable profile settles remain eligible for alignment.
+- Rename remaining configuration diagnostics from five-minute language to the
+  operational protocol while timing optimization remains deferred.
+
 ## Version 2.2.6.120
 
 - Let calibrated full-travel and single-axis UPAS routes converge through as

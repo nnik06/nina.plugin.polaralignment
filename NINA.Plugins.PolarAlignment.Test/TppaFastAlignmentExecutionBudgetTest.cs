@@ -310,28 +310,38 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
-        public void AcceptsQualifiedFiveMinuteConfiguration() {
+        public void AcceptsQualifiedOperationalConfiguration() {
             var result = TppaFastAlignmentExecutionBudget.EvaluateConfiguration(30, 5, false);
 
             result.IsEligible.Should().BeTrue(result.Reason);
         }
 
-        [TestCase(29.9)]
-        [TestCase(30.1)]
-        [TestCase(120)]
+        [TestCase(0)]
+        [TestCase(4.999)]
+        [TestCase(120.001)]
         [TestCase(double.NaN)]
-        public void RejectsUnqualifiedSettleForFiveMinuteMode(double settleSeconds) {
+        public void RejectsSettleOutsideOperationalRange(double settleSeconds) {
             var result = TppaFastAlignmentExecutionBudget.EvaluateConfiguration(
-                settleSeconds, 3, false);
+                settleSeconds, 5, false, qualifiedSettleSeconds: 5);
 
             result.IsEligible.Should().BeFalse();
             result.Reason.Should().Contain("settle");
         }
 
+        [TestCase(5)]
+        [TestCase(30)]
+        [TestCase(120)]
+        public void AcceptsSettleAtOrAboveOperationalMinimum(double settleSeconds) {
+            var result = TppaFastAlignmentExecutionBudget.EvaluateConfiguration(
+                settleSeconds, 5, false, qualifiedSettleSeconds: 5);
+
+            result.IsEligible.Should().BeTrue(result.Reason);
+        }
+
         [TestCase(0)]
         [TestCase(5.001)]
         [TestCase(double.PositiveInfinity)]
-        public void RejectsUnqualifiedExposureForFiveMinuteMode(double exposureSeconds) {
+        public void RejectsUnqualifiedOperationalExposure(double exposureSeconds) {
             var result = TppaFastAlignmentExecutionBudget.EvaluateConfiguration(
                 30, exposureSeconds, false);
 
@@ -340,7 +350,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
-        public void RejectsAutoPauseForFiveMinuteMode() {
+        public void RejectsAutoPauseForUnattendedOperationalRun() {
             var result = TppaFastAlignmentExecutionBudget.EvaluateConfiguration(30, 3, true);
 
             result.IsEligible.Should().BeFalse();
