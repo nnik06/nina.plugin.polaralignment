@@ -1637,6 +1637,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
             var azimuthPositionDegrees = 0.0;
             var altitudePositionDegrees = 0.0;
             var moveCount = 0;
+            var sawConditionedCoarseCorrection = false;
             controller.UpdateObservation(azimuthErrorDegrees, altitudeErrorDegrees);
 
             while (Math.Sqrt(
@@ -1645,6 +1646,16 @@ namespace NINA.Plugins.PolarAlignment.Test {
                    && moveCount < TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMoves) {
                 var plan = controller.CreatePlan();
                 plan.HasMovement.Should().BeTrue(plan.Reason);
+                if (plan.Reason.StartsWith("Session-local conditioned coarse correction")) {
+                    if (!sawConditionedCoarseCorrection) {
+                        Math.Max(Math.Abs(plan.XMagnitude), Math.Abs(plan.YMagnitude)).Should().BeGreaterThan(8.0);
+                    }
+                    sawConditionedCoarseCorrection = true;
+                    Math.Abs(plan.XMagnitude).Should().BeLessOrEqualTo(
+                        AutomatedAdjustmentController.FirstRunCalibratedMaximumUnitsPerMove);
+                    Math.Abs(plan.YMagnitude).Should().BeLessOrEqualTo(
+                        AutomatedAdjustmentController.FirstRunCalibratedMaximumUnitsPerMove);
+                }
 
                 controller.NoteSuccessfulExecution(plan);
                 azimuthErrorDegrees += plan.XMagnitude * azimuthResponsePerXUnitDegrees;
@@ -1659,6 +1670,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 azimuthErrorDegrees * azimuthErrorDegrees
                 + altitudeErrorDegrees * altitudeErrorDegrees) * 60.0;
             finalTotalMinutes.Should().BeLessThanOrEqualTo(3.0);
+            sawConditionedCoarseCorrection.Should().BeTrue();
             moveCount.Should().BeLessThanOrEqualTo(
                 TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMoves);
             azimuthPositionDegrees.Should().BeInRange(-5.4, 5.4);
@@ -1669,6 +1681,10 @@ namespace NINA.Plugins.PolarAlignment.Test {
         [TestCase(34.5, -38.2, -0.025, -0.022, 0.000, 0.000)]
         [TestCase(-22.0, -18.0, -0.018, -0.030, 0.000, 0.000)]
         [TestCase(48.0, 26.0, -0.030, -0.018, 0.002, -0.002)]
+        [TestCase(300.0, 300.0, -0.025, -0.022, 0.000, 0.000)]
+        [TestCase(300.0, -300.0, -0.025, -0.022, 0.000, 0.000)]
+        [TestCase(-300.0, 300.0, -0.025, -0.022, 0.000, 0.000)]
+        [TestCase(-300.0, -300.0, -0.025, -0.022, 0.000, 0.000)]
         public void AutomatedAdjustmentController_FirstRunConvergenceMatrixStaysBounded(
                 double initialAzimuthMinutes,
                 double initialAltitudeMinutes,

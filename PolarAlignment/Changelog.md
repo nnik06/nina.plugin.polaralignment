@@ -1,3 +1,7 @@
+## Version 2.2.6.126
+
+- Promote a qualified fresh first-run X/Y response model directly into bounded two-axis coarse correction, avoiding repeated 8-unit fallback nudges across the UPAS envelope while retaining response, regression, and physical travel guards.
+
 ## Version 2.2.6.125
 
 - Decouple the operational UPAS control protocol from the optional five-minute

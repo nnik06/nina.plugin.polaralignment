@@ -153,8 +153,10 @@ namespace NINA.Plugins.PolarAlignment {
             Properties.Settings.Default.AvalonCalibratedAltitudeDeltaPerYUnit = model.AltitudeDeltaPerYUnit;
             // 80 logical units is 2.00 deg X and 1.76 deg Y per bounded command.
             // Three damped iterations remain inside the visually confirmed +/-5.4 deg envelope.
-            Properties.Settings.Default.AvalonCalibratedMaximumXUnitsPerMove = 80.0;
-            Properties.Settings.Default.AvalonCalibratedMaximumYUnitsPerMove = 80.0;
+            Properties.Settings.Default.AvalonCalibratedMaximumXUnitsPerMove =
+                AutomatedAdjustmentController.FirstRunCalibratedMaximumUnitsPerMove;
+            Properties.Settings.Default.AvalonCalibratedMaximumYUnitsPerMove =
+                AutomatedAdjustmentController.FirstRunCalibratedMaximumUnitsPerMove;
             CoreUtil.SaveSettings(Properties.Settings.Default);
             Logger.Info(
                 "Persisted first-run UPAS two-axis response calibration: " +

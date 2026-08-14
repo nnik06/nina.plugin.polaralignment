@@ -119,6 +119,7 @@ namespace NINA.Plugins.PolarAlignment {
         private const double SessionCoarseValidationImprovementFactor = 0.80;
         private const double MinimumSessionCoarseBootstrapResponseDegrees = 0.10;
         private const double MaximumSessionCoarseConditionNumber = 8.0;
+        internal const double FirstRunCalibratedMaximumUnitsPerMove = 80.0;
         /// <summary>
         /// Maximum number of recent identification samples retained in the local model.
         /// </summary>
@@ -900,18 +901,24 @@ namespace NINA.Plugins.PolarAlignment {
             plan = null;
             if (sessionLocalCoarseFrozen
                 || calibratedDirectFullTravelRoute == null
-                || !HasQualifiedBootstrapYResponse()
                 || !TryBuildResponseModel(out var responseModel)
-                || !TrySolveLeastSquaresCommand(responseModel, currentObservation, out var rawX, out var rawY)) {
+                || !HasQualifiedSessionLocalResponse(responseModel)
+                || !TrySolveQualifiedLeastSquaresCommand(responseModel, currentObservation, out var rawX, out var rawY)) {
                 return false;
             }
 
+            var maximumXUnits = calibratedDirectFullTravelRoute.MaximumXUnitsPerMove > 0
+                ? calibratedDirectFullTravelRoute.MaximumXUnitsPerMove
+                : FirstRunCalibratedMaximumUnitsPerMove;
+            var maximumYUnits = calibratedDirectFullTravelRoute.MaximumYUnitsPerMove > 0
+                ? calibratedDirectFullTravelRoute.MaximumYUnitsPerMove
+                : FirstRunCalibratedMaximumUnitsPerMove;
             var xMagnitude = NormalizeMagnitude(
                 rawX * ConfirmedXCorrectionGain,
-                calibratedDirectFullTravelRoute.MaximumXUnitsPerMove);
+                maximumXUnits);
             var yMagnitude = NormalizeMagnitude(
                 rawY * ConfirmedXCorrectionGain,
-                calibratedDirectFullTravelRoute.MaximumYUnitsPerMove);
+                maximumYUnits);
             if (Math.Abs(xMagnitude) < MinimumMoveMagnitude && Math.Abs(yMagnitude) < MinimumMoveMagnitude) {
                 return false;
             }
@@ -933,6 +940,60 @@ namespace NINA.Plugins.PolarAlignment {
                 yMagnitude,
                 false,
                 "Session-local conditioned coarse correction");
+            return true;
+        }
+
+        private bool HasQualifiedSessionLocalResponse(ResponseModel responseModel) {
+            if (calibratedDirectAzimuthResponseSeed != null) {
+                return HasQualifiedBootstrapYResponse();
+            }
+
+            var xSample = samples.LastOrDefault(sample => Math.Abs(sample.XMagnitude) > 1e-9
+                                                          && Math.Abs(sample.YMagnitude) <= 1e-9);
+            var ySample = samples.LastOrDefault(sample => Math.Abs(sample.XMagnitude) <= 1e-9
+                                                          && Math.Abs(sample.YMagnitude) > 1e-9);
+            if (xSample == null || ySample == null) {
+                return false;
+            }
+
+            var xResponseMagnitude = Math.Sqrt(
+                xSample.AzimuthDeltaDegrees * xSample.AzimuthDeltaDegrees
+                + xSample.AltitudeDeltaDegrees * xSample.AltitudeDeltaDegrees);
+            var yResponseMagnitude = Math.Sqrt(
+                ySample.AzimuthDeltaDegrees * ySample.AzimuthDeltaDegrees
+                + ySample.AltitudeDeltaDegrees * ySample.AltitudeDeltaDegrees);
+            if (xResponseMagnitude < MinimumSessionCoarseBootstrapResponseDegrees
+                || yResponseMagnitude < MinimumSessionCoarseBootstrapResponseDegrees) {
+                Logger.Warning(
+                    "Rejected first-run session-local coarse authority: "
+                    + $"fresh X/Y responses were {Math.Round(xResponseMagnitude * 60.0, 3)}/"
+                    + $"{Math.Round(yResponseMagnitude * 60.0, 3)} arcmin.");
+                return false;
+            }
+
+            var xColumnMagnitude = Math.Sqrt(
+                responseModel.AzimuthDeltaPerXUnit * responseModel.AzimuthDeltaPerXUnit
+                + responseModel.AltitudeDeltaPerXUnit * responseModel.AltitudeDeltaPerXUnit);
+            var yColumnMagnitude = Math.Sqrt(
+                responseModel.AzimuthDeltaPerYUnit * responseModel.AzimuthDeltaPerYUnit
+                + responseModel.AltitudeDeltaPerYUnit * responseModel.AltitudeDeltaPerYUnit);
+            var determinant = responseModel.AzimuthDeltaPerXUnit * responseModel.AltitudeDeltaPerYUnit
+                              - responseModel.AzimuthDeltaPerYUnit * responseModel.AltitudeDeltaPerXUnit;
+            var sine = xColumnMagnitude > 0 && yColumnMagnitude > 0
+                ? Math.Abs(determinant) / (xColumnMagnitude * yColumnMagnitude)
+                : 0;
+            var conditionNumber = CalculateResponseConditionNumber(
+                responseModel.AzimuthDeltaPerXUnit,
+                responseModel.AltitudeDeltaPerXUnit,
+                responseModel.AzimuthDeltaPerYUnit,
+                responseModel.AltitudeDeltaPerYUnit);
+            if (sine < 0.15 || conditionNumber > MaximumSessionCoarseConditionNumber) {
+                Logger.Warning(
+                    "Rejected first-run session-local coarse authority: "
+                    + $"fresh response columns have sine {Math.Round(sine, 3)} and condition {Math.Round(conditionNumber, 3)}.");
+                return false;
+            }
+
             return true;
         }
 
@@ -1085,7 +1146,7 @@ namespace NINA.Plugins.PolarAlignment {
                 return false;
             }
 
-            if (!TrySolveLeastSquaresCommand(calibratedDirectFullTravelRoute.ResponseModel, observation, out var rawX, out var rawY)) {
+            if (!TrySolveQualifiedLeastSquaresCommand(calibratedDirectFullTravelRoute.ResponseModel, observation, out var rawX, out var rawY)) {
                 Logger.Warning("Calibrated direct full-travel route could not solve the measured 2x2 response matrix.");
                 return false;
             }
@@ -2188,6 +2249,34 @@ namespace NINA.Plugins.PolarAlignment {
                                                         AutomatedAdjustmentObservation observation,
                                                         out double xMagnitude,
                                                         out double yMagnitude) {
+            return TrySolveLeastSquaresCommand(
+                responseModel,
+                observation,
+                NormalEquationDamping,
+                out xMagnitude,
+                out yMagnitude);
+        }
+
+        private static bool TrySolveQualifiedLeastSquaresCommand(ResponseModel responseModel,
+                                                                 AutomatedAdjustmentObservation observation,
+                                                                 out double xMagnitude,
+                                                                 out double yMagnitude) {
+            // Qualified direct routes have already passed independent response-column
+            // magnitude and conditioning checks. Their normal-matrix determinant has
+            // fourth-power response units, so compare it with the squared damping term.
+            return TrySolveLeastSquaresCommand(
+                responseModel,
+                observation,
+                NormalEquationDamping * NormalEquationDamping,
+                out xMagnitude,
+                out yMagnitude);
+        }
+
+        private static bool TrySolveLeastSquaresCommand(ResponseModel responseModel,
+                                                        AutomatedAdjustmentObservation observation,
+                                                        double minimumDeterminant,
+                                                        out double xMagnitude,
+                                                        out double yMagnitude) {
             var m00 = responseModel.AzimuthDeltaPerXUnit * responseModel.AzimuthDeltaPerXUnit
                       + responseModel.AltitudeDeltaPerXUnit * responseModel.AltitudeDeltaPerXUnit
                       + NormalEquationDamping;
@@ -2203,7 +2292,7 @@ namespace NINA.Plugins.PolarAlignment {
                          + responseModel.AltitudeDeltaPerYUnit * observation.AltitudeErrorDegrees);
 
             var determinant = m00 * m11 - m01 * m01;
-            if (Math.Abs(determinant) <= NormalEquationDamping) {
+            if (Math.Abs(determinant) <= minimumDeterminant) {
                 xMagnitude = 0;
                 yMagnitude = 0;
                 return false;
