@@ -44,7 +44,9 @@ namespace NINA.Plugins.PolarAlignment.Test {
             source.Should().Contain("freshDeterminationStopwatch.Elapsed.TotalSeconds");
             source.Should().Contain("directPostMoveFeedbackEligibleForReuse");
             source.Should().Contain("DirectFeedbackReuseMaximumAgeSeconds");
-            source.Should().Contain("Reusing the accepted, settled post-move fresh determination");
+            source.Should().Contain("Reusing the accepted, settled post-move fresh determination as the current feedback");
+            source.Should().Contain("without a redundant pre-move sweep");
+            source.Should().Contain("secondDirectDetermination = firstDirectDetermination;");
             source.Should().Contain("TPPA_OPERATIONAL_MOVE_ADMISSION");
             source.Should().Contain("InvalidateDirectPostMoveFeedback(\"a new direct UPAS move is about to execute\")");
             source.Should().Contain("InvalidateDirectPostMoveFeedback(\"the sequence was paused\")");
@@ -53,6 +55,39 @@ namespace NINA.Plugins.PolarAlignment.Test {
             source.Should().Contain("directPostMoveFeedbackMotionEpoch = directUpasMotionEpoch");
             source.Should().Contain("directPostMoveFeedbackMotionEpoch = -1");
             source.Should().Contain("too old or belongs to a previous motion epoch");
+        }
+
+        [Test]
+        public void AcceptedCurrentEpochFeedbackSkipsOnlyTheRedundantPreMoveSweep() {
+            var source = File.ReadAllText(Path.Combine(RepositoryRoot(), "PolarAlignment", "Instructions", "PolarAlignment.cs"));
+            var secondDetermination = source.IndexOf("PolarErrorDetermination secondDirectDetermination;", StringComparison.Ordinal);
+            var reuseBranch = source.IndexOf("} else if (directFeedbackCanSeedNextMove) {", secondDetermination, StringComparison.Ordinal);
+            var nextBranch = source.IndexOf("} else {", reuseBranch + 1, StringComparison.Ordinal);
+            var reuseBody = source.Substring(reuseBranch, nextBranch - reuseBranch);
+
+            secondDetermination.Should().BeGreaterThanOrEqualTo(0);
+            reuseBranch.Should().BeGreaterThanOrEqualTo(0);
+            nextBranch.Should().BeGreaterThan(reuseBranch);
+            reuseBody.Should().Contain("secondDirectDetermination = firstDirectDetermination;");
+            reuseBody.Should().NotContain("MeasureFreshThreePointForActiveCampaign(");
+            source.Should().Contain("independent fresh completion confirmation");
+            source.Should().Contain("directPostMoveFeedbackMotionEpoch == directUpasMotionEpoch");
+            source.Should().Contain("DirectFeedbackReuseMaximumAgeSeconds");
+        }
+
+        [Test]
+        public void FreshFeedbackControlSkipsTheIgnoredContinuousCorrectionSolve() {
+            var source = File.ReadAllText(Path.Combine(RepositoryRoot(), "PolarAlignment", "Instructions", "PolarAlignment.cs"));
+            var freshBranch = source.IndexOf("if (freshFeedbackControl) {", StringComparison.Ordinal);
+            var legacyBranch = source.IndexOf("} else {", freshBranch, StringComparison.Ordinal);
+            var freshBody = source.Substring(freshBranch, legacyBranch - freshBranch);
+
+            freshBranch.Should().BeGreaterThanOrEqualTo(0);
+            legacyBranch.Should().BeGreaterThan(freshBranch);
+            freshBody.Should().Contain("skipping the legacy continuous correction-frame solve");
+            freshBody.Should().NotContain("await Solve(");
+            source.Substring(legacyBranch).Should().Contain("var continuousSolve = await Solve(");
+            source.Should().Contain("? TPAPAVM.PolarErrorDetermination.InitialMountAxisTotalError");
         }
 
         [Test]

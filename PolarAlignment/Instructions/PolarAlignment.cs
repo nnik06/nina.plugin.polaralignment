@@ -1458,30 +1458,45 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                             Logger.Warning($"Fresh UPAS completion confirmation was above tolerance ({AlignmentTolerance}'). Continuing from the confirmed fresh measurement without moving first.");
                         }
 
-                        EnsureFastRuntimeBudget(
-                            "continuous correction solve",
-                            TppaFastAlignmentExecutionBudget.ContinuousSolveReserveSeconds);
-                        var continuousSolve = await Solve(TPAPAVM, 0, progress, localCTS.Token);
-                        if (continuousSolve.Success) {
-                            var estimateStable = await TPAPAVM.UpdateDetails(continuousSolve, progress, localCTS.Token);
+                        var freshFeedbackControl = TPAPAVM.AutomatedAdjustmentRequiresFreshMeasurementFeedback;
+                        var correctionInputAvailable = freshFeedbackControl;
+                        if (freshFeedbackControl) {
+                            Logger.Info("Using the current fresh three-point TPPA determination directly; skipping the legacy continuous correction-frame solve.");
+                        } else {
+                            EnsureFastRuntimeBudget(
+                                "continuous correction solve",
+                                TppaFastAlignmentExecutionBudget.ContinuousSolveReserveSeconds);
+                            var continuousSolve = await Solve(TPAPAVM, 0, progress, localCTS.Token);
+                            if (continuousSolve.Success) {
+                                correctionInputAvailable = await TPAPAVM.UpdateDetails(
+                                    continuousSolve,
+                                    progress,
+                                    localCTS.Token);
+                            }
+                        }
 
-                            var freshFeedbackControl = TPAPAVM.AutomatedAdjustmentRequiresFreshMeasurementFeedback;
-                            if (estimateStable || freshFeedbackControl) {
-                                if (!estimateStable && freshFeedbackControl) {
-                                    Logger.Warning("Continuous polar error estimate was unstable. UPAS correction will proceed only from the last independent fresh three-point measurement.");
-                                }
+                        if (correctionInputAvailable) {
+                                var correctionAltitudeError = freshFeedbackControl
+                                    ? TPAPAVM.PolarErrorDetermination.InitialMountAxisAltitudeError
+                                    : TPAPAVM.PolarErrorDetermination.CurrentMountAxisAltitudeError;
+                                var correctionAzimuthError = freshFeedbackControl
+                                    ? TPAPAVM.PolarErrorDetermination.InitialMountAxisAzimuthError
+                                    : TPAPAVM.PolarErrorDetermination.CurrentMountAxisAzimuthError;
+                                var correctionTotalError = freshFeedbackControl
+                                    ? TPAPAVM.PolarErrorDetermination.InitialMountAxisTotalError
+                                    : TPAPAVM.PolarErrorDetermination.CurrentMountAxisTotalError;
                                 await messageBroker.Publish(
                                     new PolarAlignmentErrorMessage(
                                         correlatedGuid,
-                                        altitudeError: TPAPAVM.PolarErrorDetermination.CurrentMountAxisAltitudeError.Degree,
-                                        azimuthError: TPAPAVM.PolarErrorDetermination.CurrentMountAxisAzimuthError.Degree,
-                                        totalError: TPAPAVM.PolarErrorDetermination.CurrentMountAxisTotalError.Degree
+                                        altitudeError: correctionAltitudeError.Degree,
+                                        azimuthError: correctionAzimuthError.Degree,
+                                        totalError: correctionTotalError.Degree
                                     )
                                 );
 
-                                Logger.Info($"TPPA correction-loop calculated error: Az: {TPAPAVM.PolarErrorDetermination.CurrentMountAxisAzimuthError}, Alt: {TPAPAVM.PolarErrorDetermination.CurrentMountAxisAltitudeError}, Tot: {TPAPAVM.PolarErrorDetermination.CurrentMountAxisTotalError}");
+                                Logger.Info($"TPPA correction-loop calculated error: Az: {correctionAzimuthError}, Alt: {correctionAltitudeError}, Tot: {correctionTotalError}");
 
-                                var totalErrorMinutes = Math.Abs(TPAPAVM.PolarErrorDetermination.CurrentMountAxisTotalError.ArcMinutes);
+                                var totalErrorMinutes = Math.Abs(correctionTotalError.ArcMinutes);
                                 var completionDecision = TPAPAVM.AutomatedAdjustmentRequiresFreshMeasurementFeedback
                                     ? AutomatedAlignmentCompletionDecision.ContinueCorrection
                                     : completionGuard.Evaluate(totalErrorMinutes, AlignmentTolerance);
@@ -1563,7 +1578,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                     var firstRunBootstrapProbe = !supervisorCampaignMode
                                         && directFirstRunBootstrapBaselineEligible
                                         && TPAPAVM.HasPendingFirstRunTwoAxisBootstrapProbe;
-                                    var directFeedbackCanSeedAgreement = !supervisorCampaignMode
+                                    var directFeedbackCanSeedNextMove = !supervisorCampaignMode
                                         && directPostMoveFeedbackEligibleForReuse
                                         && directPostMoveFeedbackMotionEpoch == directUpasMotionEpoch
                                         && directPostMoveFeedbackAge.Elapsed.TotalSeconds
@@ -1571,7 +1586,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                     Logger.Info(
                                         $"TPPA_OPERATIONAL_MOVE_ADMISSION operation={(firstRunBootstrapProbe ? "first-run UPAS identification probe and mandatory fresh response" : $"bounded UPAS move {freshFeedbackMoveCount + 1}, independent fresh response, and terminal verification")}; " +
                                         $"elapsedSeconds={alignmentRuntime.Elapsed.TotalSeconds:F1}; " +
-                                        $"directFeedbackCanSeedAgreement={directFeedbackCanSeedAgreement}; " +
+                                        $"directFeedbackCanSeedNextMove={directFeedbackCanSeedNextMove}; " +
                                         "admitted by fresh-measurement, travel, response, and cancellation guards.");
                                 }
                                 var preMoveFreshVector = TppaPolarErrorVector.FromMinutes(
@@ -1626,7 +1641,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                 } else {
                                     var firstRunBootstrapProbe = directFirstRunBootstrapBaselineEligible
                                         && TPAPAVM.HasPendingFirstRunTwoAxisBootstrapProbe;
-                                    var directFeedbackCanSeedAgreement = directPostMoveFeedbackEligibleForReuse
+                                    var directFeedbackCanSeedNextMove = directPostMoveFeedbackEligibleForReuse
                                         && directPostMoveFeedbackMotionEpoch == directUpasMotionEpoch
                                         && directPostMoveFeedbackAge.Elapsed.TotalSeconds
                                             <= TppaFastAlignmentExecutionBudget.DirectFeedbackReuseMaximumAgeSeconds;
@@ -1636,9 +1651,9 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                             ?? throw new InvalidOperationException(
                                                 "First-run UPAS bootstrap lost its fresh baseline before identification.");
                                         Logger.Info("Using the one-shot, geometry-qualified fresh baseline for first-run UPAS response identification.");
-                                    } else if (directFeedbackCanSeedAgreement) {
+                                    } else if (directFeedbackCanSeedNextMove) {
                                         firstDirectDetermination = directPreMoveFreshDetermination;
-                                        Logger.Info("Reusing the accepted, settled post-move fresh determination as the first member of the next direct movement agreement pair.");
+                                        Logger.Info("Reusing the accepted, settled post-move fresh determination as the current feedback for the next modeled direct move.");
                                     } else if (directPostMoveFeedbackEligibleForReuse) {
                                         Logger.Info("The accepted post-move feedback is too old or belongs to a previous motion epoch. Acquiring a new first fresh TPPA determination before direct field movement authority.");
                                         firstDirectDetermination = await MeasureFreshThreePointForActiveCampaign(
@@ -1667,6 +1682,15 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                         // another action, including the next identification probe.
                                         secondDirectDetermination = firstDirectDetermination;
                                         Logger.Info("Consuming the first-run baseline for one bounded UPAS response-identification probe.");
+                                    } else if (directFeedbackCanSeedNextMove) {
+                                        // The accepted post-move determination was acquired after the
+                                        // current motion epoch settled, geometry-qualified, and already
+                                        // passed the response/regression policy. Repeating a complete
+                                        // three-point determination here adds latency but no new control
+                                        // information. Completion still requires a separate stationary
+                                        // fresh confirmation at the top of the loop.
+                                        secondDirectDetermination = firstDirectDetermination;
+                                        Logger.Info("Accepted current-epoch post-move feedback authorizes the next modeled direct move without a redundant pre-move sweep.");
                                     } else {
                                         Logger.Info("Acquiring an independent fresh TPPA determination before direct field movement authority.");
                                         var directFreshStopwatch = Stopwatch.StartNew();
@@ -1869,9 +1893,8 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                         throw new SequenceEntityFailedException(responseDisposition.FailureMessage);
                                     }
                                 }
-                            } else {
-                                Logger.Warning("Skipping error publication and automated correction because the continuous estimate was unstable.");
-                            }
+                        } else {
+                            Logger.Warning("Skipping error publication and automated correction because no stable correction input is available.");
                         }
 
                         if (Properties.Settings.Default.AutoPause) {

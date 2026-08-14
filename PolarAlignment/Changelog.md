@@ -1,3 +1,15 @@
+## Version 2.2.6.124
+
+- Let an accepted, settled, geometry-qualified post-move fresh determination
+  drive the next modeled correction without repeating a redundant complete
+  three-point pre-move sweep.
+- Skip the legacy single-frame continuous correction solve when fresh
+  three-point feedback owns actuator control; publish and plan from the fresh
+  vector instead.
+- Retain two agreeing fresh determinations before the initial correction, an
+  independent stationary fresh confirmation at completion, and all response,
+  motion-epoch, age, travel, regression, and cancellation stops.
+
 ## Version 2.2.6.123
 
 - Treat elapsed alignment time as telemetry at terminal operational
