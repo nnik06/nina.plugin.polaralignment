@@ -1,5 +1,9 @@
 # Next Operational UPAS Field Session
 
+Superseded for direct attended alignment by
+`NEXT_OPERATIONAL_UPAS_FIELD_SESSION_2026-08-14.md`. Do not use this packet's
+historical runtime, exposure, or move-count limits for TPPA 2.2.6.123 or later.
+
 Status: field execution packet. The operational result is unproven until this
 packet produces on-sky evidence.
 
