@@ -16,7 +16,7 @@ This repository contains the N.I.N.A. "Three Point Polar Alignment" plugin, its 
 - `QualificationCore/NINA.Plugins.PolarAlignment.QualificationCore.csproj`: headless qualification boundary. Plugin, tests, and CLI consume it by `ProjectReference`; do not restore source globs.
 - `PolarAlignment/TppaFastAlignmentExecutionBudget.cs`: shared operational
   iteration ceiling and legacy timing-estimation helpers. The live route allows
-  at most eight freshly measured correction moves; elapsed time is telemetry
+  at most twelve freshly measured correction moves; elapsed time is telemetry
   while field convergence is being established.
 - `PolarAlignment/Dockables/DockablePolarAlignmentVM.cs`: imaging-tab tool wrapper. It instantiates the same `Instructions.PolarAlignment` class, blocks the camera while running, and exposes message-broker start/stop control.
 - `PolarAlignment/TPAPAVM.cs`: long-lived UI/view-model for step state, reference-star tracking, overlays, continuous error updates, and `PolarErrorDetermination`.
@@ -34,7 +34,7 @@ This repository contains the N.I.N.A. "Three Point Polar Alignment" plugin, its 
 - After the three-point solve, the code enters a continuous capture/solve/update loop that recomputes the current error against the chosen reference star.
 - If an alignment system is selected, the plugin connects to it after the third measurement point.
 - If automated adjustments are enabled, movement authority requires qualified fresh three-point geometry and settling. Every UPAS move is followed by an independent fresh three-point response; completion requires a further stationary fresh confirmation.
-- The operational route has no elapsed-time veto. It stops after at most eight
+- The operational route has no elapsed-time veto. It stops after at most twelve
   freshly measured correction moves, or earlier on completion, cancellation,
   unsafe travel, invalid response, or regression. Runtime remains recorded for
   subsequent optimization toward the five-minute guideline.

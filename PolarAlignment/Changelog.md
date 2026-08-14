@@ -1,3 +1,14 @@
+## Version 2.2.6.125
+
+- Decouple the operational UPAS control protocol from the optional five-minute
+  telemetry setting. Initial-error admission, direct-route qualification,
+  actuator admission, post-bootstrap response validation, fresh terminal
+  confirmation, and the bounded move ceiling now remain active when operators
+  disable the runtime goal.
+- Keep elapsed time observational only. Disabling the runtime goal no longer
+  selects a permissive controller mode that could train on inconclusive or
+  regressing post-move evidence.
+
 ## Version 2.2.6.124
 
 - Let an accepted, settled, geometry-qualified post-move fresh determination

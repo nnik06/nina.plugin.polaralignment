@@ -3,11 +3,11 @@ using FluentAssertions;
 namespace NINA.Plugins.PolarAlignment.Test {
     public class TppaFastActuatorAdmissionGateTest {
         [Test]
-        public async Task RejectedFastStartCannotReachActuatorCallback() {
+        public async Task RejectedOperationalStartCannotReachActuatorCallback() {
             var calls = 0;
 
             var action = async () => await TppaFastActuatorAdmissionGate.ExecuteIfAuthorizedAsync(
-                enforceFastRuntimeBudget: true,
+                operationalMotionProtocolActive: true,
                 initialAdmissionGranted: false,
                 operation: "connection",
                 action: () => {
@@ -21,7 +21,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
-        public async Task AdmittedFastStartCanReachActuatorCallback() {
+        public async Task AdmittedOperationalStartCanReachActuatorCallback() {
             var calls = 0;
 
             await TppaFastActuatorAdmissionGate.ExecuteIfAuthorizedAsync(
@@ -37,7 +37,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
-        public async Task NonFastModeDoesNotRequireFastAdmission() {
+        public async Task InactiveOperationalProtocolDoesNotRequireAdmission() {
             var calls = 0;
 
             var result = await TppaFastActuatorAdmissionGate.ExecuteIfAuthorizedAsync(

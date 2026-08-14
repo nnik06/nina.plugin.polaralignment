@@ -115,6 +115,21 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public void OperationalMotionControlsRemainActiveWithoutTheRuntimeBudgetOption() {
+            var source = File.ReadAllText(Path.Combine(RepositoryRoot(), "PolarAlignment", "Instructions", "PolarAlignment.cs"));
+
+            source.Should().Contain(
+                "var operationalMotionProtocolActive = automatedAdjustmentsEnabled");
+            source.Should().Contain("if (operationalMotionProtocolActive) {");
+            source.Should().Contain("var admission = TppaFastAlignmentExecutionBudget.EvaluateInitialTotal(");
+            source.Should().Contain("TppaFastOperationalRouteAdmissionPolicy.Evaluate(");
+            source.Should().Contain(
+                "fastRuntimeContractArmed = operationalMotionProtocolActive");
+            source.Should().Contain("&& operationalMotionProtocolActive");
+            source.Should().Contain("&& !TPAPAVM.HasPendingFirstRunTwoAxisBootstrapProbe");
+        }
+
+        [Test]
         public void FirstRunDirectRouteDoesNotRequireASeparateConfirmationFlag() {
             var vmSource = File.ReadAllText(Path.Combine(RepositoryRoot(), "PolarAlignment", "TPAPAVM.cs"));
             var instructionSource = File.ReadAllText(Path.Combine(RepositoryRoot(), "PolarAlignment", "Instructions", "PolarAlignment.cs"));

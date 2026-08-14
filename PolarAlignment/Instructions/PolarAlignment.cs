@@ -622,6 +622,8 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             var enforceFastRuntimeBudget = EnforceFiveMinuteRuntimeBudget
                 && automatedAdjustmentsEnabled
                 && executionPolicy.AllowActuatorMovement;
+            var operationalMotionProtocolActive = automatedAdjustmentsEnabled
+                && executionPolicy.AllowActuatorMovement;
             var operationalTier = TppaOperationalAlignmentTierPolicy.Evaluate(AlignmentTolerance);
             if (automatedAdjustmentsEnabled
                 && executionPolicy.AllowActuatorMovement
@@ -662,7 +664,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             var alignmentRuntime = Stopwatch.StartNew();
             var fastRunId = enforceFastRuntimeBudget ? Guid.NewGuid() : Guid.Empty;
             var fastTerminalEventLogged = false;
-            var fastInitialAdmissionGranted = !enforceFastRuntimeBudget;
+            var fastInitialAdmissionGranted = !operationalMotionProtocolActive;
 
             bool TryLogFastRunEvent(
                     string eventName,
@@ -1068,7 +1070,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         ["totalMinutes"] = freshVector.TotalMinutes
                     });
                     Logger.Info($"TPPA fresh 3-point active target diagnostic: {activeTarget}.");
-                    if (enforceFastRuntimeBudget) {
+                    if (operationalMotionProtocolActive) {
                         var admission = TppaFastAlignmentExecutionBudget.EvaluateInitialTotal(
                             freshVector.TotalMinutes);
                         Logger.Info($"TPPA_FAST_INITIAL_ADMISSION eligible={admission.CanStart}; reason={admission.Reason}.");
@@ -1191,7 +1193,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                             $"{(directBootstrapQualification.IsQualified ? "PASS" : "FAIL")}; " +
                             $"{directBootstrapQualification.Reason}.");
                         var fastRouteAdmission = TppaFastOperationalRouteAdmissionPolicy.Evaluate(
-                            enforceFastRuntimeBudget,
+                            operationalMotionProtocolActive,
                             directFullTravelQualification.IsQualified,
                             directBootstrapQualification.IsQualified,
                             firstRunBootstrapQualification.IsQualified);
@@ -1229,7 +1231,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         TPAPAVM.ActiveAlignmentSystemVM != null,
                         TPAPAVM.ActiveAlignmentSystemVM?.DoAutomatedAdjustments == true)) {
                         await TppaFastActuatorAdmissionGate.ExecuteIfAuthorizedAsync(
-                            enforceFastRuntimeBudget,
+                            operationalMotionProtocolActive,
                             fastInitialAdmissionGranted,
                             "connection",
                             () => TPAPAVM.ActiveAlignmentSystemVM.Connect());
@@ -1256,9 +1258,9 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     var directFirstRunBootstrapBaselineEligible = !supervisorCampaignMode
                         && TPAPAVM.HasPendingFirstRunTwoAxisBootstrapProbe
                         && directPreMoveFreshDetermination != null;
-                    fastRuntimeContractArmed = enforceFastRuntimeBudget
+                    fastRuntimeContractArmed = operationalMotionProtocolActive
                         && !directFirstRunBootstrapBaselineEligible;
-                    if (enforceFastRuntimeBudget && !fastRuntimeContractArmed) {
+                    if (operationalMotionProtocolActive && !fastRuntimeContractArmed) {
                         Logger.Info(
                             "TPPA first-run response identification phase started. " +
                             "It is bounded by X/Y probes and fresh response checks; elapsed time is telemetry only.");
@@ -1869,7 +1871,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                         }
 
                                         if (!fastRuntimeContractArmed
-                                                && enforceFastRuntimeBudget
+                                                && operationalMotionProtocolActive
                                                 && !TPAPAVM.HasPendingFirstRunTwoAxisBootstrapProbe
                                                 && TPAPAVM.PersistFirstRunResponseCalibrationIfQualified()) {
                                             fastRuntimeContractArmed = true;
