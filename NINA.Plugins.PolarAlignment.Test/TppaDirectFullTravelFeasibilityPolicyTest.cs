@@ -20,7 +20,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
-        public void Evaluate_RejectsCalibratedThreeMoveFullEnvelopeRouteWhenDampedRuntimeCannotConverge() {
+        public void Evaluate_AdmitsCalibratedFullEnvelopeRouteWithinFiniteMoveLimit() {
             var result = Evaluate(
                 azimuthMinutes: 324,
                 altitudeMinutes: -300,
@@ -31,10 +31,11 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 maximumXUnits: 81,
                 maximumYUnits: 75);
 
-            result.IsFeasible.Should().BeFalse();
-            result.RequiredMoveCount.Should().Be(4);
-            result.RequiredRuntimeSeconds.Should().BeApproximately(340, 0.001);
-            result.Reason.Should().Contain("requires 4 fresh-feedback moves");
+            result.IsFeasible.Should().BeTrue(result.Reason);
+            result.RequiredMoveCount.Should().BeLessOrEqualTo(
+                TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMoves);
+            result.RequiredRuntimeSeconds.Should().BeGreaterThan(300);
+            result.Reason.Should().Contain("predicted runtime is telemetry only");
         }
 
         [Test]
@@ -75,7 +76,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
-        public void Evaluate_RequiresASeparateFineRunAfterWorstCaseBulkAcquisition() {
+        public void Evaluate_AllowsSinglePassFineConvergenceAfterWorstCaseBulkAcquisition() {
             var bulk = TppaDirectFullTravelFeasibilityPolicy.Evaluate(
                 300, -300,
                 0.05, 0,
@@ -111,12 +112,13 @@ namespace NINA.Plugins.PolarAlignment.Test {
             bulk.RequiredMoveCount.Should().Be(3);
             fine.IsFeasible.Should().BeTrue();
             fine.RequiredMoveCount.Should().BeLessOrEqualTo(2);
-            singlePassFine.IsFeasible.Should().BeFalse();
-            singlePassFine.Reason.Should().Contain("requires 4 fresh-feedback moves");
+            singlePassFine.IsFeasible.Should().BeTrue(singlePassFine.Reason);
+            singlePassFine.RequiredMoveCount.Should().BeLessOrEqualTo(
+                TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMoves);
         }
 
         [Test]
-        public void Evaluate_RejectsRouteThatFitsMoveCountButExceedsRuntime() {
+        public void Evaluate_ReportsRuntimeWithoutRejectingQualifiedRoute() {
             var result = TppaDirectFullTravelFeasibilityPolicy.Evaluate(
                 3, 3, 1, 0, 0, 1, 100, 100,
                 initialAgreementSeconds: 200,
@@ -124,9 +126,10 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 terminalConfirmationSeconds: 40,
                 perMoveOverheadSeconds: 15);
 
-            result.IsFeasible.Should().BeFalse();
+            result.IsFeasible.Should().BeTrue(result.Reason);
             result.RequiredMoveCount.Should().Be(1);
-            result.Reason.Should().Contain("exceeding");
+            result.RequiredRuntimeSeconds.Should().BeGreaterThan(300);
+            result.Reason.Should().Contain("predicted runtime is telemetry only");
         }
 
         [Test]

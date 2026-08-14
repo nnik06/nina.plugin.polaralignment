@@ -27,8 +27,8 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
-        public void FastContractCapsFreshFeedbackMovesAtThree() {
-            TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMoves.Should().Be(3);
+        public void OperationalProtocolCapsFreshFeedbackMovesAtEight() {
+            TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMoves.Should().Be(8);
         }
 
         [TestCase(0.0)]
@@ -225,9 +225,9 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
-        public void FourthMoveCannotBeEvaluated() {
+        public void NinthMoveCannotBeEvaluated() {
             var action = () => TppaFastAlignmentExecutionBudget.EvaluateBeforeMove(
-                TimeSpan.FromSeconds(150), 70, completedMoves: 3);
+                TimeSpan.FromSeconds(150), 70, completedMoves: 8);
 
             action.Should().Throw<ArgumentOutOfRangeException>();
         }
@@ -276,7 +276,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 TimeSpan.FromSeconds(60),
                 observedFreshDeterminationSeconds: 35,
                 completedMoves: 0,
-                maximumFreshFeedbackMoves: 4);
+                maximumFreshFeedbackMoves: 9);
 
             action.Should().Throw<ArgumentOutOfRangeException>();
         }

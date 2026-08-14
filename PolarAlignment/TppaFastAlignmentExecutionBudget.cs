@@ -16,12 +16,11 @@ namespace NINA.Plugins.PolarAlignment {
         string Reason);
 
     internal static class TppaFastAlignmentExecutionBudget {
-        // The first direct move requires an initial fresh pair. Subsequent
-        // moves may reuse their accepted, settled post-move feedback as the
-        // first member of the next fresh agreement pair. This leaves time for
-        // three bounded moves, their independent responses, and a final
-        // stationary confirmation inside the five-minute contract.
-        public const int MaximumFreshFeedbackMoves = 3;
+        // Eight bounded feedback moves give the damped controller enough
+        // iterations to converge from the physical full-travel envelope while
+        // still guaranteeing a finite stop on persistently noisy or ineffective
+        // responses. Elapsed time is telemetry, not movement authority.
+        public const int MaximumFreshFeedbackMoves = 8;
         public const int MaximumFreshFeedbackMovesAfterBoundedYBootstrapProbe =
             MaximumFreshFeedbackMoves;
 

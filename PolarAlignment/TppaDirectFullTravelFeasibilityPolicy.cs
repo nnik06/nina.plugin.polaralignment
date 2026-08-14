@@ -19,10 +19,9 @@ namespace NINA.Plugins.PolarAlignment {
     /// travel, settle, cancellation, and fresh-determination gates for every move.
     /// </summary>
     internal static class TppaDirectFullTravelFeasibilityPolicy {
-        // Keep the full-travel feasibility model aligned with the direct
-        // runtime contract: the first move consumes an initial fresh pair and
-        // later moves reuse accepted fresh feedback as their first agreement
-        // sample, allowing three bounded feedback moves in five minutes.
+        // The direct route is bounded by measured-response convergence and a
+        // finite move count. Runtime is predicted for telemetry and later
+        // optimization, but it does not decide whether a move is feasible.
         internal const int MaximumFeedbackMoves =
             TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMoves;
         internal const double MaximumAxisErrorMinutes = 324.0;
@@ -45,7 +44,6 @@ namespace NINA.Plugins.PolarAlignment {
             double perMoveFreshFeedbackSeconds,
             double terminalConfirmationSeconds,
             double perMoveOverheadSeconds,
-            double maximumRuntimeSeconds = TppaFastAlignmentExecutionBudget.MaximumRuntimeSeconds,
             bool clampLimitedRecoveryEnabled = false,
             double relativeResponseUncertainty = double.PositiveInfinity,
             double terminalErrorMinutes = DefaultTerminalErrorMinutes) {
@@ -62,7 +60,6 @@ namespace NINA.Plugins.PolarAlignment {
                     perMoveFreshFeedbackSeconds,
                     terminalConfirmationSeconds,
                     perMoveOverheadSeconds,
-                    maximumRuntimeSeconds,
                     terminalErrorMinutes)) {
                 return Deny("all feasibility inputs must be finite");
             }
@@ -86,8 +83,7 @@ namespace NINA.Plugins.PolarAlignment {
                 || initialAgreementSeconds <= 0
                 || perMoveFreshFeedbackSeconds <= 0
                 || terminalConfirmationSeconds <= 0
-                || perMoveOverheadSeconds < 0
-                || maximumRuntimeSeconds <= 0) {
+                || perMoveOverheadSeconds < 0) {
                 return Deny("calibrated authority, timing, and bounded command inputs must be positive");
             }
 
@@ -166,25 +162,13 @@ namespace NINA.Plugins.PolarAlignment {
                     minimumYDisplacementUnits, maximumYDisplacementUnits);
             }
 
-            if (requiredRuntimeSeconds > maximumRuntimeSeconds) {
-                return new(
-                    false,
-                    requiredXUnits,
-                    requiredYUnits,
-                    requiredMoves,
-                    requiredRuntimeSeconds,
-                    $"calibrated route requires {requiredRuntimeSeconds:F1}s, exceeding the {maximumRuntimeSeconds:F1}s runtime contract",
-                    minimumXDisplacementUnits, maximumXDisplacementUnits,
-                    minimumYDisplacementUnits, maximumYDisplacementUnits);
-            }
-
             return new(
                 true,
                 requiredXUnits,
                 requiredYUnits,
                 requiredMoves,
                 requiredRuntimeSeconds,
-                "calibrated damped route reaches the terminal error target within the bounded feedback and runtime contract",
+                "calibrated damped route reaches the terminal error target within the bounded feedback protocol; predicted runtime is telemetry only",
                 minimumXDisplacementUnits, maximumXDisplacementUnits,
                 minimumYDisplacementUnits, maximumYDisplacementUnits);
         }

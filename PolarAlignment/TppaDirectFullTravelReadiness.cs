@@ -6,7 +6,7 @@ namespace NINA.Plugins.PolarAlignment {
         /// <summary>
         /// Checks the static part of the attended direct full-travel route before the
         /// first TPPA capture. The live route still qualifies the fresh error vector,
-        /// projected travel, and five-minute convergence budget immediately before motion.
+        /// projected travel, and bounded convergence immediately before motion.
         /// </summary>
         public static TppaDirectFullTravelReadiness Evaluate(
             bool enabled,
@@ -79,7 +79,7 @@ namespace NINA.Plugins.PolarAlignment {
             }
 
             return new(true, false,
-                "the static direct full-travel route is ready; fresh TPPA error, projected headroom, and five-minute convergence remain motion-time qualifications");
+                "the static direct full-travel route is ready; fresh TPPA error, projected headroom, and bounded convergence remain motion-time qualifications");
         }
     }
 }

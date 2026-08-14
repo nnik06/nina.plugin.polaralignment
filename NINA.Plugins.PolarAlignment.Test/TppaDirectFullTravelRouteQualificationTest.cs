@@ -7,7 +7,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
             var result = Evaluate(enabled: true, confirmed: false, azimuthMinutes: 17, altitudeMinutes: -17);
 
             result.IsQualified.Should().BeTrue();
-            result.Reason.Should().Contain("five-minute feasibility");
+            result.Reason.Should().Contain("bounded-convergence");
         }
 
         [Test]
@@ -105,12 +105,13 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
-        public void Evaluate_RejectsAFullEnvelopeRouteWhoseDampedRuntimeCannotConverge() {
+        public void Evaluate_AdmitsAFullEnvelopeRouteThatConvergesWithinTheFiniteMoveLimit() {
             var result = Evaluate(enabled: true, confirmed: true, azimuthMinutes: 300, altitudeMinutes: -300);
 
-            result.IsQualified.Should().BeFalse();
-            result.Feasibility.RequiredMoveCount.Should().Be(4);
-            result.Reason.Should().Contain("requires 4 fresh-feedback moves");
+            result.IsQualified.Should().BeTrue(result.Reason);
+            result.Feasibility.RequiredMoveCount.Should().BeLessOrEqualTo(
+                TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMoves);
+            result.Reason.Should().Contain("bounded-convergence");
         }
 
         [Test]
@@ -119,7 +120,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
 
             result.IsQualified.Should().BeTrue();
             result.Feasibility.RequiredMoveCount.Should().Be(2);
-            result.Reason.Should().Contain("five-minute feasibility");
+            result.Reason.Should().Contain("bounded-convergence");
         }
 
         [Test]

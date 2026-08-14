@@ -12,7 +12,7 @@ namespace NINA.Plugins.PolarAlignment {
         double PlannedUnits,
         string Reason) {
         internal const double MaximumAxisErrorMinutes = 324.0;
-        internal const int MaximumMoves = 2;
+        internal const int MaximumMoves = TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMoves;
         private const double MinimumLeverage = 1e-8;
         private const double CorrectionGain = 0.5;
 
@@ -70,7 +70,7 @@ namespace NINA.Plugins.PolarAlignment {
             var plannedUnits = rawUnits * CorrectionGain;
             var requiredMoveCount = (int)Math.Ceiling(Math.Abs(plannedUnits) / maximumUnitsPerMove);
             if (requiredMoveCount > MaximumMoves) {
-                return Deny($"the direct-axis correction needs {requiredMoveCount} moves; the five-minute route permits at most {MaximumMoves}");
+                return Deny($"the direct-axis correction needs {requiredMoveCount} moves; the bounded operational route permits at most {MaximumMoves}");
             }
 
             var physicalDisplacement = Math.Min(Math.Abs(plannedUnits), maximumUnitsPerMove)
@@ -80,7 +80,7 @@ namespace NINA.Plugins.PolarAlignment {
                 return Deny("the visual-marker axis envelope lacks headroom for the direct-axis correction");
             }
 
-            return new(true, plannedUnits, "the calibrated direct axis route passed response, physical envelope, and five-minute checks");
+            return new(true, plannedUnits, "the calibrated direct axis route passed response, physical envelope, and bounded-convergence checks");
         }
 
         private static TppaDirectAxisRouteQualification Deny(string reason) => new(false, 0, reason);

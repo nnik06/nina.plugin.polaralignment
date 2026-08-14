@@ -4,7 +4,7 @@ namespace NINA.Plugins.PolarAlignment {
         string Reason);
 
     /// <summary>
-    /// Keeps the time-bounded route from computing a correction through an
+    /// Keeps the operational route from computing a correction through an
     /// unmeasured UPAS axis. A session may start from a measured 2x2 response,
     /// or from a measured X response with a physically bounded Y probe.
     /// </summary>
@@ -15,7 +15,7 @@ namespace NINA.Plugins.PolarAlignment {
                 bool qualifiedDirectBootstrapRoute,
                 bool qualifiedFirstRunBootstrapRoute = false) {
             if (!fastMotionRequested) {
-                return new(true, "The five-minute direct-motion route is not active.");
+                return new(true, "The operational direct-motion route is not active.");
             }
 
             if (qualifiedDirectFullTravelRoute) {
@@ -31,7 +31,7 @@ namespace NINA.Plugins.PolarAlignment {
             }
 
             return new(false,
-                "five-minute UPAS motion requires a measured 2x2 response, a measured X response with bounded Y bootstrap, or an attended bounded first-run X/Y identification route; no correction was sized from an unmeasured Y axis");
+                "operational UPAS motion requires a measured 2x2 response, a measured X response with bounded Y bootstrap, or an attended bounded first-run X/Y identification route; no correction was sized from an unmeasured Y axis");
         }
     }
 }

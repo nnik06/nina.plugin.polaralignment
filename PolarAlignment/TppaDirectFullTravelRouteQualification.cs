@@ -127,7 +127,7 @@ namespace NINA.Plugins.PolarAlignment {
                 true,
                 TppaOperationalAlignmentTierPolicy.Evaluate(terminalErrorMinutes).Tier,
                 feasibility,
-                "the calibrated direct full-travel route passed envelope, response, headroom, and five-minute feasibility checks");
+                "the calibrated direct full-travel route passed envelope, response, headroom, and bounded-convergence checks; predicted runtime is telemetry only");
         }
 
         private static TppaDirectFullTravelRouteQualification Deny(string reason) {
