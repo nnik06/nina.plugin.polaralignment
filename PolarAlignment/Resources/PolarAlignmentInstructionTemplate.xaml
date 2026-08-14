@@ -205,10 +205,10 @@
                 <CheckBox
                     Margin="10,0,0,0"
                     VerticalAlignment="Center"
-                    Content="Enforce 5-minute automated runtime"
+                    Content="Use operational UPAS alignment protocol"
                     IsChecked="{Binding EnforceFiveMinuteRuntimeBudget, UpdateSourceTrigger=PropertyChanged}"
                     IsEnabled="{Binding IsDiagnosticOnlyMode, Converter={StaticResource InverseBooleanConverter}}"
-                    ToolTip="For automated UPAS alignment, counts the complete sequence-item execution, reserves time before every move and independent fresh verification, and fails closed at 300 seconds instead of continuing or claiming a late result." />
+                    ToolTip="Uses bounded UPAS moves with fresh response checks, physical travel limits, settling, cancellation, and independent completion verification. Elapsed time is recorded for later optimization but does not reject an otherwise qualified move." />
                 <CheckBox
                     Margin="10,0,0,0"
                     VerticalAlignment="Center"
