@@ -7,7 +7,6 @@ namespace NINA.Plugins.PolarAlignment {
     /// traceable absolute polar-axis accuracy or require an external witness.
     /// </summary>
     internal sealed record TppaOperationalQualificationPolicy(
-        double MaximumDurationSeconds = 300.0,
         int MinimumFreshDeterminations = 2,
         double MaximumDeterminationErrorArcMinutes = 3.0,
         double MaximumRepeatabilityDeltaArcMinutes = 0.5);
@@ -44,16 +43,6 @@ namespace NINA.Plugins.PolarAlignment {
                 input.MaximumPairwiseDeltaArcMinutes,
                 nameof(input.MaximumPairwiseDeltaArcMinutes));
 
-            if (!double.IsFinite(activePolicy.MaximumDurationSeconds)
-                    || activePolicy.MaximumDurationSeconds <= 0) {
-                throw new ArgumentOutOfRangeException(
-                    nameof(policy),
-                    "maximum duration policy must be finite and positive");
-            }
-            if (input.DurationSeconds > activePolicy.MaximumDurationSeconds) {
-                issues.Add(
-                    $"operational qualification took {input.DurationSeconds:F1}s, exceeding {activePolicy.MaximumDurationSeconds:F1}s");
-            }
             if (input.FreshDeterminationCount < activePolicy.MinimumFreshDeterminations) {
                 issues.Add(
                     $"only {input.FreshDeterminationCount} independent fresh determination(s) are available");

@@ -71,7 +71,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
-        public void GeometryClosureRepeatabilityAndRuntimeFailClosed() {
+        public void GeometryClosureAndRepeatabilityFailClosedWhileRuntimeIsTelemetry() {
             var result = TppaOperationalQualification.Evaluate(
                 PassingInput() with {
                     MaximumPairwiseDeltaArcMinutes = 0.51,
@@ -84,7 +84,16 @@ namespace NINA.Plugins.PolarAlignment.Test {
             result.Issues.Should().Contain(issue => issue.Contains("repeatability"));
             result.Issues.Should().Contain(issue => issue.Contains("geometry"));
             result.Issues.Should().Contain(issue => issue.Contains("closure"));
-            result.Issues.Should().Contain(issue => issue.Contains("exceeding 300.0"));
+            result.Issues.Should().NotContain(issue => issue.Contains("300.0"));
+        }
+
+        [Test]
+        public void RuntimeAloneNeverRejectsAQualifiedOperationalResult() {
+            var result = TppaOperationalQualification.Evaluate(
+                PassingInput() with { DurationSeconds = 3600 });
+
+            result.IsOperationallyQualified.Should().BeTrue();
+            result.Issues.Should().BeEmpty();
         }
     }
 }

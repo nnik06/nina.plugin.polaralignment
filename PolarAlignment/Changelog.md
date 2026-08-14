@@ -1,3 +1,12 @@
+## Version 2.2.6.123
+
+- Treat elapsed alignment time as telemetry at terminal operational
+  qualification, so two agreeing fresh results inside tolerance are not
+  rejected solely because the run took longer than five minutes.
+- Add a first-run convergence matrix spanning error signs, response scales,
+  and modest axis cross-coupling while retaining the twelve-move and +/-5.4
+  degree travel bounds.
+
 ## Version 2.2.6.122
 
 - Release the first-run X identification-direction preference after both UPAS
