@@ -26,13 +26,13 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
-        public void FastModeBudgetsEveryMoveForFreshResponseAndTerminalVerification() {
+        public void OperationalModeRequiresFreshResponseAndTerminalVerificationForEveryMove() {
             var source = File.ReadAllText(Path.Combine(RepositoryRoot(), "PolarAlignment", "Instructions", "PolarAlignment.cs"));
 
             source.Should().Contain("maximumObservedFreshDeterminationSeconds,");
             source.Should().Contain("freshFeedbackMoveCount,");
             source.Should().Contain("qualifiedFreshDeterminationReserveSeconds);");
-            source.Should().Contain("terminal verify-only determination");
+            source.Should().Contain("terminal verification");
             source.Should().Contain("responseDecision.CouldAuthorizeAnotherMove");
             source.Should().Contain("freshFeedbackMoveCount >= freshFeedbackMoveLimit");
             source.Should().Contain("TPAPAVM.LastAutomatedAdjustmentWasBoundedYBootstrapProbe");
@@ -45,7 +45,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
             source.Should().Contain("directPostMoveFeedbackEligibleForReuse");
             source.Should().Contain("DirectFeedbackReuseMaximumAgeSeconds");
             source.Should().Contain("Reusing the accepted, settled post-move fresh determination");
-            source.Should().Contain("EvaluateBeforeFreshPair(");
+            source.Should().Contain("TPPA_OPERATIONAL_MOVE_ADMISSION");
             source.Should().Contain("InvalidateDirectPostMoveFeedback(\"a new direct UPAS move is about to execute\")");
             source.Should().Contain("InvalidateDirectPostMoveFeedback(\"the sequence was paused\")");
             source.Should().Contain("directUpasMotionEpoch");
@@ -65,6 +65,18 @@ namespace NINA.Plugins.PolarAlignment.Test {
             source.Should().NotContain("EvaluateBeforeDynamicAuthorityMove(");
             source.Should().NotContain("directDynamicAuthorityGranted");
             source.Should().NotContain("directDynamicAuthorityFeedbackMoveCount");
+        }
+
+        [Test]
+        public void OperationalMotionProtocolDoesNotUseElapsedTimeAsAdmissionAuthority() {
+            var source = File.ReadAllText(Path.Combine(RepositoryRoot(), "PolarAlignment", "Instructions", "PolarAlignment.cs"));
+
+            source.Should().Contain("TPPA_OPERATIONAL_MOVE_ADMISSION");
+            source.Should().Contain("Elapsed time is telemetry only");
+            source.Should().NotContain("fastRuntimeDeadlineCTS");
+            source.Should().NotContain("EvaluateBeforeMove(");
+            source.Should().NotContain("EvaluateBeforeFreshAgreement(");
+            source.Should().NotContain("five-minute runtime contract");
         }
 
         [Test]
@@ -120,7 +132,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 "var supervisorCampaignMode = enforceFastRuntimeBudget", StringComparison.Ordinal);
             var supervisorBranch = source.IndexOf("if (supervisorCampaignMode) {", supervisorMode, StringComparison.Ordinal);
             var physicalZero = source.IndexOf("RequireFreshPhysicalZeroAdmission", supervisorBranch, StringComparison.Ordinal);
-            var branchEnd = source.IndexOf("// The five-minute contract starts only after physical-zero admission.", supervisorBranch, StringComparison.Ordinal);
+            var branchEnd = source.IndexOf("// Operational timing telemetry starts only after physical-zero admission.", supervisorBranch, StringComparison.Ordinal);
 
             supervisorMode.Should().BeGreaterThanOrEqualTo(0);
             supervisorBranch.Should().BeGreaterThan(supervisorMode);
