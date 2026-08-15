@@ -27,6 +27,7 @@ namespace NINA.Plugins.PolarAlignment {
         private static readonly TimeSpan StoppedStatusGracePeriod = TimeSpan.FromSeconds(2);
         private static readonly TimeSpan FallbackMovementTimeout = TimeSpan.FromSeconds(30);
         private const int MaxStatusReadAttempts = 12;
+        private const int MaxStatusQueryAttempts = 2;
         private const int MaxCommandAcknowledgementReadAttempts = 8;
         private const float StoppedPositionToleranceMultiplier = 5f;
         private const int MaxStoppedStatusChecks = 4;
@@ -371,19 +372,38 @@ namespace NINA.Plugins.PolarAlignment {
         }
 
         private void UpdateStatus() {
-            port.WriteLine("?");
-            var status = ReadStatusLine(port);
+            Exception lastFailure = null;
+            for (var queryAttempt = 0; queryAttempt < MaxStatusQueryAttempts; queryAttempt++) {
+                try {
+                    // Status is a real-time GRBL query. Remove delayed acknowledgements from
+                    // earlier commands so they cannot consume the entire status-read budget.
+                    port.DiscardInBuffer();
+                    port.WriteLine("?");
+                    var status = ReadStatusLine(port);
 
-            if (TryParseStatus(GetStatusRegex(), status, out var controllerStatus, out var xPosition, out var yPosition, out var zPosition)) {
-                Status = controllerStatus;
-                XPosition = xPosition;
-                YPosition = yPosition;
-                ZPosition = zPosition;
-                return;
+                    if (TryParseStatus(GetStatusRegex(), status, out var controllerStatus, out var xPosition, out var yPosition, out var zPosition)) {
+                        Status = controllerStatus;
+                        XPosition = xPosition;
+                        YPosition = yPosition;
+                        ZPosition = zPosition;
+                        return;
+                    }
+
+                    lastFailure = new InvalidOperationException(
+                        $"Unable to parse {SystemName} status response: {status}");
+                } catch (TimeoutException ex) {
+                    lastFailure = ex;
+                }
+
+                Logger.Info(
+                    $"Retrying {SystemName} status query after attempt {queryAttempt + 1}/{MaxStatusQueryAttempts}: " +
+                    lastFailure.Message);
             }
 
-            Logger.Error($"Failed to parse {SystemName} status: {status}");
-            throw new InvalidOperationException($"Unable to parse {SystemName} status response: {status}");
+            Logger.Error(lastFailure);
+            throw new InvalidOperationException(
+                $"Unable to obtain a current {SystemName} status after {MaxStatusQueryAttempts} queries.",
+                lastFailure);
         }
 
         internal static bool TryParseStatus(Regex statusRegex,

@@ -1822,7 +1822,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                         responseDecision,
                                         fastRuntimeContractArmed && !firstRunBootstrapProbeAwaitingFeedback);
 
-                                    if (boundedYBootstrapProbeAwaitingFeedback && fastRuntimeContractArmed) {
+                                    if (boundedYBootstrapProbeAwaitingFeedback) {
                                         if (responseDecision.Classification == TppaPostMoveResponseClassification.Regressed) {
                                             TPAPAVM.AbortBoundedYBootstrapProbeAfterRegression();
                                             throw new SequenceEntityFailedException(

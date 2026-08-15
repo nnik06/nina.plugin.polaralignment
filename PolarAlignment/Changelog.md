@@ -1,3 +1,10 @@
+## Version 2.2.6.132
+
+- Stop a materially regressing bounded altitude response probe during first-run
+  calibration before it can update or persist the UPAS response model.
+- Drain delayed serial input before each GRBL status query and retry the query
+  once, preventing stale command acknowledgements from exhausting status polls.
+
 ## Version 2.2.6.131
 
 - Let the operator-selected positive, finite plate-solve exposure participate

@@ -103,6 +103,26 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public void RegressingBoundedYBootstrapProbeAbortsEvenBeforeFastRuntimeIsArmed() {
+            var source = File.ReadAllText(Path.Combine(RepositoryRoot(), "PolarAlignment", "Instructions", "PolarAlignment.cs"));
+
+            source.Should().Contain("if (boundedYBootstrapProbeAwaitingFeedback) {");
+            source.Should().NotContain("if (boundedYBootstrapProbeAwaitingFeedback && fastRuntimeContractArmed)");
+            var responseGate = source.IndexOf("if (boundedYBootstrapProbeAwaitingFeedback) {", StringComparison.Ordinal);
+            var regressionGate = source.IndexOf(
+                "responseDecision.Classification == TppaPostMoveResponseClassification.Regressed",
+                responseGate,
+                StringComparison.Ordinal);
+            var abort = source.IndexOf("TPAPAVM.AbortBoundedYBootstrapProbeAfterRegression();", regressionGate, StringComparison.Ordinal);
+            var controllerUpdate = source.IndexOf("TPAPAVM.UpdateAutomatedAdjustmentFromFreshDetermination();", abort, StringComparison.Ordinal);
+
+            responseGate.Should().BeGreaterThanOrEqualTo(0);
+            regressionGate.Should().BeGreaterThan(responseGate);
+            abort.Should().BeGreaterThan(regressionGate);
+            controllerUpdate.Should().BeGreaterThan(abort);
+        }
+
+        [Test]
         public void OperationalMotionProtocolDoesNotUseElapsedTimeAsAdmissionAuthority() {
             var source = File.ReadAllText(Path.Combine(RepositoryRoot(), "PolarAlignment", "Instructions", "PolarAlignment.cs"));
 

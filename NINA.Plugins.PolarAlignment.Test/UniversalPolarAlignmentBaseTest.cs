@@ -3,6 +3,7 @@ using NINA.Plugins.PolarAlignment.Avalon;
 using NINA.Plugins.PolarAlignment.OAPA;
 using System;
 using System.Collections.Generic;
+using System.IO;
 
 namespace NINA.Plugins.PolarAlignment.Test {
     public class UniversalPolarAlignmentBaseTest {
@@ -90,6 +91,20 @@ namespace NINA.Plugins.PolarAlignment.Test {
                                                        out _,
                                                        out _,
                                                        out _).Should().BeFalse();
+        }
+
+        [Test]
+        public void StatusQueryDrainsStaleInputAndHasOneBoundedRetry() {
+            var source = File.ReadAllText(Path.Combine(RepositoryRoot(), "PolarAlignment", "UniversalPolarAlignmentBase.cs"));
+            var updateStatus = source.IndexOf("private void UpdateStatus()", StringComparison.Ordinal);
+            var updateStatusEnd = source.IndexOf("internal static bool TryParseStatus", updateStatus, StringComparison.Ordinal);
+            var body = source.Substring(updateStatus, updateStatusEnd - updateStatus);
+
+            body.Should().Contain("port.DiscardInBuffer();");
+            body.IndexOf("port.DiscardInBuffer();", StringComparison.Ordinal)
+                .Should().BeLessThan(body.IndexOf("port.WriteLine(\"?\");", StringComparison.Ordinal));
+            body.Should().Contain("queryAttempt < MaxStatusQueryAttempts");
+            source.Should().Contain("private const int MaxStatusQueryAttempts = 2;");
         }
         [TestCase("Idle", true)]
         [TestCase("Hold:0", true)]
@@ -251,6 +266,15 @@ namespace NINA.Plugins.PolarAlignment.Test {
 
             action.Should().Throw<ArgumentOutOfRangeException>()
                 .Which.ParamName.Should().Be("maximumAttempts");
+        }
+
+        private static string RepositoryRoot() {
+            var directory = new DirectoryInfo(AppContext.BaseDirectory);
+            while (directory != null && !Directory.Exists(Path.Combine(directory.FullName, "PolarAlignment"))) {
+                directory = directory.Parent;
+            }
+            return directory?.FullName
+                ?? throw new DirectoryNotFoundException("Could not locate the TPPA repository root from the test output directory.");
         }
     }
 }
