@@ -1617,6 +1617,71 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public void AutomatedAdjustmentController_FirstRunWeakXResponseRetriesXInsteadOfProbingY() {
+            var controller = new AutomatedAdjustmentController(useUpasEngagementController: true);
+            controller.ConfigureFirstRunTwoAxisBootstrap(true);
+            controller.SeedXSeating(1);
+            controller.UpdateObservation(1.0, 1.0);
+
+            var firstX = controller.CreatePlan();
+            controller.NoteSuccessfulExecution(firstX);
+            controller.UpdateObservation(0.99, 1.0);
+
+            controller.SampleCount.Should().Be(0,
+                "an above-jitter but implausibly weak per-unit response must not qualify the X column");
+            controller.HasPendingFirstRunTwoAxisBootstrapProbe.Should().BeTrue();
+            var retryX = controller.CreatePlan();
+            retryX.XMagnitude.Should().Be(TppaFirstRunBootstrapRouteQualification.IdentificationProbeUnits);
+            retryX.YMagnitude.Should().Be(0);
+            retryX.Reason.Should().Contain("X response identification");
+        }
+
+        [Test]
+        public void AutomatedAdjustmentController_FirstRunWeakXResponseExhaustionStopsWithSpecificReason() {
+            var controller = new AutomatedAdjustmentController(useUpasEngagementController: true);
+            controller.ConfigureFirstRunTwoAxisBootstrap(true);
+            controller.SeedXSeating(1);
+            controller.UpdateObservation(1.0, 1.0);
+
+            for (var attempt = 0; attempt < 5; attempt++) {
+                var x = controller.CreatePlan();
+                x.HasMovement.Should().BeTrue();
+                x.XMagnitude.Should().Be(TppaFirstRunBootstrapRouteQualification.IdentificationProbeUnits);
+                x.YMagnitude.Should().Be(0);
+                controller.NoteSuccessfulExecution(x);
+                controller.UpdateObservation(1.0 - ((attempt + 1) * 0.01), 1.0);
+            }
+
+            var exhausted = controller.CreatePlan();
+            exhausted.HasMovement.Should().BeFalse();
+            exhausted.Reason.Should().Contain("First-run azimuth response");
+            exhausted.Reason.Should().Contain("after 5 bounded probes");
+            exhausted.Reason.Should().Contain("X backlash or mechanics");
+        }
+
+        [Test]
+        public void AutomatedAdjustmentController_FirstRunXRetryCrossesDeadbandThenMeasuresY() {
+            var controller = new AutomatedAdjustmentController(useUpasEngagementController: true);
+            controller.ConfigureFirstRunTwoAxisBootstrap(true);
+            controller.SeedXSeating(1);
+            controller.UpdateObservation(1.0, 1.0);
+
+            var weakX = controller.CreatePlan();
+            controller.NoteSuccessfulExecution(weakX);
+            controller.UpdateObservation(0.99, 1.0);
+
+            var engagedX = controller.CreatePlan();
+            controller.NoteSuccessfulExecution(engagedX);
+            controller.UpdateObservation(0.49, 1.0);
+
+            controller.SampleCount.Should().Be(1);
+            var y = controller.CreatePlan();
+            y.XMagnitude.Should().Be(0);
+            y.YMagnitude.Should().Be(TppaFirstRunBootstrapRouteQualification.IdentificationProbeUnits);
+            y.Reason.Should().Contain("Y response identification");
+        }
+
+        [Test]
         public void AutomatedAdjustmentController_FirstRunBootstrapConvergesLastFieldVectorWithinMoveCeiling() {
             const double azimuthResponsePerXUnitDegrees = -0.025;
             const double altitudeResponsePerYUnitDegrees = -0.022;

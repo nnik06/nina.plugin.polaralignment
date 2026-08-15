@@ -257,9 +257,7 @@ namespace NINA.Plugins.PolarAlignment {
         public bool HasPendingFirstRunTwoAxisBootstrapProbe =>
             firstRunTwoAxisBootstrapEnabled
             && currentObservation != null
-            && (!samples.Any(sample => Math.Abs(sample.XMagnitude) > 1e-9
-                                        && Math.Abs(sample.YMagnitude) <= 1e-9)
-                || !HasObservedYResponse());
+            && (!HasObservedXResponse() || !HasObservedYResponse());
 
         public void ConfigureFirstRunTwoAxisBootstrap(bool enabled) {
             firstRunTwoAxisBootstrapEnabled = enabled;
@@ -647,6 +645,10 @@ namespace NINA.Plugins.PolarAlignment {
                     if (pendingPlan.Plan.IsProbe) {
                         IncrementProbeRejectionCount(pendingPlan.Plan);
                     }
+                } else if (pendingPlan.Plan.IsProbe
+                           && responsePerUnit < MinimumAxisResponseDegreesPerUnit) {
+                    Logger.Info($"Rejected automated polar-alignment probe below per-unit actuator floor. Command X={Math.Round(pendingPlan.Plan.XMagnitude, 3)}, Y={Math.Round(pendingPlan.Plan.YMagnitude, 3)}, response/unit={Math.Round(responsePerUnit * 60.0, 4)}'/unit.");
+                    IncrementProbeRejectionCount(pendingPlan.Plan);
                 } else if (responsePerUnit > MaximumSampleResponseDegreesPerUnit) {
                     Logger.Warning($"Rejected automated polar-alignment sample as an outlier. Command X={Math.Round(pendingPlan.Plan.XMagnitude, 3)}, Y={Math.Round(pendingPlan.Plan.YMagnitude, 3)}, response={Math.Round(responseMagnitude * 60.0, 3)}', response/unit={Math.Round(responsePerUnit * 60.0, 3)}'/unit.");
                     samples.Clear();
@@ -862,9 +864,14 @@ namespace NINA.Plugins.PolarAlignment {
                 return false;
             }
 
-            var hasX = samples.Any(sample => Math.Abs(sample.XMagnitude) > 1e-9 && Math.Abs(sample.YMagnitude) <= 1e-9);
+            var hasX = HasObservedXResponse();
             var hasY = HasObservedYResponse();
             if (!hasX) {
+                if (IsProbeAxisExhausted(xAxis: true)) {
+                    plan = AutomatedAdjustmentPlan.Skip($"First-run azimuth response remained below the per-unit actuator floor after {MaxRejectedProbeAttempts} bounded probes. Check X backlash or mechanics.");
+                    return true;
+                }
+
                 var direction = preferredXAcquisitionDirection ?? 1;
                 plan = new AutomatedAdjustmentPlan(
                     direction * TppaFirstRunBootstrapRouteQualification.IdentificationProbeUnits,
@@ -875,6 +882,11 @@ namespace NINA.Plugins.PolarAlignment {
                 return true;
             }
             if (!hasY) {
+                if (IsProbeAxisExhausted(xAxis: false)) {
+                    plan = AutomatedAdjustmentPlan.Skip($"First-run altitude response remained below the per-unit actuator floor after {MaxRejectedProbeAttempts} bounded probes. Check Y mechanics.");
+                    return true;
+                }
+
                 plan = new AutomatedAdjustmentPlan(
                     0,
                     TppaFirstRunBootstrapRouteQualification.IdentificationProbeUnits,
@@ -1085,6 +1097,11 @@ namespace NINA.Plugins.PolarAlignment {
                 $"TPPA_UPAS_MOTION_ABORT reason='{reason}', X={Math.Round(plan?.XMagnitude ?? 0, 3)}, Y={Math.Round(plan?.YMagnitude ?? 0, 3)}, " +
                 $"beforeTotalArcmin={beforeTotal}, afterTotalArcmin={afterTotal}. " +
                 "No inverse, bounded, probe, or pre-seat motion is authorized by this controller instance.");
+        }
+
+        private bool HasObservedXResponse() {
+            return samples.Any(sample => Math.Abs(sample.XMagnitude) > 0
+                                         && Math.Abs(sample.YMagnitude) <= 1e-9);
         }
 
         private bool HasObservedYResponse() {
