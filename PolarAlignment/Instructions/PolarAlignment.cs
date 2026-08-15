@@ -3632,20 +3632,25 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                                           Longitude,
                                                           Elevation,
                                                           refractionParameter);
-                        var threeSolveShadowEvidence = TppaThreeSolveShadowEvaluator.Evaluate(
-                            new TppaThreeSolveShadowSample(
-                                positions[2].Topocentric.Azimuth.Degree,
-                                positions[2].PositionAngle,
-                                positions[2].Vector.X,
-                                positions[2].Vector.Y,
-                                positions[2].Vector.Z),
-                            new TppaThreeSolveShadowSample(
-                                returnPosition.Topocentric.Azimuth.Degree,
-                                returnPosition.PositionAngle,
-                                returnPosition.Vector.X,
-                                returnPosition.Vector.Y,
-                                returnPosition.Vector.Z));
-                        Logger.Info(threeSolveShadowEvidence.ToLogString());
+                        if (positions[2] != null) {
+                            var threeSolveShadowEvidence = TppaThreeSolveShadowEvaluator.Evaluate(
+                                new TppaThreeSolveShadowSample(
+                                    positions[2].Topocentric.Azimuth.Degree,
+                                    positions[2].PositionAngle,
+                                    positions[2].Vector.X,
+                                    positions[2].Vector.Y,
+                                    positions[2].Vector.Z),
+                                new TppaThreeSolveShadowSample(
+                                    returnPosition.Topocentric.Azimuth.Degree,
+                                    returnPosition.PositionAngle,
+                                    returnPosition.Vector.X,
+                                    returnPosition.Vector.Y,
+                                    returnPosition.Vector.Z));
+                            Logger.Info(threeSolveShadowEvidence.ToLogString());
+                        } else {
+                            Logger.Info(
+                                "TPPA three-solve shadow evidence unavailable because fresh completion verification did not capture its third point.");
+                        }
                         Logger.Info(
                             $"TPPA_COMPLETION_VERIFICATION_TIMING schemaVersion=2; phase=return-field; " +
                             $"receiptId={timingReceiptId:D}; " +

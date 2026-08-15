@@ -1,3 +1,9 @@
+## Version 2.2.6.130
+
+- Preserve the original fresh-verification failure when point C was not
+  captured. Return-field cleanup now records unavailable shadow evidence
+  instead of dereferencing the missing third point.
+
 ## Version 2.2.6.129
 
 - Treat a successful plate-solve retry as telemetry rather than an automatic
