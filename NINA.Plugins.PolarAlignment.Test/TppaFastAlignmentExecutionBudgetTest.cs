@@ -319,6 +319,15 @@ namespace NINA.Plugins.PolarAlignment.Test {
             result.IsEligible.Should().BeTrue(result.Reason);
         }
 
+        [TestCase(8)]
+        [TestCase(30)]
+        public void AcceptsOperatorSelectedPositiveFiniteExposure(double exposureSeconds) {
+            var result = TppaFastAlignmentExecutionBudget.EvaluateConfiguration(
+                30, exposureSeconds, false);
+
+            result.IsEligible.Should().BeTrue(result.Reason);
+        }
+
         [TestCase(0)]
         [TestCase(4.999)]
         [TestCase(120.001)]
@@ -342,8 +351,8 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [TestCase(0)]
-        [TestCase(5.001)]
         [TestCase(double.PositiveInfinity)]
+        [TestCase(double.NaN)]
         public void RejectsUnqualifiedOperationalExposure(double exposureSeconds) {
             var result = TppaFastAlignmentExecutionBudget.EvaluateConfiguration(
                 30, exposureSeconds, false);

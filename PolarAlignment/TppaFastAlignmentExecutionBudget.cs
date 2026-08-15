@@ -54,11 +54,6 @@ namespace NINA.Plugins.PolarAlignment {
             MoveAndFreshFeedbackReserveSeconds + FreshDeterminationReserveSeconds;
         public const double ContinuousSolveReserveSeconds = 20;
         public const double UnconditionalQualifiedSettleSeconds = 30;
-        // Field plate solving on the balcony can require five seconds under
-        // bright urban sky. Keep the fast-path bound finite while accepting
-        // the proven operational exposure.
-        public const double MaximumFastExposureSeconds = 5;
-
         public static TppaFastAlignmentConfigurationDecision EvaluateConfiguration(
                 double resolvedSettleSeconds,
                 double exposureSeconds,
@@ -77,10 +72,9 @@ namespace NINA.Plugins.PolarAlignment {
                     $"{TppaVerificationSettlePolicy.MaximumOverrideSeconds:F0}s; received {resolvedSettleSeconds:F3}s");
             }
             if (!double.IsFinite(exposureSeconds)
-                    || exposureSeconds <= 0
-                    || exposureSeconds > MaximumFastExposureSeconds) {
+                    || exposureSeconds <= 0) {
                 reasons.Add(
-                    $"plate-solve exposure must be finite, positive, and at most {MaximumFastExposureSeconds:F0}s; received {exposureSeconds:F3}s");
+                    $"plate-solve exposure must be finite and positive; received {exposureSeconds:F3}s");
             }
             if (autoPauseEnabled) {
                 reasons.Add("Auto pause must be disabled");

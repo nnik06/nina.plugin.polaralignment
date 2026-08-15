@@ -1,3 +1,9 @@
+## Version 2.2.6.131
+
+- Let the operator-selected positive, finite plate-solve exposure participate
+  in operational TPPA alignment. Exposure duration remains runtime telemetry
+  instead of an arbitrary five-second actuator veto.
+
 ## Version 2.2.6.130
 
 - Preserve the original fresh-verification failure when point C was not
