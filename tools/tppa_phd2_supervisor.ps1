@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("Probe", "FreshMeasurement", "Phd2Drift", "Cycle", "BurstThenDrift", "Stability")]
+    [ValidateSet("Probe", "Alignment", "FreshMeasurement", "Phd2Drift", "Cycle", "BurstThenDrift", "Stability")]
     [string]$Mode = "Probe",
     [string]$NinaBaseUrl = "",
     [int[]]$NinaCandidatePorts = @(1888, 1889, 5000, 5001, 59590, 8080, 8081, 9000),
@@ -684,6 +684,11 @@ function Read-NinaLogSharedTail {
     @($text -split "`r?`n" | Select-Object -Last $Count)
 }
 
+function Test-NinaLogBelongsToProcess {
+    param([string]$LogName, [int]$ProcessId)
+    $LogName -match ("\." + [regex]::Escape([string]$ProcessId) + "-\d{6}\.log$")
+}
+
 function Get-NinaOperationalSessionAssessment {
     param([string]$Base)
 
@@ -699,10 +704,10 @@ function Get-NinaOperationalSessionAssessment {
     try {
         $logPath = Get-LatestNinaLogPath
         $logName = [IO.Path]::GetFileName($logPath)
-        if ($logName -notmatch ("\\." + [regex]::Escape([string]$process.Id) + "-\\d{6}\\.log$")) {
+        if (-not (Test-NinaLogBelongsToProcess -LogName $logName -ProcessId $process.Id)) {
             [void]$reasons.Add("latest NINA log '$logName' does not belong to NINA PID $($process.Id)")
         } else {
-            $fatal = @(Read-NinaLogSharedTail -Path $logPath -Count [int]::MaxValue | Where-Object {
+            $fatal = @(Read-NinaLogSharedTail -Path $logPath -Count ([int]::MaxValue) | Where-Object {
                 $_ -match 'Current_DispatcherUnhandledException'
             } | Select-Object -Last 1)
             if ($fatal.Count -gt 0) {
@@ -1063,6 +1068,16 @@ function Wait-NinaDone {
     return $false
 }
 
+function Test-NinaQualifiedAlignmentCompletion {
+    param([datetime]$SinceLocal)
+
+    $lines = @(Get-NinaLogLinesSince -SinceLocal $SinceLocal -Count 12000)
+    return @($lines | Where-Object {
+        $_ -match 'Automatically finishing polar alignment[.]' -or
+        $_ -match 'TPPA automated alignment completed in '
+    }).Count -gt 0
+}
+
 $runDir = New-TestFolder
 Log "TPPA/PHD2 supervisor started. Mode=$Mode Output=$runDir"
 
@@ -1093,6 +1108,43 @@ if ($Mode -eq "Probe") {
 }
 
 if ($Mode -eq "Phd2Drift") { Capture-Phd2DriftWithRetry -OutDir $runDir -Minutes $DriftMinutes -Label "daylight"; Log "Phd2Drift mode complete"; return }
+
+if ($Mode -eq "Alignment") {
+    if (-not $SequencePath) {
+        throw "Alignment mode requires -SequencePath so every cloud retry reloads the intended TPPA sequence."
+    }
+
+    $nina = Find-Nina
+    if (-not $nina) { throw "NINA API not found. Start NINA and enable Advanced API first." }
+
+    while (-not (Test-StopWindow)) {
+        Assert-NinaOperationalSession -Base $nina
+        Load-NinaSequence -Base $nina
+        Log "Alignment mode: starting a full TPPA alignment attempt."
+        Start-NinaSequence -Base $nina
+        $started = $script:LastSequenceStartLocal
+        if (Wait-NinaDone -Base $nina) {
+            if (Test-NinaQualifiedAlignmentCompletion -SinceLocal $started) {
+                Log "Alignment mode complete: TPPA emitted a qualified automatic-completion marker."
+                return
+            }
+            throw "TPPA sequence became terminal without a qualified automatic-completion marker."
+        }
+
+        if ($script:LastWaitReason -eq "CloudBackoff" -and -not (Test-StopWindow)) {
+            Log "Alignment mode: cloud backoff complete; retrying the full TPPA alignment."
+            continue
+        }
+        if ($script:LastWaitReason -eq "StopWindow") {
+            Log "Alignment mode stopped at the configured field-work deadline."
+            return
+        }
+        throw "TPPA alignment attempt did not complete; reason=$script:LastWaitReason."
+    }
+
+    Log "Alignment mode stopped before starting another attempt because StopAt was reached."
+    return
+}
 
 if ($Mode -eq "FreshMeasurement") {
     if (-not $SequencePath) {

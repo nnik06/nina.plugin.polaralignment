@@ -14,6 +14,21 @@ $errors = $null
 [Management.Automation.Language.Parser]::ParseFile($supervisorPath, [ref]$tokens, [ref]$errors) | Out-Null
 if ($errors.Count -gt 0) { throw "Supervisor has PowerShell parse errors: $($errors -join '; ')" }
 
+$ast = [Management.Automation.Language.Parser]::ParseFile($supervisorPath, [ref]$tokens, [ref]$errors)
+$logMatchFunction = @($ast.FindAll({
+    param($node)
+    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+        $node.Name -eq 'Test-NinaLogBelongsToProcess'
+}, $true))
+if ($logMatchFunction.Count -ne 1) { throw 'Expected one Test-NinaLogBelongsToProcess function.' }
+Invoke-Expression $logMatchFunction[0].Extent.Text
+if (-not (Test-NinaLogBelongsToProcess -LogName '20260816-023900-3.2.0.9001.5268-202608.log' -ProcessId 5268)) {
+    throw 'Assertion failed: current NINA log filename must match its process ID.'
+}
+if (Test-NinaLogBelongsToProcess -LogName '20260816-023900-3.2.0.9001.5268-202608.log' -ProcessId 5269) {
+    throw 'Assertion failed: NINA log filename must not match a different process ID.'
+}
+
 Assert-Contains '$writer.NewLine = "`r`n"' "PHD2 JSON-RPC writer must retain a literal CRLF escape"
 Assert-Contains '$text.Contains("`n")' "CSV quoting must test for a literal newline escape"
 Assert-Contains '$text -split "`r?`n"' "NINA log splitting must retain its literal CRLF/LF regex"
@@ -33,7 +48,12 @@ if ($text.Contains('Current_DispatcherUnhandledException|Desktop composition is 
 }
 Assert-Contains 'expected exactly one NINA process' "supervisor must reject overlapping or missing NINA instances"
 Assert-Contains 'latest NINA log' "supervisor must bind the live NINA PID to its current log"
-Assert-Contains '-Count [int]::MaxValue' "zombie detection must scan the complete current-session log, not only a tail"
+Assert-Contains 'function Test-NinaLogBelongsToProcess' "NINA log ownership parsing must be isolated and testable"
+Assert-Contains '("\." + [regex]::Escape([string]$ProcessId) + "-\d{6}\.log$")' "NINA log ownership regex must use regex escapes, not a literal backslash"
+Assert-Contains '-Count ([int]::MaxValue)' "zombie detection must scan the complete current-session log, not only a tail"
+if ($text.Contains('-Count [int]::MaxValue')) {
+    throw 'Assertion failed: PowerShell argument mode would pass [int]::MaxValue as a string without parentheses.'
+}
 Assert-Contains 'function Assert-NinaOperationalSession' "supervisor must expose a fail-closed operational-session preflight"
 Assert-Contains 'Assert-NinaOperationalSession -Base $nina' "sequence-starting modes must require a healthy NINA operational session"
 Assert-Contains 'if (-not (Wait-NinaSequenceIdle -Base $Base))' "fresh TPPA stop must confirm NINA is idle before another sequence load"
@@ -48,6 +68,10 @@ Assert-Contains 'Advanced Sequence starting|Starting Category: Polar Alignment' 
 Assert-Contains 'SequenceTerminatedWithoutFreshResult' "fresh-measurement monitoring must stop promptly when NINA terminates without a result"
 Assert-Contains 'NINA sequence became terminal before a fresh TPPA determination' "terminal TPPA failures must be reported instead of waiting for the outer timeout"
 Assert-Contains 'if ($Mode -eq "FreshMeasurement")' "supervisor must expose a one-result measurement-only mode"
+Assert-Contains 'if ($Mode -eq "Alignment")' "supervisor must expose a full operational alignment mode"
+Assert-Contains 'Alignment mode requires -SequencePath' "alignment mode must reload a known sequence for each cloud retry"
+Assert-Contains 'Test-NinaQualifiedAlignmentCompletion' "alignment mode must require an explicit qualified completion marker"
+Assert-Contains 'Alignment mode: cloud backoff complete; retrying the full TPPA alignment.' "alignment mode must retry after the existing cloud backoff"
 Assert-Contains 'FreshMeasurement mode requires -SequencePath' "measurement-only mode must require a known sequence"
 Assert-Contains 'FreshMeasurement mode armed. It will stop immediately after one fresh three-point result; no PHD2 capture is scheduled.' "measurement-only mode must explicitly deny PHD2 capture"
 Assert-Contains '$PlateSolveFailureBackoffMinutes = 0' "one-shot FreshMeasurement mode must not sleep through a cloud backoff"
@@ -91,6 +115,15 @@ if ($freshMeasurementStart -lt 0 -or $stabilityStart -le $freshMeasurementStart)
 $freshMeasurementBlock = $text.Substring($freshMeasurementStart, $stabilityStart - $freshMeasurementStart)
 if ($freshMeasurementBlock.Contains('Capture-Phd2')) {
     throw "Assertion failed: FreshMeasurement mode must not call a PHD2 capture function."
+}
+
+$alignmentStart = $text.IndexOf('if ($Mode -eq "Alignment")')
+if ($alignmentStart -lt 0 -or $freshMeasurementStart -le $alignmentStart) {
+    throw "Assertion failed: Alignment mode must precede FreshMeasurement mode."
+}
+$alignmentBlock = $text.Substring($alignmentStart, $freshMeasurementStart - $alignmentStart)
+if ($alignmentBlock.Contains('Capture-Phd2')) {
+    throw "Assertion failed: Alignment mode must not call a PHD2 capture function."
 }
 $freshAssessmentIndex = $freshMeasurementBlock.IndexOf('Assert-NinaOperationalSession -Base $nina')
 $freshLoadIndex = $freshMeasurementBlock.IndexOf('Load-NinaSequence -Base $nina')
