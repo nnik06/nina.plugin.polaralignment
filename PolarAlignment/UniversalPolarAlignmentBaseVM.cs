@@ -153,6 +153,11 @@ namespace NINA.Plugins.PolarAlignment {
                 upa = null;
                 disconnectedPollCts = pollCts;
                 pollCts = null;
+                // A preserved in-process handoff starts a new safe connection epoch; an
+                // explicit disconnect keeps reconnect history after clearing the datum.
+                hasEstablishedPhysicalConnection = NextConnectionHistoryState(
+                    hasEstablishedPhysicalConnection,
+                    invalidatePhysicalPositionConfirmation);
             }
 
             Connected = false;
@@ -165,6 +170,11 @@ namespace NINA.Plugins.PolarAlignment {
             }
             Notification.ShowInformation($"Disconnected from {SystemName}");
         }
+
+        internal static bool NextConnectionHistoryState(
+            bool hasEstablishedPhysicalConnection,
+            bool invalidatePhysicalPositionConfirmation) =>
+            invalidatePhysicalPositionConfirmation && hasEstablishedPhysicalConnection;
 
         private IDisposable BeginActuatorSerialOperation(string action) {
             if (PolarAlignmentActuatorConnectionGate.TryBeginOperation(out var operationScope)) {
