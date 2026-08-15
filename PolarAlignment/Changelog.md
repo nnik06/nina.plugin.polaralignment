@@ -1,3 +1,9 @@
+## Version 2.2.6.129
+
+- Treat a successful plate-solve retry as telemetry rather than an automatic
+  actuator veto. The three-point residual magnitude and spread checks remain
+  fail-closed and continue to reject inconsistent solve geometry.
+
 ## Version 2.2.6.126
 
 - Promote a qualified fresh first-run X/Y response model directly into bounded two-axis coarse correction, avoiding repeated 8-unit fallback nudges across the UPAS envelope while retaining response, regression, and physical travel guards.

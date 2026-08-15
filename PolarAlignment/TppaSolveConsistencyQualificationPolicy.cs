@@ -17,7 +17,7 @@ namespace NINA.Plugins.PolarAlignment {
         double MaximumResidualDegrees,
         IReadOnlyList<string> Issues) {
         public string Reason => IsQualified
-            ? "three-point solve-attempt and pointing-residual gates passed"
+            ? "three-point pointing-residual gates passed"
             : string.Join(" ", Issues);
     }
 
@@ -27,7 +27,6 @@ namespace NINA.Plugins.PolarAlignment {
     /// </summary>
     internal static class TppaSolveConsistencyQualificationPolicy {
         public const int RequiredSolvedPoints = 3;
-        public const int MaximumAuthorizedAttempt = 1;
         public const double MaximumResidualSpreadDegrees = 1.0;
         public const double MaximumResidualDegrees = 10.0;
 
@@ -39,9 +38,6 @@ namespace NINA.Plugins.PolarAlignment {
                 return new(false, double.NaN, double.NaN, issues);
             }
 
-            if (points.Any(point => point.Attempt > MaximumAuthorizedAttempt)) {
-                issues.Add("one or more solve points required a retry; retry-escalated solves are measurement-only.");
-            }
             var residuals = points.Select(ResidualDegrees).ToArray();
             if (residuals.Any(value => !double.IsFinite(value))) {
                 issues.Add("one or more mount-to-solve residuals are non-finite.");
