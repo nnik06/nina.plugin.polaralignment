@@ -162,7 +162,7 @@ function Test-EstablishedTcpSession {
                     Select-Object -ExpandProperty CommandLine)
                 $configuredDestination = $ownerCommandLine -match
                     [regex]::Escape($HostName) -and $ownerCommandLine -match
-                    "(^|\\s)$Port(\\s|$)"
+                    "(^|\s)$Port(\s|$)"
                 if (-not $resolvedDestination -and -not $configuredDestination) {
                     continue
                 }
