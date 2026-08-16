@@ -92,6 +92,17 @@ The current Mele NINA user configuration contains:
 
 - maximum command per move: X=80, Y=80.
 
+The `300'` per-axis input ceiling is an admission ceiling, not proof that a
+centered actuator can correct `300'` of sky error. With the persisted diagonal
+response matrix and the physical scale calibrations X=`0.025` degrees/unit and
+Y=`0.022` degrees/unit, centered one-sided travel corresponds to approximately
+`2.85` degrees of AZ sky correction and `3.81` degrees of ALT sky correction
+before reserve and cross-coupling. The ordinary sub-degree imaging route is
+comfortably inside this authority. The full +/-5-degree PA-error claim is not
+physically demonstrated by the present calibration and must not be inferred
+from the software input cap; qualify that tier only from fresh commanded,
+marker, and TPPA response evidence.
+
 The persisted marker positions, AZ `+0.7` degrees and ALT `+0.528` degrees,
 predate the next transport and are not current physical evidence. Replace them
 with fresh signed scale readings after the rig is stationary on the balcony.
