@@ -36,10 +36,10 @@ policies. Never let a broad-travel result claim fine convergence.
 - **Unqualified:** returns the exact failed predicate and stops. It must never
   present a projected residual as a measured result.
 
-The current 0.65 controller leaves only a narrow mathematical margin at the
-24-arcminute handoff. Until response repeatability and backlash have been
-measured, use an internal aim below 15 arcminutes rather than treating 24
-arcminutes as a comfortable fine-route entry.
+The current qualified measured-matrix controller uses 0.75 damping. Until
+response repeatability and backlash have been measured, use an internal aim
+below 15 arcminutes rather than treating 24 arcminutes as a comfortable
+fine-route entry.
 
 ## Preconditions
 
