@@ -48,6 +48,21 @@ It failed only the ASI2600, ASI220, and EFW gates because those devices were
 physically unplugged. Connect and recheck them before sky work. The flat panel
 remains absent and must not be connected or operated.
 
+Application-level validation also passed. NINA was launched once through the
+known interactive task and its fresh log
+`C:\Users\nnik0\AppData\Local\NINA\Logs\20260816-112018-3.2.0.9001.7944-202608.log`
+reported `Successfully loaded plugin Three Point Polar Alignment version
+2.2.6.135`. The corrected five-second operational sequence loaded through the
+Advanced API with HTTP 200 and remained in `CREATED` state; it was not started
+and no telescope or UPAS motion was requested.
+
+That validation instance was then closed gracefully through UI Automation,
+bound to exact NINA PID 7944. The one-shot task returned 0, independent process
+enumeration found no remaining NINA process, and the preserved result
+`C:\Users\nnik0\Documents\TPPA-Deploy\close-nina-v135-load-test.json` records
+`closeRequested=true`, `method=uia-window-pattern-close`, and
+`processStillRunning=false`. No forced termination was used.
+
 ## Persisted Operational Seed
 
 The current Mele NINA user configuration contains:
