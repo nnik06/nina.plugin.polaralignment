@@ -150,15 +150,15 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
-        public void ExtendedOperationalModeDoesNotApplyTheFastInconclusiveResponseAbort() {
+        public void ExtendedOperationalModeStillAppliesTheInconclusiveResponseAbort() {
             var source = File.ReadAllText(Path.Combine(RepositoryRoot(), "PolarAlignment", "Instructions", "PolarAlignment.cs"));
 
             source.Should().Contain(
-                "enforceFastRuntimeBudget\n                                        && fastRuntimeContractArmed\n                                        && !firstRunBootstrapProbeAwaitingFeedback");
+                "TppaPostMoveResponsePolicy.DispositionForMode(\n                                        responseDecision);");
             source.Should().Contain(
-                "TPAPAVM.AutomatedAdjustmentRequiresFreshMeasurementFeedback\n                                        && enforceFastRuntimeBudget\n                                        && fastRuntimeContractArmed");
-            source.Should().Contain(
-                "if (enforceFastRuntimeBudget\n                                            && fastRuntimeContractArmed\n                                            && responseDecision.CouldAuthorizeAnotherMove");
+                "if (responseDisposition.FailureMessage != null)");
+            source.Should().NotContain(
+                "DispositionForMode(\n                                        responseDecision,\n                                        enforceFastRuntimeBudget");
         }
 
         [Test]

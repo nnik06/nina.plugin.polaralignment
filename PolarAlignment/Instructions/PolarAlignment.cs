@@ -1906,10 +1906,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                     var firstRunBootstrapProbeAwaitingFeedback =
                                         TPAPAVM.LastAutomatedAdjustmentWasFirstRunBootstrapProbe;
                                     var responseDisposition = TppaPostMoveResponsePolicy.DispositionForMode(
-                                        responseDecision,
-                                        enforceFastRuntimeBudget
-                                        && fastRuntimeContractArmed
-                                        && !firstRunBootstrapProbeAwaitingFeedback);
+                                        responseDecision);
 
                                     if (boundedYBootstrapProbeAwaitingFeedback) {
                                         if (responseDecision.Classification == TppaPostMoveResponseClassification.Regressed) {

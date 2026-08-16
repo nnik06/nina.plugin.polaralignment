@@ -109,8 +109,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
         public void FastModeStopsUnqualifiedResponsesWithoutUpdatingController(int classificationValue) {
             var classification = (TppaPostMoveResponseClassification)classificationValue;
             var disposition = TppaPostMoveResponsePolicy.DispositionForMode(
-                Decision(classification),
-                enforceFastRuntimeBudget: true);
+                Decision(classification));
 
             disposition.UpdateController.Should().BeFalse();
             disposition.ContinueToStationaryConfirmation.Should().BeFalse();
@@ -120,8 +119,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
         [Test]
         public void FastModeMeaningfulImprovementUpdatesControllerForBudgetedSecondMove() {
             var disposition = TppaPostMoveResponsePolicy.DispositionForMode(
-                Decision(TppaPostMoveResponseClassification.Improved),
-                enforceFastRuntimeBudget: true);
+                Decision(TppaPostMoveResponseClassification.Improved));
 
             disposition.UpdateController.Should().BeTrue();
             disposition.ContinueToStationaryConfirmation.Should().BeFalse();
@@ -131,27 +129,23 @@ namespace NINA.Plugins.PolarAlignment.Test {
         [Test]
         public void FastModeConvergedCandidateUpdatesThenEntersStationaryConfirmation() {
             var disposition = TppaPostMoveResponsePolicy.DispositionForMode(
-                Decision(TppaPostMoveResponseClassification.ConvergedCandidate),
-                enforceFastRuntimeBudget: true);
+                Decision(TppaPostMoveResponseClassification.ConvergedCandidate));
 
             disposition.UpdateController.Should().BeTrue();
             disposition.ContinueToStationaryConfirmation.Should().BeTrue();
             disposition.FailureMessage.Should().BeNull();
         }
 
-        [TestCase((int)TppaPostMoveResponseClassification.ConvergedCandidate)]
-        [TestCase((int)TppaPostMoveResponseClassification.Improved)]
         [TestCase((int)TppaPostMoveResponseClassification.Inconclusive)]
         [TestCase((int)TppaPostMoveResponseClassification.Regressed)]
-        public void ExtendedModeAlwaysPreservesControllerAcquisition(int classificationValue) {
+        public void ExtendedModeStillStopsUnqualifiedResponses(int classificationValue) {
             var classification = (TppaPostMoveResponseClassification)classificationValue;
             var disposition = TppaPostMoveResponsePolicy.DispositionForMode(
-                Decision(classification),
-                enforceFastRuntimeBudget: false);
+                Decision(classification));
 
-            disposition.UpdateController.Should().BeTrue();
+            disposition.UpdateController.Should().BeFalse();
             disposition.ContinueToStationaryConfirmation.Should().BeFalse();
-            disposition.FailureMessage.Should().BeNull();
+            disposition.FailureMessage.Should().NotBeNullOrWhiteSpace();
         }
 
         [Test]

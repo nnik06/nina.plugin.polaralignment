@@ -122,12 +122,7 @@ namespace NINA.Plugins.PolarAlignment {
         }
 
         public static TppaPostMoveResponseDisposition DispositionForMode(
-                TppaPostMoveResponseDecision decision,
-                bool enforceFastRuntimeBudget) {
-            if (!enforceFastRuntimeBudget) {
-                return new(UpdateController: true, ContinueToStationaryConfirmation: false, FailureMessage: null);
-            }
-
+                TppaPostMoveResponseDecision decision) {
             return decision.Classification switch {
                 TppaPostMoveResponseClassification.ConvergedCandidate => new(
                     UpdateController: true,
