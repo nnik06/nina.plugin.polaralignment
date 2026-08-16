@@ -20,6 +20,17 @@ with SHA-256
 The fast-run analyzer suite
 passed 35/35.
 
+The matching field-run acceptance analyzer is deployed on Mele at:
+
+`C:\Users\nnik0\Documents\TPPA-Deploy\analyze_tppa_fast_alignment_runs.ps1`
+
+SHA-256:
+`6F2F3B445A8373A26593F25E5F1C20FDA7EBC92344CCE4907BF3D71CE933A1B0`
+
+It scores emitted `TPPA_FAST_RUN_EVENT` records for terminality, elapsed time,
+move count, post-move evidence, final vector, and campaign reliability. It has
+no motion or runtime authority.
+
 Version 135 fixes a dimensional bug in direct-route preflight: the determinant
 of the normal matrix was compared with first-order damping instead of squared
 damping. That rejected the real low-gain UPAS response matrix before the
