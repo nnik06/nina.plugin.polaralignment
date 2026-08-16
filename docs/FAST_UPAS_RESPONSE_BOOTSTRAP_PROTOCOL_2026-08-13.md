@@ -69,18 +69,20 @@ never treat a missing log record as authority to bypass a physical motion guard.
 ## Performance Run
 
 Run only after the calibration values are present and a new baseline pair
-agrees. The ordinary uncalibrated direct route remains limited to <=120
-arcminutes. The measured 2x2 direct route may instead select the tripod-free
-coarse target of <=24 arcminutes and admit the physical +/-5.4 degree vector
-without touching tripod bolts. That result is explicitly not imaging-ready.
+agrees. The measured 2x2 direct route may select the tripod-free coarse target
+of <=24 arcminutes and admit an initial vector up to 300 arcminutes per axis
+and 424.264 arcminutes total without touching tripod bolts. The +/-5.4 degree
+physical envelope is retained as travel margin, not extra automatic authority.
+That result is explicitly not imaging-ready.
 
 After a coarse result, take a new fresh baseline pair and start a new
 imaging-critical run targeting <=3 arcminutes on two independent fresh
-determinations within 300 seconds. The first-run calibration route does not
-provide either performance claim merely because it was allowed to identify its
-X and Y columns. A move whose post-move response regresses, disagrees, or
-exhausts runtime stops the active run; it does not authorize another
-correction.
+determinations. Report whether the completed run met the 300-second target.
+The first-run calibration route does not provide either performance claim
+merely because it was allowed to identify its X and Y columns. A move whose
+post-move response regresses, disagrees, or exhausts the finite 12-move ceiling
+stops the active run; it does not authorize another correction. Elapsed time
+alone does not terminate a physically safe, freshly observed, converging run.
 
 ## Regression And Retreat Rule
 

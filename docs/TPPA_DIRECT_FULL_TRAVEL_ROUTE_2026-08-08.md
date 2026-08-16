@@ -67,15 +67,19 @@ with the existing bounded bootstrap path:
    calibration; preserve the run log and promote the measured values only
    after reviewing their response and uncertainty.
 
-## Five-Minute Contract
+## Operational Runtime Target
 
 The full-travel route is admitted only when
 `TppaDirectFullTravelFeasibilityPolicy` proves the current calibrated residual
-fits the selected 3-arcminute fine or 24-arcminute coarse terminal target in at
-most three fresh-feedback moves and within 300 seconds. The route accepts up to
-324 arcminutes per axis and 458.205 arcminutes total only after its direct
-calibration is enabled and confirmed; ordinary direct operation remains limited
-to 120 arcminutes.
+fits the selected 3-arcminute fine or 24-arcminute coarse terminal target within
+the finite ceiling of 12 fresh-feedback moves. The route accepts up to 300
+arcminutes per axis and 424.264 arcminutes total after its direct calibration is
+enabled and confirmed. The configured +/-5.4 degree physical bounds remain
+safety headroom and do not expand automatic authority beyond five degrees.
+
+The performance target remains 300 seconds. Runtime prediction and elapsed
+time are telemetry: a safe, freshly observed, converging run is allowed to
+finish and is then reported separately as meeting or missing that target.
 
 For a qualified clamp-limited recovery, the response matrix must have condition
 number no greater than 5 and relative response uncertainty no greater than 10
@@ -117,12 +121,13 @@ report the last measured position/residual rather than infer success.
 
 ## Current Status
 
-The controller integration and NINA field panel are present as of commit
-`92c8564`, but the route is disabled by default. Enabling it without a fresh
-2x2 field calibration, measured ALT/Y response, directional backlash evidence,
-and a stated response uncertainty is not a qualified use of the route. Offline
-fixtures exercise both the 3-arcminute fine and 24-arcminute tripod-free coarse
-tiers; that is a software proof, not field validation.
+The v134 controller and NINA field panel support both operational tiers. A
+stored response matrix is only a seed: current signed marker positions must be
+entered after transport, and the first fresh move must validate the predicted
+response before further movement. Clamp-limited recovery additionally requires
+a measured response uncertainty no greater than ten percent. Offline fixtures
+exercise both the 3-arcminute fine and 24-arcminute tripod-free coarse tiers;
+that is a software proof, not field validation.
 
 The separate supervisor remains the preferred route for unattended,
 machine-witnessed physical position and broad 2x2 calibration. Its incomplete
