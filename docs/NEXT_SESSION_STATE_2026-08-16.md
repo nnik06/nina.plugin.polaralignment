@@ -2,28 +2,38 @@
 
 ## Deployed Runtime
 
-- Mele plugin: `2.2.6.134`
-- Source commit: `8e23716faf34ea58dbe96572ed1903d7249db35a`
+- Mele plugin: `2.2.6.135`
+- Source commit: `55aa6eebf2463753c95f98a0541d1f7ddbcf8e89`
 - Plugin SHA-256:
-  `244B39B2242150079D452616C18C94832A393626885227FC5A2751CE97E10F7B`
+  `0EB8B500F779C2A3EC43DCFDB84C3EF74B6D23E53F31ABC280B5D96BA647A812`
 - Qualification-core SHA-256:
-  `C60E7DD5D500E6BE7D216CD0CA7FDA7D7CC16B162E13564B2D82E8234950492D`
+  `D608AEDFCA2812A0C3D0C0DA40A4AB8D46D7D1573B255463019412A3389CBAB7`
 - Runtime-manifest SHA-256:
-  `5F6A0D3E186F79A9B019AF84C8B1ADC56CD5CD0364CDB342CBC2A246E24D237E`
+  `7B70E33BF7DCD1D25E269FECF7BF74B3D5AF6B28A8D0F7053DF823E4C28BB744`
 - Rollback:
-  `C:\Users\nnik0\Documents\TPPA-rollbacks\20260816-061317658-2.2.6.134-8e23716f`
+  `C:\Users\nnik0\Documents\TPPA-rollbacks\20260816-070526037-2.2.6.135-55aa6eeb`
 
-The application test suite passed 1,132/1,132. The fast-run analyzer suite
+The application test suite passed 1,142/1,142. The final TRX is
+`C:\Users\nnik0\AppData\Local\Temp\tppa-v135-final-tests\v135-full.trx`
+with SHA-256
+`DC4AAE220E3788642B15B3B1BD9571FAD4ECFD68BDE6723E593A918805F641C2D`.
+The fast-run analyzer suite
 passed 35/35.
+
+Version 135 fixes a dimensional bug in direct-route preflight: the determinant
+of the normal matrix was compared with first-order damping instead of squared
+damping. That rejected the real low-gain UPAS response matrix before the
+runtime solver could use it. Exact-matrix tests now cover all four sub-degree
+corners and all four numerical +/-300 arcminute corners.
 
 ## Mele Readiness
 
-NINA was closed during deployment. The final read-only readiness receipt is:
+NINA was closed during deployment. The passing core readiness receipt is:
 
-`C:\Users\nnik0\Documents\TPPA-Deploy\readiness-v134-final.json`
+`C:\Users\nnik0\Documents\TPPA-Deploy\readiness-v135-core.json`
 
 Receipt SHA-256:
-`9C8A0638ED40EF6356C8407F92F598300FC9AE10444E7F30EF2D86C00BAF4CF1`
+`6E9676117530DA0767D8DFF46F8B29048C59E1F1D6DC31F8D48B0DD5B7104813`
 
 It passed the plugin, NINA-closed, iPolar, COM30, persistent `com2tcp`, and P20
 ADB gates. The bridge was established to `10.147.17.129:4001` by `com2tcp` PID
@@ -31,9 +41,12 @@ ADB gates. The bridge was established to `10.147.17.129:4001` by `com2tcp` PID
 DNS or the exact owning-process host/port configuration without opening a
 second raw-port connection.
 
-The ASI2600, ASI220, and EFW were physically unplugged during this readiness
-check and were not required. They must be connected and checked before sky
-work. The flat panel remains absent and must not be connected or operated.
+The full readiness probe was also preserved at
+`C:\Users\nnik0\Documents\TPPA-Deploy\readiness-v135-final.json` (SHA-256
+`B426B3CBEAF042988FE7088BA4EAD26D10C94F2B11D2AA5D76BBE54F4B036283`).
+It failed only the ASI2600, ASI220, and EFW gates because those devices were
+physically unplugged. Connect and recheck them before sky work. The flat panel
+remains absent and must not be connected or operated.
 
 ## Persisted Operational Seed
 
@@ -66,7 +79,7 @@ field responses establish a relative uncertainty no greater than 10%. A normal
 sub-degree run does not need clamp-limited recovery. A full-envelope corner run
 does.
 
-Refraction adjustment defaults on in v134. The external supervisor defaults
+Refraction adjustment defaults on in v135. The external supervisor defaults
 off, so the attended direct route does not require covariance, cadence,
 campaign, or physical-zero paperwork.
 
@@ -95,6 +108,14 @@ Their condition number is 1.183 and the dominant diagonal terms reproduce the
 persisted seed. This supports using the seed for the normal bounded sub-degree
 route, but one sample per axis cannot establish response uncertainty.
 
+The exact measured matrix is now admitted by direct-route preflight for the
+normal sub-degree start. Numerical solver tests also converge from +/-300
+arcminutes, but the deployed physical scale (X=0.025 and Y=0.022 degree per
+command unit) denies at least one full-corner case on physical headroom. Do not
+claim the complete +/-5 degree tripod-free envelope from numerical convergence
+alone. Field calibration must reconcile commanded displacement, physical scale
+travel, and sky response before that tier is qualified.
+
 The older mixed small-probe set has only two X and three Y samples and a
 condition number of 27.006. Treat it as deadband/noise evidence, not as a
 calibration matrix.
@@ -109,7 +130,7 @@ route.
 ## First Field Block
 
 1. Connect the ASI2600, ASI220, and EFW. Start NINA in the logged-in interactive
-   desktop and verify the log loaded v134 with the expected plugin hash.
+   desktop and verify the log loaded v135 with the expected plugin hash.
 2. Acquire fresh signed AZ and ALT scale readings after transport and enter
    them as the current travel-guard positions.
 3. Confirm refraction adjustment on, automatic adjustments on, external
