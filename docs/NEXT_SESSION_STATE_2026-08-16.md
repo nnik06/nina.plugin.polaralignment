@@ -70,6 +70,42 @@ Refraction adjustment defaults on in v134. The external supervisor defaults
 off, so the attended direct route does not require covariance, cadence,
 campaign, or physical-zero paperwork.
 
+## Response Evidence
+
+The field response analyzer is now schema v2 and is deployed on Mele at:
+
+`C:\Users\nnik0\Documents\TPPA-Deploy\summarize_tppa_upas_response.ps1`
+
+SHA-256:
+`D4CC272062362D7C5A12BC57302D9B9FB07A38EEEDADB6A2D7895E7DCAC70C46`
+
+It reports the isolated 2x2 response matrix, condition number, rejected-probe
+evidence, direction consistency, sample spread, and a fail-closed verdict for
+clamp-limited recovery. It does not grant motion authority.
+
+The latest accepted full probes contained one isolated sample per axis:
+
+```text
+          X command       Y command
+AZ     0.01317625 deg   0.00039600 deg
+ALT    0.00017783 deg   0.01550825 deg
+```
+
+Their condition number is 1.183 and the dominant diagonal terms reproduce the
+persisted seed. This supports using the seed for the normal bounded sub-degree
+route, but one sample per axis cannot establish response uncertainty.
+
+The older mixed small-probe set has only two X and three Y samples and a
+condition number of 27.006. Treat it as deadband/noise evidence, not as a
+calibration matrix.
+
+Clamp-limited full-envelope recovery therefore remains unqualified. During the
+next stable mechanical epoch, collect at least two more accepted isolated
+responses per axis, after the normal pre-seat has loaded the mechanism. Three
+accepted samples per axis must retain direction consistency, matrix condition
+number <=5, and maximum relative vector deviation <=10% before enabling that
+route.
+
 ## First Field Block
 
 1. Connect the ASI2600, ASI220, and EFW. Start NINA in the logged-in interactive
