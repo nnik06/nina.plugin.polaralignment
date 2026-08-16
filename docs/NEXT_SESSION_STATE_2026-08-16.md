@@ -13,10 +13,10 @@
 - Rollback:
   `C:\Users\nnik0\Documents\TPPA-rollbacks\20260816-070526037-2.2.6.135-55aa6eeb`
 
-The application test suite passed 1,142/1,142. The final TRX is
-`C:\Users\nnik0\AppData\Local\Temp\tppa-v135-final-tests\v135-full.trx`
+The application test suite passed 1,143/1,143. The final TRX is
+`C:\Users\nnik0\AppData\Local\Temp\tppa-v135-postdeploy-tests\v135-postdeploy-full.trx`
 with SHA-256
-`DC4AAE220E3788642B15B3B1BD9571FAD4ECFD68BDE6723E593A918805F641C2D`.
+`46D832BD6B3473BAE1DDC7C4FD686C910805C07FAF607148BFE4D836D5D6E80E`.
 The fast-run analyzer suite
 passed 35/35.
 
@@ -115,6 +115,13 @@ command unit) denies at least one full-corner case on physical headroom. Do not
 claim the complete +/-5 degree tripod-free envelope from numerical convergence
 alone. Field calibration must reconcile commanded displacement, physical scale
 travel, and sky response before that tier is qualified.
+
+At the extreme `(+60', -60')` sub-degree corner, the deployed non-recovery
+`0.65` damping model requires four feedback moves and predicts 340 seconds at
+the current 80-second initial pair, 40-second fresh determinations, 15-second
+move overhead, and 40-second final confirmation. This is convergent but misses
+the five-minute performance target. Measure actual cadence and repeatable
+response first; do not raise gain from the present one-sample-per-axis dataset.
 
 The older mixed small-probe set has only two X and three Y samples and a
 condition number of 27.006. Treat it as deadband/noise evidence, not as a

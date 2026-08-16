@@ -160,6 +160,26 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public void Evaluate_AdmitsDeployedDampedDubaiMatrixButReportsFourMoveCornerRuntime() {
+            var result = TppaDirectFullTravelRouteQualification.Evaluate(
+                true, true,
+                0, -5.4, 5.4,
+                0, -5.4, 5.4,
+                0.01317625, 0.00039600,
+                0.000177833333333333, 0.01550825,
+                80, 80,
+                0.025, 0.022,
+                60, -60,
+                clampLimitedRecoveryEnabled: false,
+                relativeResponseUncertainty: 1.0,
+                terminalErrorMinutes: 3.0);
+
+            result.IsQualified.Should().BeTrue(result.Reason);
+            result.Feasibility.RequiredMoveCount.Should().Be(4);
+            result.Feasibility.RequiredRuntimeSeconds.Should().BeApproximately(340.0, 1e-9);
+        }
+
+        [Test]
         public void Evaluate_DeniesMeasuredDubaiMatrixFullCornerWithoutPhysicalHeadroom() {
             var result = TppaDirectFullTravelRouteQualification.Evaluate(
                 true, true,
