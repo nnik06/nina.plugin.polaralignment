@@ -7,10 +7,11 @@ session. It does not use a static gain table to size its first correction.
 
 ## Admission
 
-Before starting, the operator must set and confirm all of the following:
+Before starting, the operator must set all of the following:
 
-1. `AvalonDirectFullTravelRouteEnabled` and
-   `AvalonDirectFullTravelRouteConfirmed` are true.
+1. `AvalonDirectFullTravelRouteEnabled` is true. Route confirmation is not a
+   separate admission gate; enabling automated adjustment is the operator's
+   request to use the route.
 2. Both signed travel guards are enabled and confirmed.
 3. The visually confirmed AZ and ALT marker positions are entered as the
    starting positions, with a valid `-5.4..+5.4` degree physical envelope.
