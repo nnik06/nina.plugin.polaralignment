@@ -203,7 +203,10 @@ namespace NINA.Plugins.PolarAlignment {
             var rhs1 = -(azimuthDeltaPerYUnit * azimuthErrorDegrees
                          + altitudeDeltaPerYUnit * altitudeErrorDegrees);
             var determinant = m00 * m11 - m01 * m01;
-            if (Math.Abs(determinant) <= NormalEquationDamping) {
+            // The determinant of A^T A has fourth-power response units. Qualified
+            // response columns have already passed magnitude and conditioning gates,
+            // so use the same squared-damping floor as the runtime direct-route solver.
+            if (Math.Abs(determinant) <= NormalEquationDamping * NormalEquationDamping) {
                 xMagnitude = 0;
                 yMagnitude = 0;
                 return false;

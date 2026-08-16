@@ -142,6 +142,43 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public void Evaluate_AdmitsMeasuredDubaiMatrixForSubDegreeRoute() {
+            var result = TppaDirectFullTravelRouteQualification.Evaluate(
+                true, true,
+                0, -5.4, 5.4,
+                0, -5.4, 5.4,
+                0.01317625, 0.00039600,
+                0.000177833333333333, 0.01550825,
+                80, 80,
+                0.025, 0.022,
+                60, -60,
+                clampLimitedRecoveryEnabled: true,
+                relativeResponseUncertainty: 0.05,
+                terminalErrorMinutes: 3.0);
+
+            result.IsQualified.Should().BeTrue(result.Reason);
+        }
+
+        [Test]
+        public void Evaluate_DeniesMeasuredDubaiMatrixFullCornerWithoutPhysicalHeadroom() {
+            var result = TppaDirectFullTravelRouteQualification.Evaluate(
+                true, true,
+                0, -5.4, 5.4,
+                0, -5.4, 5.4,
+                0.01317625, 0.00039600,
+                0.000177833333333333, 0.01550825,
+                80, 80,
+                0.025, 0.022,
+                300, -300,
+                clampLimitedRecoveryEnabled: true,
+                relativeResponseUncertainty: 0.05,
+                terminalErrorMinutes: 3.0);
+
+            result.IsQualified.Should().BeFalse();
+            result.Reason.Should().Contain("headroom");
+        }
+
+        [Test]
         public void Evaluate_CarriesTheExplicitTripodFreeCoarseTier() {
             var result = TppaDirectFullTravelRouteQualification.Evaluate(
                 true, true,

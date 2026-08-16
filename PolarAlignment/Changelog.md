@@ -897,6 +897,15 @@
 
 # Changelog
 
+## 2.2.6.135
+
+- Fix direct full-travel feasibility for real low-gain UPAS response matrices
+  by comparing the fourth-order normal-matrix determinant with squared damping,
+  matching the qualified runtime solver.
+- Pin the measured Dubai 2x2 response, including cross-axis terms, for the
+  deployed sub-degree route and distinguish numerical full-corner feasibility
+  from the separate physical-travel headroom decision.
+
 ## 2.2.6.134
 
 - Keep automatic full-travel correction inside five degrees per axis while

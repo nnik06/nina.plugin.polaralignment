@@ -3,7 +3,7 @@ using FluentAssertions;
 namespace NINA.Plugins.PolarAlignment.Test {
     public class TppaDirectFullTravelFeasibilityPolicyTest {
         [Test]
-        public void Evaluate_ProvesExistingSmallAuthorityCannotCoverFullEnvelopeInTwoMoves() {
+        public void Evaluate_RejectsSmallAuthorityThatExceedsFiniteMoveCeiling() {
             var result = Evaluate(
                 azimuthMinutes: 300,
                 altitudeMinutes: 0,
@@ -15,8 +15,9 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 maximumYUnits: 16);
 
             result.IsFeasible.Should().BeFalse();
-            result.RequiredMoveCount.Should().Be(0);
-            result.Reason.Should().Contain("cannot produce");
+            result.RequiredMoveCount.Should().BeGreaterThan(
+                TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMoves);
+            result.Reason.Should().Contain("permits at most");
         }
 
         [Test]
@@ -55,6 +56,36 @@ namespace NINA.Plugins.PolarAlignment.Test {
             result.IsFeasible.Should().BeTrue();
             result.RequiredMoveCount.Should().Be(5);
             result.RequiredRuntimeSeconds.Should().BeApproximately(395, 0.001);
+        }
+
+        [TestCase(300.0, 300.0)]
+        [TestCase(300.0, -300.0)]
+        [TestCase(-300.0, 300.0)]
+        [TestCase(-300.0, -300.0)]
+        public void Evaluate_NumericallySolvesMeasuredDubaiMatrixAtEveryFullEnvelopeCorner(
+                double azimuthMinutes,
+                double altitudeMinutes) {
+            var result = TppaDirectFullTravelFeasibilityPolicy.Evaluate(
+                azimuthMinutes,
+                altitudeMinutes,
+                0.01317625, 0.00039600,
+                0.000177833333333333, 0.01550825,
+                80, 80,
+                initialAgreementSeconds: 80,
+                perMoveFreshFeedbackSeconds: 40,
+                terminalConfirmationSeconds: 40,
+                perMoveOverheadSeconds: 15,
+                clampLimitedRecoveryEnabled: true,
+                relativeResponseUncertainty: 0.05,
+                terminalErrorMinutes: 3.0);
+
+            result.IsFeasible.Should().BeTrue(result.Reason);
+            result.RequiredMoveCount.Should().BeLessOrEqualTo(
+                TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMoves);
+            result.MinimumXDisplacementUnits.Should().BeGreaterThan(-410);
+            result.MaximumXDisplacementUnits.Should().BeLessThan(410);
+            result.MinimumYDisplacementUnits.Should().BeGreaterThan(-350);
+            result.MaximumYDisplacementUnits.Should().BeLessThan(350);
         }
 
         [Test]
