@@ -173,10 +173,10 @@ route.
 
 Use the prepared push-button sequence:
 
-`C:\Users\nnik0\OneDrive\Documents\N.I.N.A\TPPA_FAST_OPERATIONAL_V135_300_20_70_5S.json`
+`C:\Users\nnik0\OneDrive\Documents\N.I.N.A\TPPA_FAST_OPERATIONAL_V136_300_20_70_5S.json`
 
 SHA-256:
-`65B87A92950FA6E76884FB40365903725C5B8075621F32734BF98592C9C4AAE4`
+`4D606D290B2562FB067031228FA7FEF3ACDA98482811509BFC996E7569146F94`
 
 It contains one motion-capable TPPA instruction at Az 300 deg / Alt 36 deg,
 22-degree legs, a 5-second exposure, 5-second verification-point settling,
