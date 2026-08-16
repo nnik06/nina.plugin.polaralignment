@@ -12,6 +12,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
             instruction.OverdeterminedShadowModelCheck.Should().BeFalse();
             instruction.DriftValidationOnly.Should().BeFalse();
             instruction.EnforceFiveMinuteRuntimeBudget.Should().BeTrue();
+            instruction.ForceSessionLocalUpasResponseCalibration.Should().BeFalse();
         }
 
         [Test]
@@ -22,6 +23,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
             instruction.AlignmentTolerance = 3.5;
             instruction.VerificationPointSettleTimeSeconds = 10.0;
             instruction.EnforceFiveMinuteRuntimeBudget = false;
+            instruction.ForceSessionLocalUpasResponseCalibration = true;
 
             var clone = (Instructions.PolarAlignment)instruction.Clone();
 
@@ -30,6 +32,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
             clone.AlignmentTolerance.Should().Be(3.5);
             clone.VerificationPointSettleTimeSeconds.Should().Be(10.0);
             clone.EnforceFiveMinuteRuntimeBudget.Should().BeFalse();
+            clone.ForceSessionLocalUpasResponseCalibration.Should().BeTrue();
         }
 
         [Test]
@@ -74,6 +77,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
             instruction.AlignmentTolerance = 4.5;
             instruction.VerificationPointSettleTimeSeconds = 10.0;
             instruction.EnforceFiveMinuteRuntimeBudget = false;
+            instruction.ForceSessionLocalUpasResponseCalibration = true;
 
             var json = JsonConvert.SerializeObject(instruction);
             var serialized = JObject.Parse(json);
@@ -91,6 +95,9 @@ namespace NINA.Plugins.PolarAlignment.Test {
             serialized[nameof(Instructions.PolarAlignment.EnforceFiveMinuteRuntimeBudget)]!
                 .Value<bool>().Should().BeFalse();
             restored.EnforceFiveMinuteRuntimeBudget.Should().BeFalse();
+            serialized[nameof(Instructions.PolarAlignment.ForceSessionLocalUpasResponseCalibration)]!
+                .Value<bool>().Should().BeTrue();
+            restored.ForceSessionLocalUpasResponseCalibration.Should().BeTrue();
         }
 
         [Test]

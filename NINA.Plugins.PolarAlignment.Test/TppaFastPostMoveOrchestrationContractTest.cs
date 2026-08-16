@@ -150,6 +150,18 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public void ExtendedOperationalModeDoesNotApplyTheFastInconclusiveResponseAbort() {
+            var source = File.ReadAllText(Path.Combine(RepositoryRoot(), "PolarAlignment", "Instructions", "PolarAlignment.cs"));
+
+            source.Should().Contain(
+                "enforceFastRuntimeBudget\n                                        && fastRuntimeContractArmed\n                                        && !firstRunBootstrapProbeAwaitingFeedback");
+            source.Should().Contain(
+                "TPAPAVM.AutomatedAdjustmentRequiresFreshMeasurementFeedback\n                                        && enforceFastRuntimeBudget\n                                        && fastRuntimeContractArmed");
+            source.Should().Contain(
+                "if (enforceFastRuntimeBudget\n                                            && fastRuntimeContractArmed\n                                            && responseDecision.CouldAuthorizeAnotherMove");
+        }
+
+        [Test]
         public void FirstRunDirectRouteDoesNotRequireASeparateConfirmationFlag() {
             var vmSource = File.ReadAllText(Path.Combine(RepositoryRoot(), "PolarAlignment", "TPAPAVM.cs"));
             var instructionSource = File.ReadAllText(Path.Combine(RepositoryRoot(), "PolarAlignment", "Instructions", "PolarAlignment.cs"));

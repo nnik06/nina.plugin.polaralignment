@@ -93,6 +93,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
         private double alignmentTolerance;
         private bool enforceFiveMinuteRuntimeBudget;
         private bool enableOperationalUpasProfile;
+        private bool forceSessionLocalUpasResponseCalibration;
         private static readonly HttpClient UpasSupervisorHttpClient = new(
             new HttpClientHandler { AllowAutoRedirect = false }
         ) {
@@ -242,6 +243,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 AlignmentTolerance = AlignmentTolerance,
                 EnforceFiveMinuteRuntimeBudget = EnforceFiveMinuteRuntimeBudget,
                 EnableOperationalUpasProfile = EnableOperationalUpasProfile,
+                ForceSessionLocalUpasResponseCalibration = ForceSessionLocalUpasResponseCalibration,
                 Coordinates = this.Coordinates == null
                     ? null
                     : new InputTopocentricCoordinates(this.Coordinates.Coordinates.Copy())
@@ -439,6 +441,20 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             }
         }
 
+        /// <summary>
+        /// Opts an operational UPAS run into two bounded, fresh X/Y identification probes
+        /// before it permits a modeled correction. This is intended for a changed or
+        /// contradicted mechanical response calibration and is false by default.
+        /// </summary>
+        [JsonProperty]
+        public bool ForceSessionLocalUpasResponseCalibration {
+            get => forceSessionLocalUpasResponseCalibration;
+            set {
+                forceSessionLocalUpasResponseCalibration = value;
+                RaisePropertyChanged();
+            }
+        }
+
         private void ApplyOperationalUpasProfileIfRequested() {
             if (!EnableOperationalUpasProfile) {
                 return;
@@ -470,16 +486,26 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             settings.AvalonDirectFullTravelRouteEnabled = true;
             settings.AvalonDirectFullTravelRouteConfirmed = true;
             settings.AvalonClampLimitedRecoveryEnabled = false;
-            settings.AvalonCalibratedAzimuthDeltaPerXUnit = 0.0131762653;
-            settings.AvalonCalibratedAzimuthDeltaPerYUnit = 0;
-            settings.AvalonCalibratedAltitudeDeltaPerXUnit = 0;
-            settings.AvalonCalibratedAltitudeDeltaPerYUnit = 0.0155082342;
+            if (ForceSessionLocalUpasResponseCalibration) {
+                // Do not use a contradicted historical matrix. The existing first-run
+                // controller path will establish independent bounded X/Y columns.
+                settings.AvalonCalibratedAzimuthDeltaPerXUnit = 0;
+                settings.AvalonCalibratedAzimuthDeltaPerYUnit = 0;
+                settings.AvalonCalibratedAltitudeDeltaPerXUnit = 0;
+                settings.AvalonCalibratedAltitudeDeltaPerYUnit = 0;
+            } else {
+                settings.AvalonCalibratedAzimuthDeltaPerXUnit = 0.0131762653;
+                settings.AvalonCalibratedAzimuthDeltaPerYUnit = 0;
+                settings.AvalonCalibratedAltitudeDeltaPerXUnit = 0;
+                settings.AvalonCalibratedAltitudeDeltaPerYUnit = 0.0155082342;
+            }
             settings.AvalonCalibratedMaximumXUnitsPerMove = 80;
             settings.AvalonCalibratedMaximumYUnitsPerMove = 80;
 
             Logger.Info(
                 "TPPA operational UPAS profile applied in memory: selectedSystem=UPAS, " +
-                "automatedAdjustments=True, travelBounds=+/-5.4 deg, response=diagonal-v136.");
+                $"automatedAdjustments=True, travelBounds=+/-5.4 deg, response=" +
+                $"{(ForceSessionLocalUpasResponseCalibration ? "session-local X/Y bootstrap" : "diagonal-v136")}.");
         }
 
 
@@ -1624,6 +1650,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                 }
                                 localCTS.Token.ThrowIfCancellationRequested();
                                 if (TPAPAVM.AutomatedAdjustmentRequiresFreshMeasurementFeedback
+                                        && enforceFastRuntimeBudget
                                         && fastRuntimeContractArmed
                                         && freshFeedbackMoveCount >= freshFeedbackMoveLimit) {
                                     throw new InvalidOperationException($"UPAS automated alignment stopped after {freshFeedbackMoveLimit} fresh-measured moves without converging. No further UPAS movement was authorized.");
@@ -1880,7 +1907,9 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                         TPAPAVM.LastAutomatedAdjustmentWasFirstRunBootstrapProbe;
                                     var responseDisposition = TppaPostMoveResponsePolicy.DispositionForMode(
                                         responseDecision,
-                                        fastRuntimeContractArmed && !firstRunBootstrapProbeAwaitingFeedback);
+                                        enforceFastRuntimeBudget
+                                        && fastRuntimeContractArmed
+                                        && !firstRunBootstrapProbeAwaitingFeedback);
 
                                     if (boundedYBootstrapProbeAwaitingFeedback) {
                                         if (responseDecision.Classification == TppaPostMoveResponseClassification.Regressed) {
@@ -1913,7 +1942,8 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                             FailureMessage: null);
                                     }
 
-                                    if (fastRuntimeContractArmed
+                                    if (enforceFastRuntimeBudget
+                                            && fastRuntimeContractArmed
                                             && responseDecision.CouldAuthorizeAnotherMove
                                             && freshFeedbackMoveCount >= freshFeedbackMoveLimit) {
                                         throw new SequenceEntityFailedException($"The maximum {freshFeedbackMoveLimit} bounded UPAS moves produced meaningful improvement but remained above tolerance. The run stopped on fresh evidence without authorizing another move.");
