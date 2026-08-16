@@ -1,5 +1,51 @@
 # TPPA Next-Session State - 2026-08-16
 
+## Current Override - 2026-08-16 Attended Field Incident
+
+This section supersedes the earlier runtime and first-field-block instructions
+below. The historical sections remain as evidence for their respective
+checkpoints.
+
+- The active Mele NINA process loaded `2.2.6.138` from
+  `ae33db20032c0dc8a6a368caba792812fd0cf6f2`.
+- During a forced session-local X/Y calibration, an unqualified response matrix
+  denied the direct route but incorrectly fell through to the legacy planner.
+  It emitted an X correction and an interrupted Y correction before an attended
+  stop. GRBL reported `Idle` twice after cancellation, but its reported MPos is
+  not a physical-position reference.
+- Consequently the physical UPAS position is **unknown**. No automated or
+  attended UPAS motion may resume until a stationary, attended physical
+  reference/zero recovery is completed. Do not use this runtime, controller
+  coordinates, old marker values, or the stale P20 image as evidence of that
+  reference.
+- Source commit `49224c32cba527e8bbc4c80b5253cc4653898122` (`2.2.6.139`)
+  closes the fallback: a completed but unqualified forced X/Y bootstrap now
+  terminates the run rather than invoking any legacy correction plan. It also
+  normalizes response columns for the independence check and prevents
+  session-local experiments from being persisted. Full test suite: 1,146/1,146
+  passed. The staged package is
+  `C:\Users\nnik0\Documents\TPPA-deploy\tppa-2.2.6.139-49224c3`, but it was
+  deliberately not activated during the incident.
+- The prior P20 helper did not prove freshness and selected
+  `IMG_20260816_203519.jpg`, an existing image. It is advisory only until its
+  shutter-to-file receipt is repaired and tested.
+
+### Next Motion-Capable Admission
+
+1. After the rig is mechanically stationary, obtain an attended physical UPAS
+   zero/reference using an independent physical observation. Do not infer it
+   from GRBL MPos following the interrupted motion.
+2. Verify P20 freshness with a strictly newer filename, mtime, and hash before
+   treating any image as scale evidence; otherwise leave it advisory.
+3. Gracefully close NINA, activate the hash-verified v139 package, then start
+   a new NINA process and confirm the new plugin version in its fresh log.
+4. Run a measurement-only three-point TPPA determination first. Only after its
+   fresh results and physical travel headroom are known may a bounded direct
+   motion route be considered.
+
+The dated remote-operation ledger contains the incident and recovery details:
+`C:\Dev\upas-polar-align\docs\MELE_REMOTE_COMMAND_FAILURES_AND_RECOVERY_2026-07-31.md`.
+
 ## Deployed Runtime
 
 - Mele plugin: `2.2.6.136`
