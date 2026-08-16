@@ -752,6 +752,30 @@ namespace NINA.Plugins.PolarAlignment {
         }
 
         /// <summary>
+        /// A diagonal correction is indivisible at the control-policy level even though the
+        /// transport executes its axes sequentially. If X moved and Y was denied, retain the
+        /// accounted X displacement and stop in place. An open-loop inverse is not a rollback
+        /// when backlash or an uncertain response may have caused the failure.
+        /// </summary>
+        public void AbortAfterPartialDiagonalExecution(
+                double executedXMagnitude,
+                double deniedYMagnitude,
+                string denialReason) {
+            var partialPlan = new AutomatedAdjustmentPlan(
+                executedXMagnitude,
+                0,
+                false,
+                "Partial diagonal UPAS execution");
+            pendingPlan = null;
+            AbortMotionAuthority(
+                $"Partial diagonal execution left outstanding un-reversed X={executedXMagnitude:F3}; " +
+                $"Y={deniedYMagnitude:F3} was denied ({denialReason ?? "no reason supplied"}).",
+                partialPlan,
+                currentObservation,
+                null);
+        }
+
+        /// <summary>
         /// Creates the next automated move.
         ///
         /// Before the response matrix becomes observable, this returns small probe moves

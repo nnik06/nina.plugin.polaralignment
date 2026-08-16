@@ -1,3 +1,9 @@
+## Version 2.2.6.133
+
+- Latch automated UPAS motion off after a partially executed diagonal command.
+  The executed X leg is reported as outstanding and un-reversed; TPPA does not
+  attempt an unsafe open-loop inverse after the Y leg is denied.
+
 ## Version 2.2.6.132
 
 - Stop a materially regressing bounded altitude response probe during first-run

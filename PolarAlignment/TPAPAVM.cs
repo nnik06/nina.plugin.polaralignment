@@ -630,10 +630,16 @@ namespace NINA.Plugins.PolarAlignment {
                                                                                                            0,
                                                                                                            plan.IsProbe,
                                                                                                            $"{plan.Reason} (partial X move)"));
+                        automatedAdjustmentController.AbortAfterPartialDiagonalExecution(
+                            executedX,
+                            plan.YMagnitude,
+                            yExecution.Reason);
+                        PersistAutomatedMotionAbortIfRequired();
                         await CoreUtil.Wait(TimeSpan.FromSeconds(activeSystem.AutomatedAdjustmentSettleTime), token, progress, "Settling");
                         LastAutomatedAdjustmentDecisionReason =
-                            $"Partial X command executed; Y command was denied: {yExecution.Reason}. " +
-                            "Automated correction stopped without issuing another UPAS command.";
+                            $"Partial X command {executedX:F3} executed and remains outstanding and un-reversed; " +
+                            $"Y command {plan.YMagnitude:F3} was denied: {yExecution.Reason}. " +
+                            "Automated motion is latched off without issuing another UPAS command.";
                         Logger.Error($"TPPA_UPAS_PARTIAL_DIAGONAL_ABORT {LastAutomatedAdjustmentDecisionReason}");
                         return false;
                     }

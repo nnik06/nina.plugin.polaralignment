@@ -225,10 +225,14 @@ namespace NINA.Plugins.PolarAlignment.Test {
             var source = File.ReadAllText(Path.Combine(RepositoryRoot(), "PolarAlignment", "TPAPAVM.cs"));
             var yDenied = source.IndexOf("Y command was denied", StringComparison.Ordinal);
             var partialAbort = source.IndexOf("TPPA_UPAS_PARTIAL_DIAGONAL_ABORT", yDenied, StringComparison.Ordinal);
+            var persistentLatch = source.IndexOf("AbortAfterPartialDiagonalExecution", yDenied, StringComparison.Ordinal);
+            var explicitNoInverse = source.IndexOf("remains outstanding and un-reversed", yDenied, StringComparison.Ordinal);
             var failedReturn = source.IndexOf("return false;", partialAbort, StringComparison.Ordinal);
             var nextSuccessfulReturn = source.IndexOf("return true;", partialAbort, StringComparison.Ordinal);
 
             yDenied.Should().BeGreaterThanOrEqualTo(0);
+            persistentLatch.Should().BeGreaterThan(yDenied);
+            explicitNoInverse.Should().BeGreaterThan(persistentLatch);
             partialAbort.Should().BeGreaterThan(yDenied);
             failedReturn.Should().BeGreaterThan(partialAbort);
             (nextSuccessfulReturn < 0 || nextSuccessfulReturn > failedReturn).Should().BeTrue(

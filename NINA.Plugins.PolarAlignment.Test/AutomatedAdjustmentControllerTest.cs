@@ -1934,6 +1934,20 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public void AutomatedAdjustmentController_PartialDiagonalLatchesOffWithoutInverse() {
+            var controller = new AutomatedAdjustmentController(useUpasEngagementController: true);
+            controller.UpdateObservation(1.0, 1.0);
+
+            controller.AbortAfterPartialDiagonalExecution(4.25, -3.5, "Y transport denied");
+
+            controller.MotionAuthorityAborted.Should().BeTrue();
+            controller.MotionAuthorityAbortReason.Should().Contain("outstanding un-reversed X=4.250");
+            controller.MotionAuthorityAbortReason.Should().Contain("Y=-3.500 was denied");
+            controller.CreatePlan().HasMovement.Should().BeFalse();
+            controller.CreatePlan().Reason.Should().Contain("latched off");
+        }
+
+        [Test]
         public void AutomatedAdjustmentController_ReportsQualifiedBoundedYBootstrapOnlyAfterFreshIndependentResponse() {
             var controller = CreateBootstrapController();
             controller.UpdateObservation(5, -5);
