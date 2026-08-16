@@ -2,21 +2,21 @@
 
 ## Deployed Runtime
 
-- Mele plugin: `2.2.6.135`
-- Source commit: `55aa6eebf2463753c95f98a0541d1f7ddbcf8e89`
+- Mele plugin: `2.2.6.136`
+- Source commit: `5f34c6195ea57b2fa2d3808b13c2ec871fdc583d`
 - Plugin SHA-256:
-  `0EB8B500F779C2A3EC43DCFDB84C3EF74B6D23E53F31ABC280B5D96BA647A812`
+  `39870079B43275728DC6AAC319E06C6B55FA4A43BBB328F0B483DB6AB5C30CBF`
 - Qualification-core SHA-256:
-  `D608AEDFCA2812A0C3D0C0DA40A4AB8D46D7D1573B255463019412A3389CBAB7`
+  `C893D16247867BDA8BAF1B1D7BBEFF5A75499B6441A2DAF75A2942235970D778`
 - Runtime-manifest SHA-256:
-  `7B70E33BF7DCD1D25E269FECF7BF74B3D5AF6B28A8D0F7053DF823E4C28BB744`
+  `A6003806A4A0CCD75093664C9022AB97F002DDE5CF23D7AFECC4824DAECE5A4F`
 - Rollback:
-  `C:\Users\nnik0\Documents\TPPA-rollbacks\20260816-070526037-2.2.6.135-55aa6eeb`
+  `C:\Users\nnik0\Documents\TPPA-rollbacks\20260816-073912499-2.2.6.136-5f34c619`
 
-The application test suite passed 1,143/1,143. The final TRX is
-`C:\Users\nnik0\AppData\Local\Temp\tppa-v135-postdeploy-tests\v135-postdeploy-full.trx`
+The application test suite passed 1,144/1,144. The final TRX is
+`C:\Users\nnik0\AppData\Local\Temp\tppa-v136-gain-tests\v136-final.trx`
 with SHA-256
-`46D832BD6B3473BAE1DDC7C4FD686C910805C07FAF607148BFE4D836D5D6E80E`.
+`BBD0E1926148F5006687A89F45886DED1BC9041822C3BF4167CF4A8CC2D03FEE`.
 The fast-run analyzer suite
 passed 35/35.
 
@@ -26,14 +26,21 @@ damping. That rejected the real low-gain UPAS response matrix before the
 runtime solver could use it. Exact-matrix tests now cover all four sub-degree
 corners and all four numerical +/-300 arcminute corners.
 
+Version 136 raises only the qualified measured-matrix direct-route correction
+gain from 0.65 to a still-damped 0.75. Probe, remembered-response, and
+clamp-recovery gains are unchanged. The exact deployed Dubai matrix now reaches
+the 3-arcminute target from the +/-60 arcminute corner in three bounded moves
+instead of four, while retaining fresh feedback after every move and the
+independent stationary completion determination.
+
 ## Mele Readiness
 
 NINA was closed during deployment. The passing core readiness receipt is:
 
-`C:\Users\nnik0\Documents\TPPA-Deploy\readiness-v135-core.json`
+`C:\Users\nnik0\Documents\TPPA-Deploy\readiness-v136-core.json`
 
 Receipt SHA-256:
-`6E9676117530DA0767D8DFF46F8B29048C59E1F1D6DC31F8D48B0DD5B7104813`
+`72977FB0F1BB2E74454CED513A9FA70CBC65C50FF5030A503F0D133FDA6B0221`
 
 It passed the plugin, NINA-closed, iPolar, COM30, persistent `com2tcp`, and P20
 ADB gates. The bridge was established to `10.147.17.129:4001` by `com2tcp` PID
@@ -50,18 +57,20 @@ remains absent and must not be connected or operated.
 
 Application-level validation also passed. NINA was launched once through the
 known interactive task and its fresh log
-`C:\Users\nnik0\AppData\Local\NINA\Logs\20260816-112018-3.2.0.9001.7944-202608.log`
+`C:\Users\nnik0\AppData\Local\NINA\Logs\20260816-114015-3.2.0.9001.5084-202608.log`
 reported `Successfully loaded plugin Three Point Polar Alignment version
-2.2.6.135`. The corrected five-second operational sequence loaded through the
+2.2.6.136`. The corrected five-second operational sequence loaded through the
 Advanced API with HTTP 200 and remained in `CREATED` state; it was not started
 and no telescope or UPAS motion was requested.
 
 That validation instance was then closed gracefully through UI Automation,
-bound to exact NINA PID 7944. The one-shot task returned 0, independent process
+bound to exact NINA PID 5084. The one-shot task returned 0, independent process
 enumeration found no remaining NINA process, and the preserved result
-`C:\Users\nnik0\Documents\TPPA-Deploy\close-nina-v135-load-test.json` records
+`C:\Users\nnik0\Documents\TPPA-Deploy\close-nina-v136-load-test.json` records
 `closeRequested=true`, `method=uia-window-pattern-close`, and
-`processStillRunning=false`. No forced termination was used.
+`processStillRunning=false`. Its SHA-256 is
+`3A455FFCC05506878B22EFD191F9C782064454D2E062F7BE44C2C7EB7A5D5EEE`.
+No forced termination was used.
 
 ## Persisted Operational Seed
 
@@ -94,7 +103,7 @@ field responses establish a relative uncertainty no greater than 10%. A normal
 sub-degree run does not need clamp-limited recovery. A full-envelope corner run
 does.
 
-Refraction adjustment defaults on in v135. The external supervisor defaults
+Refraction adjustment defaults on in v136. The external supervisor defaults
 off, so the attended direct route does not require covariance, cadence,
 campaign, or physical-zero paperwork.
 
@@ -132,11 +141,11 @@ alone. Field calibration must reconcile commanded displacement, physical scale
 travel, and sky response before that tier is qualified.
 
 At the extreme `(+60', -60')` sub-degree corner, the deployed non-recovery
-`0.65` damping model requires four feedback moves and predicts 340 seconds at
+`0.75` damping model requires three feedback moves and predicts 285 seconds at
 the current 80-second initial pair, 40-second fresh determinations, 15-second
-move overhead, and 40-second final confirmation. This is convergent but misses
-the five-minute performance target. Measure actual cadence and repeatable
-response first; do not raise gain from the present one-sample-per-axis dataset.
+move overhead, and 40-second final confirmation. This now fits the five-minute
+model while preserving all fresh-response and completion checks. Field timing
+and repeatable response remain required before claiming the performance target.
 
 The older mixed small-probe set has only two X and three Y samples and a
 condition number of 27.006. Treat it as deadband/noise evidence, not as a
@@ -166,7 +175,7 @@ the five-minute runtime contract. Do not select the older
 which field plate solving has shown to be insufficient.
 
 1. Connect the ASI2600, ASI220, and EFW. Start NINA in the logged-in interactive
-   desktop and verify the log loaded v135 with the expected plugin hash.
+   desktop and verify the log loaded v136 with the expected plugin hash.
 2. Acquire fresh signed AZ and ALT scale readings after transport and enter
    them as the current travel-guard positions.
 3. Confirm refraction adjustment on, automatic adjustments on, external
