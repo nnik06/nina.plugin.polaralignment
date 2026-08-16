@@ -17,8 +17,8 @@ The application test suite passed 1,144/1,144. The final TRX is
 `C:\Users\nnik0\AppData\Local\Temp\tppa-v136-gain-tests\v136-final.trx`
 with SHA-256
 `BBD0E1926148F5006687A89F45886DED1BC9041822C3BF4167CF4A8CC2D03FEE`.
-The fast-run analyzer suite
-passed 35/35.
+The fast-run analyzer suite passed 36/36, including the active four-of-five
+operational contract.
 
 The matching field-run acceptance analyzer is deployed on Mele at:
 
@@ -30,6 +30,18 @@ SHA-256:
 It scores emitted `TPPA_FAST_RUN_EVENT` records for terminality, elapsed time,
 move count, post-move evidence, final vector, and campaign reliability. It has
 no motion or runtime authority.
+
+For the active operational goal, use the deployed fixed-policy wrapper:
+
+`C:\Users\nnik0\Documents\TPPA-Deploy\analyze_tppa_operational_5run.ps1`
+
+SHA-256:
+`A2D1BA72DFCBBD18661F4573A9F58CF0B91C2805CB223631438955BA28E5C466`
+
+It requires five eligible attempts, four passes, an 80-percent pass rate, one
+observing night, at most 300 seconds, at most 3 arcminutes, and no more than 12
+moves. Larger preregistered campaigns continue to call the general analyzer
+with their explicit policy; its historical 20-run defaults are unchanged.
 
 Version 135 fixes a dimensional bug in direct-route preflight: the determinant
 of the normal matrix was compared with first-order damping instead of squared

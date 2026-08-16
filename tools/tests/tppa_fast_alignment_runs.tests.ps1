@@ -1,4 +1,5 @@
 $scriptPath = Join-Path $PSScriptRoot '..\analyze_tppa_fast_alignment_runs.ps1'
+$operationalWrapperPath = Join-Path $PSScriptRoot '..\analyze_tppa_operational_5run.ps1'
 $scriptText = [IO.File]::ReadAllText((Resolve-Path $scriptPath))
 $repositoryHead = '0123456789abcdef0123456789abcdef01234567'
 $pluginAssemblySha256 = '11' * 32
@@ -168,6 +169,23 @@ Describe 'TPPA fast alignment evidence analyzer contract' {
         $scriptText.Contains('AbsoluteAccuracyQualified = $false') | Should Be $true
         $scriptText.Contains('DeliveredExposureQualified = $false') | Should Be $true
         $scriptText.Contains('OverallGoalQualified = $false') | Should Be $true
+    }
+
+    It 'scores the active four-of-five operational contract without changing the general analyzer defaults' {
+        $log = Join-Path $TestDrive 'operational-five-run.log'
+        New-FastRunLog $log -RunCount 5 -PassingRunCount 4
+
+        $result = & $operationalWrapperPath -LogPath $log
+
+        $result.MinimumEligibleRuns | Should Be 5
+        $result.RequiredPassingRuns | Should Be 4
+        $result.RequiredPassRate | Should Be 0.8
+        $result.MinimumNights | Should Be 1
+        $result.EligibleRunCount | Should Be 5
+        $result.PassingRunCount | Should Be 4
+        $result.FastAlignmentEvidenceQualified | Should Be $true
+        $result.CampaignManifestProvided | Should Be $false
+        $result.PreregisteredCampaignPassRateMet | Should Be $false
     }
 
     It 'qualifies eighteen of twenty eligible one-move runs across three Dubai nights' {
