@@ -1663,6 +1663,35 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public void AutomatedAdjustmentController_DeniesLegacyFallbackAfterUnqualifiedFirstRunTwoAxisBootstrap() {
+            var controller = new AutomatedAdjustmentController(useUpasEngagementController: true);
+            controller.ConfigureCalibratedDirectFullTravelRoute(
+                enabled: true, operatorConfirmed: true,
+                azimuthStartingPositionDegrees: 0, azimuthMinimumDegrees: -5.4, azimuthMaximumDegrees: 5.4,
+                altitudeStartingPositionDegrees: 0, altitudeMinimumDegrees: -5.4, altitudeMaximumDegrees: 5.4,
+                azimuthDeltaPerXUnitDegrees: 0, azimuthDeltaPerYUnitDegrees: 0,
+                altitudeDeltaPerXUnitDegrees: 0, altitudeDeltaPerYUnitDegrees: 0,
+                maximumXUnitsPerMove: 80, maximumYUnitsPerMove: 80,
+                physicalAzimuthDegreesPerXUnit: 0.025, physicalAltitudeDegreesPerYUnit: 0.022);
+            controller.ConfigureFirstRunTwoAxisBootstrap(true);
+            controller.SeedXSeating(1);
+            controller.UpdateObservation(1.0, 1.0);
+
+            var x = controller.CreatePlan();
+            controller.NoteSuccessfulExecution(x);
+            controller.UpdateObservation(0.8, 1.0);
+
+            var y = controller.CreatePlan();
+            controller.NoteSuccessfulExecution(y);
+            // Both columns are strong but collinear, so a direct inverse is invalid.
+            controller.UpdateObservation(0.6, 1.0);
+
+            var denied = controller.CreatePlan();
+            denied.HasMovement.Should().BeFalse();
+            denied.Reason.Should().Contain("Legacy fallback motion is denied");
+        }
+
+        [Test]
         public void AutomatedAdjustmentController_FirstRunWeakXResponseRetriesXInsteadOfProbingY() {
             var controller = new AutomatedAdjustmentController(useUpasEngagementController: true);
             controller.ConfigureFirstRunTwoAxisBootstrap(true);

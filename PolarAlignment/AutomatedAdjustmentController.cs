@@ -175,6 +175,7 @@ namespace NINA.Plugins.PolarAlignment {
         private ResponseSample calibratedDirectAzimuthResponseSeed;
         private bool sessionLocalCoarseFrozen;
         private bool firstRunTwoAxisBootstrapEnabled;
+        private bool firstRunTwoAxisBootstrapCompleted;
         private bool motionAuthorityAborted;
         private string motionAuthorityAbortReason;
 
@@ -285,6 +286,7 @@ namespace NINA.Plugins.PolarAlignment {
         public void Reset() {
             samples.Clear();
             sessionLocalCoarseFrozen = false;
+            firstRunTwoAxisBootstrapCompleted = false;
             currentObservation = null;
             pendingPlan = null;
             consecutiveUnsafeModelSkips = 0;
@@ -816,6 +818,12 @@ namespace NINA.Plugins.PolarAlignment {
                 return ApplyAzimuthTravelGuard(sessionLocalCoarsePlan);
             }
 
+            if (firstRunTwoAxisBootstrapCompleted) {
+                return AutomatedAdjustmentPlan.Skip(
+                    "Session-local X/Y response identification did not qualify a modeled correction. " +
+                    "Legacy fallback motion is denied for this run.");
+            }
+
             if (TryBuildResponseModel(out var responseModel)) {
                 var correctivePlan = CreateCorrectivePlan(responseModel, currentObservation);
                 if (correctivePlan.HasMovement) {
@@ -925,6 +933,7 @@ namespace NINA.Plugins.PolarAlignment {
             }
 
             firstRunTwoAxisBootstrapEnabled = false;
+            firstRunTwoAxisBootstrapCompleted = true;
             // The fixed identification direction establishes response sign; it is
             // not a permitted-direction constraint for the resulting correction.
             // Let the measured model choose either X direction, while the normal
@@ -1084,9 +1093,23 @@ namespace NINA.Plugins.PolarAlignment {
             double altitudeDeltaPerXUnit,
             double azimuthDeltaPerYUnit,
             double altitudeDeltaPerYUnit) {
-            var a = azimuthDeltaPerXUnit * azimuthDeltaPerXUnit + altitudeDeltaPerXUnit * altitudeDeltaPerXUnit;
-            var d = azimuthDeltaPerYUnit * azimuthDeltaPerYUnit + altitudeDeltaPerYUnit * altitudeDeltaPerYUnit;
-            var b = azimuthDeltaPerXUnit * azimuthDeltaPerYUnit + altitudeDeltaPerXUnit * altitudeDeltaPerYUnit;
+            var xMagnitude = Math.Sqrt(azimuthDeltaPerXUnit * azimuthDeltaPerXUnit
+                                       + altitudeDeltaPerXUnit * altitudeDeltaPerXUnit);
+            var yMagnitude = Math.Sqrt(azimuthDeltaPerYUnit * azimuthDeltaPerYUnit
+                                       + altitudeDeltaPerYUnit * altitudeDeltaPerYUnit);
+            if (xMagnitude <= NormalEquationDamping || yMagnitude <= NormalEquationDamping) {
+                return double.PositiveInfinity;
+            }
+
+            // This qualifies geometric independence, not actuator gain equality. Normalize
+            // each response column so a different X/Y reduction ratio cannot look coupled.
+            var normalizedAzimuthX = azimuthDeltaPerXUnit / xMagnitude;
+            var normalizedAltitudeX = altitudeDeltaPerXUnit / xMagnitude;
+            var normalizedAzimuthY = azimuthDeltaPerYUnit / yMagnitude;
+            var normalizedAltitudeY = altitudeDeltaPerYUnit / yMagnitude;
+            var a = normalizedAzimuthX * normalizedAzimuthX + normalizedAltitudeX * normalizedAltitudeX;
+            var d = normalizedAzimuthY * normalizedAzimuthY + normalizedAltitudeY * normalizedAltitudeY;
+            var b = normalizedAzimuthX * normalizedAzimuthY + normalizedAltitudeX * normalizedAltitudeY;
             var trace = a + d;
             var discriminant = Math.Max(0, trace * trace - 4 * (a * d - b * b));
             var largest = (trace + Math.Sqrt(discriminant)) / 2.0;

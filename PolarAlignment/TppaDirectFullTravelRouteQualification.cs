@@ -158,12 +158,26 @@ namespace NINA.Plugins.PolarAlignment {
             double altitudeDeltaPerXUnit,
             double azimuthDeltaPerYUnit,
             double altitudeDeltaPerYUnit) {
-            var xNormSquared = azimuthDeltaPerXUnit * azimuthDeltaPerXUnit
-                               + altitudeDeltaPerXUnit * altitudeDeltaPerXUnit;
-            var yNormSquared = azimuthDeltaPerYUnit * azimuthDeltaPerYUnit
-                               + altitudeDeltaPerYUnit * altitudeDeltaPerYUnit;
-            var dot = azimuthDeltaPerXUnit * azimuthDeltaPerYUnit
-                      + altitudeDeltaPerXUnit * altitudeDeltaPerYUnit;
+            var xMagnitude = Math.Sqrt(azimuthDeltaPerXUnit * azimuthDeltaPerXUnit
+                                       + altitudeDeltaPerXUnit * altitudeDeltaPerXUnit);
+            var yMagnitude = Math.Sqrt(azimuthDeltaPerYUnit * azimuthDeltaPerYUnit
+                                       + altitudeDeltaPerYUnit * altitudeDeltaPerYUnit);
+            if (xMagnitude <= 1e-12 || yMagnitude <= 1e-12) {
+                return double.PositiveInfinity;
+            }
+
+            // The route check is about column angle. X/Y mechanics may intentionally have
+            // different gains, which must not make an otherwise orthogonal response fail.
+            var normalizedAzimuthX = azimuthDeltaPerXUnit / xMagnitude;
+            var normalizedAltitudeX = altitudeDeltaPerXUnit / xMagnitude;
+            var normalizedAzimuthY = azimuthDeltaPerYUnit / yMagnitude;
+            var normalizedAltitudeY = altitudeDeltaPerYUnit / yMagnitude;
+            var xNormSquared = normalizedAzimuthX * normalizedAzimuthX
+                               + normalizedAltitudeX * normalizedAltitudeX;
+            var yNormSquared = normalizedAzimuthY * normalizedAzimuthY
+                               + normalizedAltitudeY * normalizedAltitudeY;
+            var dot = normalizedAzimuthX * normalizedAzimuthY
+                      + normalizedAltitudeX * normalizedAltitudeY;
             var trace = xNormSquared + yNormSquared;
             var discriminant = Math.Max(0, trace * trace - 4 * (xNormSquared * yNormSquared - dot * dot));
             var largestEigenvalue = (trace + Math.Sqrt(discriminant)) / 2;

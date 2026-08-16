@@ -1963,6 +1963,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                                         if (!fastRuntimeContractArmed
                                                 && operationalMotionProtocolActive
                                                 && !TPAPAVM.HasPendingFirstRunTwoAxisBootstrapProbe
+                                                && !ForceSessionLocalUpasResponseCalibration
                                                 && TPAPAVM.PersistFirstRunResponseCalibrationIfQualified()) {
                                             fastRuntimeContractArmed = true;
                                             alignmentRuntime.Restart();
