@@ -2,30 +2,26 @@
 
 ## Purpose
 
-Establish whether the measured UPAS 2x2 response matrix and the existing
-0.65-gain, bounded command controller predict real full-scale response well
-enough to consider a future expansion of the direct full-travel route. This is
-not an alignment run and it does not authorize a gain, command-limit, or travel
-guard change.
+Validate the deployed direct TPPA-to-UPAS route under real sky feedback. The
+controller uses a measured 2x2 actuator response, damped corrections, bounded
+per-move commands, fresh post-move determinations, and a finite 12-move ceiling.
 
-The current release fails closed: a direct route is admitted only when its
-simulated damped controller reaches the explicitly selected operational target
-within the three-move, 300-second contract. The imaging-ready target is 3
-arcminutes; the tripod-free bulk target is 24 arcminutes. A 24-arcminute result
-is deliberately labelled coarse and is not an imaging-ready completion.
+The imaging-ready target is 3 arcminutes total, with an internal aim near 1.5
+arcminutes. The tripod-free acquisition target is 24 arcminutes total from an
+admitted starting error no larger than 300 arcminutes on either axis. A
+24-arcminute result is deliberately labelled coarse and is not an imaging-ready
+completion.
 
-## Move-Count Promotion Rule
+## Runtime And Move Limit
 
-For the direct-field 40-second fresh-determination reservation and 15-second
-move reservation, a run with `N` moves and a separate terminal confirmation
-requires `40(N + 1) + 15N` seconds: 150 seconds for two moves and 205 seconds
-for three. Three moves fit the 300-second contract with 95 seconds remaining.
-They are required by the nominal 0.65-gain model to bring a 300 arcminute
-(5 degree) residual below the 24 arcminute bulk target; two leave 36.75
-arcminutes. The absolute ceiling remains three moves, including any Y bootstrap
-probe; do not stack the bootstrap exception into a fourth move.
+The 300-second value is a measured performance target, not an authorization
+deadline. It does not revoke a safe, freshly measured correction that is still
+converging. Physical travel, response/regression checks, settling,
+cancellation, and the 12-move ceiling remain authoritative. Report elapsed time
+and move count for every attempt; do not prematurely stop a valid run merely
+because a conservative cadence estimate crosses 300 seconds.
 
-## Operational Contract After Qualification
+## Operational Contract
 
 Keep one measured 2x2 controller, with two separately named admission and exit
 policies. Never let a broad-travel result claim fine convergence.
@@ -47,41 +43,70 @@ arcminutes as a comfortable fine-route entry.
 
 ## Preconditions
 
-- The existing visual-marker, bridge, COM30, NINA, and fresh-determination
-  safety gates pass.
-- Start from a documented signed physical-marker position with comfortable
-  margin to the +/-5.4 degree configured envelope.
+- The rig is stationary after transport and fresh signed AZ/ALT positions are
+  entered in the travel guard with comfortable margin to the +/-5.4 degree
+  envelope.
+- COM30 has one qualified owner and the persistent `com2tcp` bridge is healthy.
 - Refraction state, camera settings, solver, and telescope field remain fixed
   for each response pair.
 - Capture a fresh TPPA determination before and after every individual command.
 - Stop immediately on a failed solve, inconsistent fresh determination, marker
   ambiguity, unexpected sign, non-reducing error, or bridge-health failure.
 
-## Bounded Response Set
+No sealed campaign, covariance authority, physical-zero receipt, or optical
+witness is required for the attended direct route. P20 images may be retained
+as useful evidence, but are not a motion-admission prerequisite.
 
-Perform one command at a time, always wait for the configured settle interval,
-and retain the pre-command, post-command, and physical-marker evidence.
+## Calibration Block
 
-1. X positive at 25%, 50%, and 100% of the existing maximum command.
-2. X negative at 25%, 50%, and 100% after the documented backlash approach.
-3. Repeat the equivalent six commands for Y.
-4. Perform one bounded diagonal command at the existing maximum limits only if
-   the single-axis records stayed monotonic and inside their predicted marker
-   envelope.
+The latest isolated full probes produced a well-conditioned matrix whose
+dominant terms match the persisted controller seed, but only one accepted
+sample per axis exists. Before enabling clamp-limited recovery:
 
-Each record must include the 2x2 prediction, commanded X/Y, visual-marker
-position before and after, fresh measured azimuth/altitude delta, residual
-vector, elapsed time, and any reversal/backlash state.
+1. Start from a normal sub-degree error with the mechanism loaded by the normal
+   AZ pre-seat.
+2. Obtain an independent fresh baseline.
+3. Execute one isolated bounded X command and obtain fresh three-point
+   feedback.
+4. Execute one isolated bounded Y command and obtain fresh three-point
+   feedback.
+5. Repeat until at least three accepted samples exist for each axis. Preserve
+   rejected probes as deadband evidence; do not average them into the matrix.
+6. Run `tools/summarize_tppa_upas_response.ps1`. Require direction consistency,
+   matrix condition number no greater than 5, and maximum relative vector
+   deviation no greater than 10 percent before enabling clamp-limited recovery.
+
+Each accepted record includes the 2x2 prediction, command, fresh measured
+azimuth/altitude delta, residual vector, elapsed time, and reversal/backlash
+state.
+
+## Operational Run
+
+1. Acquire the initial fresh three-point determination and admit the selected
+   3- or 24-arcminute tier.
+2. Require a fresh correction vector, available travel, a finite bounded plan,
+   bridge ownership, and cancellation clearance before each command.
+3. Execute one bounded plan, wait for controller Idle and settling, then obtain
+   independent fresh three-point feedback.
+4. Stop motion on material regression, inconsistent response, failed solving,
+   travel denial, or cancellation. Never authorize the next command from the
+   continuous correction estimator.
+5. Feed accepted response evidence into the controller and repeat while it is
+   converging, up to 12 moves.
+6. At tolerance, keep UPAS stationary and obtain one more independent fresh
+   three-point determination. Declare completion only when both fresh vectors
+   agree and are within tolerance.
+7. Report wall-clock duration, move count, initial/final vectors, rejected
+   probes, response matrix, and whether the 300-second target was met.
 
 ## Acceptance Evidence
 
-Do not expand authority from a single average. Require all of the following:
+Do not qualify response uncertainty or operational success from a single
+average. Require all of the following:
 
-- Correct sign and monotonic response in both directions for both axes.
-- Measured response at 100% remains within a predeclared tolerance of the
-  low-amplitude calibration, including the two cross-axis terms.
-- The diagonal result agrees with the sum of the two measured columns within
-  that same tolerance.
+- Correct sign and stable response on both axes.
+- At least three accepted isolated samples per axis qualify the response
+  matrix under the calibration limits above.
 - Predicted and fresh measured residual vectors agree across the set without a
   systematic sign reversal, growth, or unmodelled deadband.
 - Every physical marker remains inside the configured envelope; controller
@@ -92,11 +117,16 @@ Do not expand authority from a single average. Require all of the following:
 
 ## Decision
 
-- If any acceptance item fails, preserve the logs and tighten the route or
-  calibration range; do not raise gain, command maximum, or travel authority.
-- If all items pass, review the signed evidence and separately propose a
-  measured full-travel profile. The proposal must be tested offline against the
-  same 2x2, gain, clamp, move-count, and terminal-confirmation math before any
-  attended field trial.
+- If any calibration item fails, preserve the logs and keep clamp-limited
+  recovery disabled; do not raise gain, command maximum, or travel authority.
+- If calibration passes, enable the measured full-travel profile and run the
+  attended operational trial against the same 2x2, gain, clamp, move-count,
+  response, and terminal-confirmation rules.
 - A <=3 arcminute completion remains two independent fresh determinations, not
   the continuous estimator and not the controller simulation.
+- Imaging-ready acceptance additionally requires one real guided 900-second
+  sub with round stars across the usable sensor, or a qualified raw Dec-drift
+  rate no greater than 0.79 arcseconds/minute when a science frame is
+  unavailable.
+- The production claim requires at least four successful attempts in five
+  eligible starts, with no travel violation and no false completion.
