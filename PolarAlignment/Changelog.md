@@ -897,6 +897,16 @@
 
 # Changelog
 
+## 2.2.6.136
+
+- Increase only the qualified measured-matrix direct-route correction gain from
+  0.65 to a still-damped 0.75; probe, remembered-response, and clamp-recovery
+  gains remain unchanged.
+- Reduce the exact deployed Dubai +/-60 arcminute corner from four feedback
+  moves and 340 predicted seconds to three moves and 285 seconds while
+  retaining fresh feedback after every move and an independent stationary
+  completion determination.
+
 ## 2.2.6.135
 
 - Fix direct full-travel feasibility for real low-gain UPAS response matrices

@@ -1428,6 +1428,52 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public void AutomatedAdjustmentController_DeployedDubaiMatrixConvergesFromWorstSubDegreeCornerInThreeMoves() {
+            var controller = new AutomatedAdjustmentController(useUpasEngagementController: true);
+            controller.ConfigureCalibratedDirectFullTravelRoute(
+                enabled: true,
+                operatorConfirmed: true,
+                azimuthStartingPositionDegrees: 0,
+                azimuthMinimumDegrees: -5.4,
+                azimuthMaximumDegrees: 5.4,
+                altitudeStartingPositionDegrees: 0,
+                altitudeMinimumDegrees: -5.4,
+                altitudeMaximumDegrees: 5.4,
+                azimuthDeltaPerXUnitDegrees: 0.01317625,
+                azimuthDeltaPerYUnitDegrees: 0.00039600,
+                altitudeDeltaPerXUnitDegrees: 0.000177833333333333,
+                altitudeDeltaPerYUnitDegrees: 0.01550825,
+                maximumXUnitsPerMove: 80,
+                maximumYUnitsPerMove: 80,
+                physicalAzimuthDegreesPerXUnit: 0.025,
+                physicalAltitudeDegreesPerYUnit: 0.022,
+                clampLimitedRecoveryEnabled: false,
+                relativeResponseUncertainty: 1.0,
+                terminalErrorMinutes: 3.0);
+
+            var azimuthDegrees = 1.0;
+            var altitudeDegrees = -1.0;
+            controller.UpdateObservation(azimuthDegrees, altitudeDegrees);
+
+            for (var move = 0; move < 3; move++) {
+                var plan = controller.CreatePlan();
+                plan.HasMovement.Should().BeTrue(plan.Reason);
+                Math.Abs(plan.XMagnitude).Should().BeLessOrEqualTo(80);
+                Math.Abs(plan.YMagnitude).Should().BeLessOrEqualTo(80);
+
+                controller.NoteSuccessfulExecution(plan);
+                azimuthDegrees += plan.ExpectedAzimuthDeltaDegrees;
+                altitudeDegrees += plan.ExpectedAltitudeDeltaDegrees;
+                controller.UpdateObservation(azimuthDegrees, altitudeDegrees);
+            }
+
+            var finalTotalMinutes = Math.Sqrt(
+                azimuthDegrees * azimuthDegrees
+                + altitudeDegrees * altitudeDegrees) * 60.0;
+            finalTotalMinutes.Should().BeLessOrEqualTo(3.0);
+        }
+
+        [Test]
         public void AutomatedAdjustmentController_RejectsSingularDirectFullTravelProfile() {
             var controller = new AutomatedAdjustmentController(useUpasEngagementController: true);
             controller.ConfigureCalibratedDirectFullTravelRoute(

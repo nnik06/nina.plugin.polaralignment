@@ -70,7 +70,11 @@ namespace NINA.Plugins.PolarAlignment {
         private const double AzimuthAcquisitionDominanceRatio = 3.0;
         private const double LargeAzimuthDominanceThresholdDegrees = 15.0 / 60.0;
         private const double XAcquisitionClearanceMagnitude = 24.0;
-        private const double ConfirmedXCorrectionGain = 0.65;
+        // A measured, qualified 2x2 route can use a slightly stronger still-damped
+        // correction than probe and remembered-response paths. At 0.75 the exact
+        // Dubai matrix reaches the 3' target from the +/-60' corner in three fresh-
+        // feedback moves while retaining 25 percent model-error headroom per move.
+        private const double ConfirmedXCorrectionGain = 0.75;
         private const double MaximumConfirmedXMoveMagnitude = 20.0;
         private const double NearConvergenceXResidualDegrees = 8.0 / 60.0;
         private const double NearConvergenceMaximumConfirmedXMoveMagnitude = 6.0;

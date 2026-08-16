@@ -29,7 +29,10 @@ namespace NINA.Plugins.PolarAlignment {
         internal const double DefaultTerminalErrorMinutes =
             TppaOperationalAlignmentTierPolicy.ImagingReadyMaximumTotalMinutes;
         private const double NormalEquationDamping = 1e-6;
-        private const double ConfirmedCorrectionGain = 0.65;
+        // Keep the pure feasibility simulation identical to the runtime controller's
+        // measured-matrix route. Probe, remembered-response, and clamp-recovery paths
+        // retain their independently conservative gains.
+        private const double ConfirmedCorrectionGain = 0.75;
 
         public static TppaDirectFullTravelFeasibilityDecision Evaluate(
             double azimuthErrorMinutes,
