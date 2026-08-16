@@ -897,6 +897,13 @@
 
 # Changelog
 
+## 2.2.6.134
+
+- Keep automatic full-travel correction inside five degrees per axis while
+  retaining the configured +/-5.4 degree physical envelope as safety margin.
+- Update fast-run analysis for five-second direct-field settling, up to twelve
+  feedback moves, and diagonal starts across the admitted five-degree envelope.
+
 - Added a fail-closed guided-900-second readiness gate that validates the exact
   passive NINA sequence and live runtime manifest, rejects nominal policy
   templates, reproduces OAG geometry from immutable WCS sources, and requires a

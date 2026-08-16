@@ -25,8 +25,8 @@ param(
     [ValidateRange(1, 30)][int]$MinimumNights = 3,
     [ValidateRange(1.0, 1800.0)][double]$MaximumRuntimeSeconds = 300.0,
     [ValidateRange(0.1, 60.0)][double]$MaximumToleranceMinutes = 3.0,
-    [ValidateRange(0, 2)][int]$MinimumMoveCount = 1,
-    [ValidateRange(1, 2)][int]$MaximumMoveCount = 2,
+    [ValidateRange(0, 12)][int]$MinimumMoveCount = 0,
+    [ValidateRange(1, 12)][int]$MaximumMoveCount = 12,
     [DateTimeOffset]$CampaignEndUtc = [DateTimeOffset]::UtcNow.AddDays(4)
 )
 
@@ -56,8 +56,8 @@ if ([IO.File]::Exists($output)) { throw "Refusing to overwrite campaign manifest
 $directory = [IO.Path]::GetDirectoryName($output)
 if (-not [string]::IsNullOrWhiteSpace($directory)) { [void][IO.Directory]::CreateDirectory($directory) }
 $minimumInitialTotalMinutes = 0.0
-$maximumInitialTotalMinutes = 300.0
-$stratumBounds = @(0.0, 30.0, 60.0, 120.0, 180.0, 240.0, 300.0)
+$maximumInitialTotalMinutes = 424.264069
+$stratumBounds = @(0.0, 30.0, 60.0, 120.0, 180.0, 300.0, 424.264069)
 $stratumCounts = [int[]]::new($stratumBounds.Count - 1)
 $minimumPerStratum = [Math]::Floor($ExpectedAttemptCount / $stratumCounts.Count)
 if ($minimumPerStratum -lt 1) {

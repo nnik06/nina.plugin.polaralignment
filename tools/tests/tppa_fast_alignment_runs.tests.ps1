@@ -34,7 +34,7 @@ function New-FastRunLog(
     $lines = [Collections.Generic.List[string]]::new()
     $stratifiedTotals = [Collections.Generic.List[double]]::new()
     if ($UseObjectiveStrata) {
-        $bounds = @(0.0, 30.0, 60.0, 120.0, 180.0, 240.0, 300.0)
+        $bounds = @(0.0, 30.0, 60.0, 120.0, 180.0, 300.0, 424.264069)
         $counts = [int[]]::new(6)
         $minimum = [Math]::Floor($RunCount / 6)
         if ($minimum -lt 1) { throw 'Stratified synthetic logs require at least six runs.' }
@@ -54,14 +54,14 @@ function New-FastRunLog(
         $start = [DateTimeOffset]::Parse('2026-08-03T18:00:00Z').AddDays($nightOffset).AddMinutes($index)
         $refraction = if ($index -eq $RefractionStringRun) { 'false' } else { $index -ne $RefractionOffRun }
         $initialTotal = if ($index -eq $InitialOutsideRangeRun) {
-            [Math]::Sqrt(2.0 * 240.0 * 240.0)
+            [Math]::Sqrt(2.0 * 325.0 * 325.0)
         } elseif ($UseObjectiveStrata) {
             $stratifiedTotals[$index - 1]
         } else {
             24.0
         }
-        $initialAzimuth = if ($index -eq $InitialOutsideRangeRun) { 240.0 } else { 0.8 * $initialTotal }
-        $initialAltitude = if ($index -eq $InitialOutsideRangeRun) { 240.0 } else { 0.6 * $initialTotal }
+        $initialAzimuth = if ($index -eq $InitialOutsideRangeRun) { 325.0 } else { 0.8 * $initialTotal }
+        $initialAltitude = if ($index -eq $InitialOutsideRangeRun) { 325.0 } else { 0.6 * $initialTotal }
         $events = @(
             [ordered]@{
                 schemaVersion = 1; runId = $runId; event = 'started'
@@ -275,7 +275,7 @@ Describe 'TPPA fast alignment evidence analyzer contract' {
         $sealed = New-FastCampaignManifest $manifest @($log)
 
         $minimumMoves = & $scriptPath -LogPath $log -CampaignManifestPath $manifest `
-            -ExpectedCampaignManifestSha256 $sealed.Sha256 -MinimumMoveCount 0
+            -ExpectedCampaignManifestSha256 $sealed.Sha256 -MinimumMoveCount 1
         ($minimumMoves.CampaignIssues -join ' ') | Should Match 'MinimumMoveCount=.*does not match analyzer policy'
 
         $maximumMoves = & $scriptPath -LogPath $log -CampaignManifestPath $manifest `
@@ -424,15 +424,15 @@ Describe 'TPPA fast alignment evidence analyzer contract' {
         @($result.Runs | Where-Object AdmissionRejected).Count | Should Be 1
     }
 
-    It 'accepts a coherent two-move run and checks the inter-move chain' {
-        $log = Join-Path $TestDrive 'two-move.log'
+    It 'accepts a coherent three-move full-envelope run and checks the inter-move chain' {
+        $log = Join-Path $TestDrive 'three-move.log'
         $runId = [Guid]::NewGuid().ToString('D')
         $start = [DateTimeOffset]::Parse('2026-08-03T18:00:00Z')
         $events = @(
             [ordered]@{
                 schemaVersion = 1; runId = $runId; event = 'started'
                 observedUtc = $start.ToString('O'); elapsedSeconds = 0.0
-                settleSeconds = 30.0; exposureSeconds = 1.0
+                settleSeconds = 5.0; exposureSeconds = 1.0
                 alignmentToleranceMinutes = 3.0; refractionAdjustmentEnabled = $true
                 repositoryHead = $repositoryHead; pluginAssemblySha256 = $pluginAssemblySha256
                 covarianceAuthorityId = $covarianceAuthorityId; covarianceAuthoritySha256 = $covarianceAuthoritySha256
@@ -445,29 +445,37 @@ Describe 'TPPA fast alignment evidence analyzer contract' {
             }
             [ordered]@{
                 schemaVersion = 1; runId = $runId; event = 'initial-fresh-determination'
-                observedUtc = $start.AddSeconds(75).ToString('O'); elapsedSeconds = 75.0
-                azimuthMinutes = 19.2; altitudeMinutes = 14.4; totalMinutes = 24.0
+                observedUtc = $start.AddSeconds(60).ToString('O'); elapsedSeconds = 60.0
+                azimuthMinutes = 300.0; altitudeMinutes = 300.0; totalMinutes = 424.264069
             }
             [ordered]@{
                 schemaVersion = 1; runId = $runId; event = 'post-move-response'
-                observedUtc = $start.AddSeconds(150).ToString('O'); elapsedSeconds = 150.0
+                observedUtc = $start.AddSeconds(130).ToString('O'); elapsedSeconds = 130.0
                 classification = 'Improved'
-                preAzimuthMinutes = 19.2; preAltitudeMinutes = 14.4; preTotalMinutes = 24.0
-                postAzimuthMinutes = 6.0; postAltitudeMinutes = 4.5; postTotalMinutes = 7.5
-                totalImprovementMinutes = 16.5; requiredImprovementMinutes = 0.5
+                preAzimuthMinutes = 300.0; preAltitudeMinutes = 300.0; preTotalMinutes = 424.264069
+                postAzimuthMinutes = 150.0; postAltitudeMinutes = 150.0; postTotalMinutes = 212.132034
+                totalImprovementMinutes = 212.132035; requiredImprovementMinutes = 0.5
             }
             [ordered]@{
                 schemaVersion = 1; runId = $runId; event = 'post-move-response'
-                observedUtc = $start.AddSeconds(225).ToString('O'); elapsedSeconds = 225.0
+                observedUtc = $start.AddSeconds(200).ToString('O'); elapsedSeconds = 200.0
+                classification = 'Improved'
+                preAzimuthMinutes = 150.0; preAltitudeMinutes = 150.0; preTotalMinutes = 212.132034
+                postAzimuthMinutes = 24.0; postAltitudeMinutes = 18.0; postTotalMinutes = 30.0
+                totalImprovementMinutes = 182.132034; requiredImprovementMinutes = 0.5
+            }
+            [ordered]@{
+                schemaVersion = 1; runId = $runId; event = 'post-move-response'
+                observedUtc = $start.AddSeconds(260).ToString('O'); elapsedSeconds = 260.0
                 classification = 'ConvergedCandidate'
-                preAzimuthMinutes = 6.0; preAltitudeMinutes = 4.5; preTotalMinutes = 7.5
+                preAzimuthMinutes = 24.0; preAltitudeMinutes = 18.0; preTotalMinutes = 30.0
                 postAzimuthMinutes = 1.6; postAltitudeMinutes = 1.2; postTotalMinutes = 2.0
-                totalImprovementMinutes = 5.5; requiredImprovementMinutes = 0.5
+                totalImprovementMinutes = 28.0; requiredImprovementMinutes = 0.5
             }
             [ordered]@{
                 schemaVersion = 1; runId = $runId; event = 'completed'
                 observedUtc = $start.AddSeconds(300).ToString('O'); elapsedSeconds = 300.0
-                outcome = 'fresh-confirmed-within-tolerance'; moveCount = 2
+                outcome = 'fresh-confirmed-within-tolerance'; moveCount = 3
                 finalAzimuthMinutes = 1.6; finalAltitudeMinutes = 1.2; finalTotalMinutes = 2.0
             }
         )
@@ -477,7 +485,7 @@ Describe 'TPPA fast alignment evidence analyzer contract' {
 
         $result = & $scriptPath -LogPath $log
         $run = $result.Runs | Where-Object RunId -eq $runId
-        $run.MoveCount | Should Be 2
+        $run.MoveCount | Should Be 3
         $run.Passed | Should Be $true
         $run.Issues.Count | Should Be 0
         $result.FastAlignmentEvidenceQualified | Should Be $false

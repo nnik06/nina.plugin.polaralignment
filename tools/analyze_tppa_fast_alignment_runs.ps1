@@ -17,17 +17,17 @@ param(
     [ValidateRange(1.0, 1800.0)]
     [double]$MaximumRuntimeSeconds = 300.0,
     [ValidateRange(0.0, 120.0)]
-    [double]$MinimumSettleSeconds = 30.0,
+    [double]$MinimumSettleSeconds = 5.0,
     [ValidateRange(0.1, 60.0)]
     [double]$MaximumToleranceMinutes = 3.0,
-    [ValidateRange(0.0, 300.0)]
+    [ValidateRange(0.0, 500.0)]
     [double]$MinimumInitialTotalMinutes = 0.0,
-    [ValidateRange(0.1, 300.0)]
-    [double]$MaximumInitialTotalMinutes = 300.0,
-    [ValidateRange(0, 2)]
-    [int]$MinimumMoveCount = 1,
-    [ValidateRange(1, 2)]
-    [int]$MaximumMoveCount = 2,
+    [ValidateRange(0.1, 500.0)]
+    [double]$MaximumInitialTotalMinutes = 424.264069,
+    [ValidateRange(0, 12)]
+    [int]$MinimumMoveCount = 0,
+    [ValidateRange(1, 12)]
+    [int]$MaximumMoveCount = 12,
     [ValidateRange(0.0, 10.0)]
     [double]$MaximumClockSkewSeconds = 2.0,
     [ValidateRange(0.05, 10.0)]

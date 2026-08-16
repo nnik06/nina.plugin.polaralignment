@@ -24,8 +24,8 @@ namespace NINA.Plugins.PolarAlignment {
         // optimization, but it does not decide whether a move is feasible.
         internal const int MaximumFeedbackMoves =
             TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMoves;
-        internal const double MaximumAxisErrorMinutes = 324.0;
-        internal const double MaximumTotalErrorMinutes = 458.205195;
+        internal const double MaximumAxisErrorMinutes = 300.0;
+        internal const double MaximumTotalErrorMinutes = 424.264069;
         internal const double DefaultTerminalErrorMinutes =
             TppaOperationalAlignmentTierPolicy.ImagingReadyMaximumTotalMinutes;
         private const double NormalEquationDamping = 1e-6;

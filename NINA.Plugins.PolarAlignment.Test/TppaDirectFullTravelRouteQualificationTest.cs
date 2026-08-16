@@ -133,12 +133,12 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 0, 2.0 / 60.0,
                 81, 75,
                 0.02, 0.02,
-                324, -300,
+                300, -300,
                 clampLimitedRecoveryEnabled: true,
                 relativeResponseUncertainty: 0.05);
 
             result.IsQualified.Should().BeTrue();
-            result.Feasibility.RequiredMoveCount.Should().Be(2);
+            result.Feasibility.RequiredMoveCount.Should().Be(5);
         }
 
         [Test]

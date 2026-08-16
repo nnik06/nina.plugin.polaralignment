@@ -1476,7 +1476,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 physicalAltitudeDegreesPerYUnit: 0.02,
                 clampLimitedRecoveryEnabled: true,
                 relativeResponseUncertainty: 0.05);
-            controller.UpdateObservation(324.0 / 60.0, -300.0 / 60.0);
+            controller.UpdateObservation(300.0 / 60.0, -300.0 / 60.0);
 
             var plan = controller.CreatePlan();
 

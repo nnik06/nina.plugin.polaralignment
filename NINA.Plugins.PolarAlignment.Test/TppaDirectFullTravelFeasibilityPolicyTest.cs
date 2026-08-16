@@ -5,7 +5,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
         [Test]
         public void Evaluate_ProvesExistingSmallAuthorityCannotCoverFullEnvelopeInTwoMoves() {
             var result = Evaluate(
-                azimuthMinutes: 324,
+                azimuthMinutes: 300,
                 altitudeMinutes: 0,
                 azimuthDegreesPerXUnit: 1.0 / 60.0,
                 azimuthDegreesPerYUnit: 0,
@@ -22,7 +22,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
         [Test]
         public void Evaluate_AdmitsCalibratedFullEnvelopeRouteWithinFiniteMoveLimit() {
             var result = Evaluate(
-                azimuthMinutes: 324,
+                azimuthMinutes: 300,
                 altitudeMinutes: -300,
                 azimuthDegreesPerXUnit: 2.0 / 60.0,
                 azimuthDegreesPerYUnit: 0,
@@ -41,7 +41,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
         [Test]
         public void Evaluate_AdmitsQualifiedClampLimitedRecoveryWhenItConvergesWithinBudget() {
             var result = TppaDirectFullTravelFeasibilityPolicy.Evaluate(
-                324, -300,
+                300, -300,
                 2.0 / 60.0, 0,
                 0, 2.0 / 60.0,
                 81, 75,
@@ -53,8 +53,8 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 relativeResponseUncertainty: 0.05);
 
             result.IsFeasible.Should().BeTrue();
-            result.RequiredMoveCount.Should().Be(2);
-            result.RequiredRuntimeSeconds.Should().BeApproximately(230, 0.001);
+            result.RequiredMoveCount.Should().Be(5);
+            result.RequiredRuntimeSeconds.Should().BeApproximately(395, 0.001);
         }
 
         [Test]
@@ -135,7 +135,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
         [Test]
         public void Evaluate_RejectsVectorOutsideFullEnvelope() {
             var result = Evaluate(
-                azimuthMinutes: 325,
+                azimuthMinutes: 300.01,
                 altitudeMinutes: 0,
                 azimuthDegreesPerXUnit: 2.0 / 60.0,
                 azimuthDegreesPerYUnit: 0,

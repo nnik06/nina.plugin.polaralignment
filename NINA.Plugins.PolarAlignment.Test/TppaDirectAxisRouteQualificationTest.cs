@@ -27,6 +27,14 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
+        public void Evaluate_RejectsErrorAboveFiveDegreesDespitePhysicalReserve() {
+            var result = Evaluate(enabled: true, confirmed: true, start: 0, physicalDegreesPerUnit: 0.05, azimuthMinutes: 300.01, altitudeMinutes: 0);
+
+            result.IsQualified.Should().BeFalse();
+            result.Reason.Should().Contain("exceeds the calibrated direct-axis envelope");
+        }
+
+        [Test]
         public void Evaluate_AdmitsSlowSingleAxisResponseWithinFiniteMoveLimit() {
             var result = TppaDirectAxisRouteQualification.Evaluate(
                 true, true,
@@ -35,7 +43,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 azimuthErrorDeltaPerUnitDegrees: 0.005,
                 altitudeErrorDeltaPerUnitDegrees: 0,
                 maximumUnitsPerMove: 81,
-                azimuthErrorMinutes: 324,
+                azimuthErrorMinutes: 300,
                 altitudeErrorMinutes: 0);
 
             result.IsQualified.Should().BeTrue(result.Reason);
@@ -51,7 +59,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
                 azimuthErrorDeltaPerUnitDegrees: 0.002,
                 altitudeErrorDeltaPerUnitDegrees: 0,
                 maximumUnitsPerMove: 81,
-                azimuthErrorMinutes: 324,
+                azimuthErrorMinutes: 300,
                 altitudeErrorMinutes: 0);
 
             result.IsQualified.Should().BeFalse();

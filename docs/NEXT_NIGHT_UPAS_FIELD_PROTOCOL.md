@@ -73,14 +73,26 @@ supersede the actuator trial below; UPAS remains disabled for that campaign.
   NINA loaded.
 
 ## Starting State
-- Put both UPAS markers near their engraved zero positions and photograph them.
-- Confirm GRBL reports Idle and record MPos X/Y. Treat MPos as commanded position, not encoder feedback.
-- Focus successfully, plate solve reliably, and begin at no more than 24 arcminutes total PA error for the fixed-gain, two-move five-minute campaign. Easier starts remain eligible and may complete without movement. Starts above this window are retained as admission rejections and receive no UPAS movement. A wider window requires a separately qualified gain schedule.
-- Disable pre-seat for the first trial. Keep configured azimuth travel guards enabled.
+- Put both UPAS markers near their engraved zero positions when practical and
+  record their signed readings. The production route may start elsewhere only
+  when the entered signed positions and remaining headroom are trustworthy.
+- Confirm GRBL reports Idle and record MPos X/Y. Treat MPos as commanded
+  displacement within the current controller epoch, never as an encoder or a
+  substitute for physical position after reset.
+- Focus successfully and prove reliable plate solving before actuator motion.
+  Automatic correction accepts a fresh vector up to 300 arcminutes on either
+  axis and 424.264 arcminutes total. The configured +/-5.4 degree physical
+  envelope supplies headroom; it does not expand automatic authority beyond
+  five degrees. Larger vectors remain measurement-only for manual tripod work.
+- Use azimuth pre-seat when its direction and headroom are known. It exists to
+  take up the measured AZ deadband before response estimation.
 - Record reversal settings and do not change them during a run.
 - After Home, a major slew, cable handling, or physical contact, hold the mount undisturbed for at least five minutes before the first qualified VerificationOnly determination. Restart the dwell after any new disturbance.
 - When UPAS is connected directly to Mele, record the actual serial port after every reboot. A COM number is discovery metadata, never physical-position evidence.
-- When UPAS is connected through the Pi, require the Pi address to resolve at the expected wired interface, raw GRBL TCP to accept a connection, and Mele `com2tcp` to reach `ESTABLISHED`. `SYN_SENT`, `CLOSE_WAIT`, an empty GRBL read, or a missing ARP neighbor fails the bridge gate.
+- When UPAS is connected through the Pi, require the persistent Mele `com2tcp`
+  process to own one `ESTABLISHED` connection to `upasbridge.local:4001`.
+  Routine checks and TPPA use lock-guarded COM30. Never open raw port 4001 as
+  a second probe while `com2tcp` owns the production connection.
 - Select exactly one UPAS transport for a session. Do not let a stale direct-USB COM port satisfy a Pi-bridge preflight or vice versa.
 - Confirm iPolar is enumerated and acquire its dark frame before a campaign; after restarting iPolar, explicitly select the preserved previous dark frame before collecting witness evidence.
 
@@ -94,17 +106,19 @@ geometry or flexure, but they are not a paperwork admission gate.
 1. Confirm the present signed AZ and ALT marker readings, the +/-5.4 degree
    hard bounds, and the selected travel scale. A power reset, manual movement,
    or uncertain command clears those readings.
-2. Require a current, directional X and Y TPPA response calibration. The ALT/Y
-   response must be measured independently; never substitute the X response.
-3. Collect two fresh three-point TPPA determinations. They must agree closely
-   enough to steer a correction and must fit the five-minute feasibility policy.
-4. Permit at most two headroom-clamped UPAS moves in the five-minute contract.
-   Each needs explicit command completion, configured settle, and a new fresh
-   three-point result before another command can be considered. A cold direct
-   route with no qualified Y response spends its first move on the bounded Y
-   probe. Only a bounded Y-bootstrap probe with a qualified fresh independent
-   response earns one additional move, for a maximum of three total moves; it must not be inferred from a
-   remembered setting or granted to an ordinary X probe or correction.
+2. Prefer a current directional 2x2 TPPA response calibration. If it is absent,
+   the cold first-run route may identify X and Y independently with bounded
+   probes and fresh plate-solve feedback. Never substitute X response for Y.
+3. Collect independent fresh three-point determinations until they agree closely
+   enough to steer the first correction. Reuse a current-epoch post-move result
+   for the next modeled move only inside the controller's bounded freshness
+   window; otherwise acquire a new stationary determination.
+4. Permit iterative headroom-clamped UPAS movement, up to the controller's
+   finite ceiling of 12 fresh-feedback moves. Every move needs explicit command
+   completion, configured settle, and a fresh response before another command.
+   The nominal target remains 300 seconds, but elapsed time is reported rather
+   than used to abandon an otherwise converging and physically safe alignment.
+   Report separately whether the completed run met the five-minute target.
 5. Finish only after two independent fresh determinations are at or below 3
    arcminutes total. If any response is implausible, inconsistent, or worse,
    stop automatic correction with the last fresh residual preserved.
@@ -119,11 +133,11 @@ Before enabling a wide two-axis route, run the dedicated
 block. It obtains the missing directional ALT/Y response with an isolated
 photon-backed probe; an AZ/X calibration must never be extrapolated to ALT/Y.
 
-The runtime budget counts all physical UPAS moves, including probes, and
-reserves a fresh result after each move plus the terminal verify-only
-determination. A cold-route probe earns a third move only after its own fresh
-feedback identifies a plausible, independent Y response. It remains
-session-local: a restart, disconnect, manual slew, pier-side change,
+The runtime report counts all physical UPAS moves, including probes, and every
+fresh response plus the terminal stationary determination. A cold-route probe
+earns further movement only after its own fresh feedback identifies a plausible,
+independent axis response. The learned model remains session-local: a restart,
+disconnect, manual slew, pier-side change,
 travel/reversal configuration change, weak response, poor conditioning, failed
 physical execution, or the terminal motion-abort latch removes that allowance.
 No Y response is persisted across sessions.

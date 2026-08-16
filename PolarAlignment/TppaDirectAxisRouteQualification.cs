@@ -11,7 +11,7 @@ namespace NINA.Plugins.PolarAlignment {
         bool IsQualified,
         double PlannedUnits,
         string Reason) {
-        internal const double MaximumAxisErrorMinutes = 324.0;
+        internal const double MaximumAxisErrorMinutes = 300.0;
         internal const int MaximumMoves = TppaFastAlignmentExecutionBudget.MaximumFreshFeedbackMoves;
         private const double MinimumLeverage = 1e-8;
         private const double CorrectionGain = 0.5;
