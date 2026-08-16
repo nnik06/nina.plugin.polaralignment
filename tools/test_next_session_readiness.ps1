@@ -141,8 +141,7 @@ function Test-EstablishedTcpSession {
             }
             $connections = @(Get-NetTCPConnection -State Established -ErrorAction Stop |
                 Where-Object {
-                    $_.RemotePort -eq $Port -and
-                    $remoteAddresses.Contains([string]$_.RemoteAddress)
+                    $_.RemotePort -eq $Port
                 })
         } catch {
             return [pscustomobject]@{
@@ -155,9 +154,22 @@ function Test-EstablishedTcpSession {
         foreach ($connection in $connections) {
             $owner = Get-Process -Id $connection.OwningProcess -ErrorAction SilentlyContinue
             if ($owner -and $owner.ProcessName -ieq $expectedProcessName) {
+                $resolvedDestination = $remoteAddresses.Contains(
+                    [string]$connection.RemoteAddress
+                )
+                $ownerCommandLine = [string](Get-CimInstance Win32_Process `
+                    -Filter "ProcessId = $($owner.Id)" -ErrorAction SilentlyContinue |
+                    Select-Object -ExpandProperty CommandLine)
+                $configuredDestination = $ownerCommandLine -match
+                    [regex]::Escape($HostName) -and $ownerCommandLine -match
+                    "(^|\\s)$Port(\\s|$)"
+                if (-not $resolvedDestination -and -not $configuredDestination) {
+                    continue
+                }
                 return [pscustomobject]@{
                     Connected = $true
-                    Detail = "Existing TCP session to $HostName`:$Port is established " +
+                    Detail = "Existing TCP session to $HostName`:$Port " +
+                        "($($connection.RemoteAddress):$($connection.RemotePort)) is established " +
                         "by $($owner.ProcessName) (PID $($owner.Id)); no active bridge " +
                         'probe was issued. This verifies the transport session only; ' +
                         'serial and GRBL health were not tested.'
