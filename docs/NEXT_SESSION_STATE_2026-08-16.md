@@ -136,6 +136,20 @@ route.
 
 ## First Field Block
 
+Use the prepared push-button sequence:
+
+`C:\Users\nnik0\OneDrive\Documents\N.I.N.A\TPPA_FAST_OPERATIONAL_V135_300_20_70_5S.json`
+
+SHA-256:
+`65B87A92950FA6E76884FB40365903725C5B8075621F32734BF98592C9C4AAE4`
+
+It contains one motion-capable TPPA instruction at Az 300 deg / Alt 36 deg,
+22-degree legs, a 5-second exposure, 5-second verification-point settling,
+3-arcminute tolerance, the Az 270..010 / Alt 20..70 telescope envelope, and
+the five-minute runtime contract. Do not select the older
+`TPPA_FAST_OPERATIONAL_300_20_70.json`; it still requests a 2-second exposure,
+which field plate solving has shown to be insufficient.
+
 1. Connect the ASI2600, ASI220, and EFW. Start NINA in the logged-in interactive
    desktop and verify the log loaded v135 with the expected plugin hash.
 2. Acquire fresh signed AZ and ALT scale readings after transport and enter
