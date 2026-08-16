@@ -92,6 +92,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
         private const double MinimumPositiveAlignmentTolerance = 0.5;
         private double alignmentTolerance;
         private bool enforceFiveMinuteRuntimeBudget;
+        private bool enableOperationalUpasProfile;
         private static readonly HttpClient UpasSupervisorHttpClient = new(
             new HttpClientHandler { AllowAutoRedirect = false }
         ) {
@@ -240,6 +241,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
 
                 AlignmentTolerance = AlignmentTolerance,
                 EnforceFiveMinuteRuntimeBudget = EnforceFiveMinuteRuntimeBudget,
+                EnableOperationalUpasProfile = EnableOperationalUpasProfile,
                 Coordinates = this.Coordinates == null
                     ? null
                     : new InputTopocentricCoordinates(this.Coordinates.Coordinates.Copy())
@@ -421,6 +423,63 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 enforceFiveMinuteRuntimeBudget = value;
                 RaisePropertyChanged();
             }
+        }
+
+        /// <summary>
+        /// Opts this saved instruction into the calibrated, attended UPAS field profile.
+        /// It is intentionally false by default and applied only in memory because NINA
+        /// 3.2 may discard per-user plugin settings during startup recovery.
+        /// </summary>
+        [JsonProperty]
+        public bool EnableOperationalUpasProfile {
+            get => enableOperationalUpasProfile;
+            set {
+                enableOperationalUpasProfile = value;
+                RaisePropertyChanged();
+            }
+        }
+
+        private void ApplyOperationalUpasProfileIfRequested() {
+            if (!EnableOperationalUpasProfile) {
+                return;
+            }
+
+            var settings = Properties.Settings.Default;
+            settings.RefractionAdjustment = true;
+            settings.UseAvalonPolarAlignmentSystem = true;
+            settings.UseOAPAPolarAlignmentSystem = false;
+            settings.SelectedPolarAlignmentSystem = "UPAS";
+            settings.DoAutomatedAdjustments = true;
+            settings.RequireExternalUpasSupervisorForAutomatedMoves = false;
+            settings.AvalonPreSeatAzimuthBeforeMeasurement = true;
+            settings.AvalonAzimuthPreSeatUnits = 24;
+            settings.AvalonAzimuthPreSeatDirection = 1;
+            settings.AvalonAzimuthTravelGuardEnabled = true;
+            settings.AvalonAzimuthTravelGuardConfirmed = true;
+            settings.AvalonAzimuthTravelLimitDegrees = 5.4;
+            settings.AvalonAltitudeTravelGuardEnabled = true;
+            settings.AvalonAltitudeTravelGuardConfirmed = true;
+            settings.AvalonAzimuthStartingPositionDegrees = 0;
+            settings.AvalonAltitudeStartingPositionDegrees = 0;
+            settings.AvalonAzimuthMinimumDegrees = -5.4;
+            settings.AvalonAzimuthMaximumDegrees = 5.4;
+            settings.AvalonAltitudeMinimumDegrees = -5.4;
+            settings.AvalonAltitudeMaximumDegrees = 5.4;
+            settings.AvalonAzimuthDegreesPerNudgeUnit = 0.025;
+            settings.AvalonAltitudeDegreesPerNudgeUnit = 0.022;
+            settings.AvalonDirectFullTravelRouteEnabled = true;
+            settings.AvalonDirectFullTravelRouteConfirmed = true;
+            settings.AvalonClampLimitedRecoveryEnabled = false;
+            settings.AvalonCalibratedAzimuthDeltaPerXUnit = 0.0131762653;
+            settings.AvalonCalibratedAzimuthDeltaPerYUnit = 0;
+            settings.AvalonCalibratedAltitudeDeltaPerXUnit = 0;
+            settings.AvalonCalibratedAltitudeDeltaPerYUnit = 0.0155082342;
+            settings.AvalonCalibratedMaximumXUnitsPerMove = 80;
+            settings.AvalonCalibratedMaximumYUnitsPerMove = 80;
+
+            Logger.Info(
+                "TPPA operational UPAS profile applied in memory: selectedSystem=UPAS, " +
+                "automatedAdjustments=True, travelBounds=+/-5.4 deg, response=diagonal-v136.");
         }
 
 
@@ -615,6 +674,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
         /// <param name="token">When a cancel signal is triggered from outside, this token can be used to register to it or check if it is cancelled</param>
         /// <returns></returns>
         public override async Task Execute(IProgress<ApplicationStatus> externalProgress, CancellationToken token) {
+            ApplyOperationalUpasProfileIfRequested();
             var executionPolicy = PolarAlignmentExecutionPolicy.Create(VerificationOnly, DriftValidationOnly);
             var automatedAdjustmentsEnabled =
                 PolarAlignmentPlugin.ActiveAlignmentSystemVM?.DoAutomatedAdjustments == true
