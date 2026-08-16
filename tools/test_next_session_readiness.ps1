@@ -130,37 +130,43 @@ function Test-EstablishedTcpSession {
     )
 
     $expectedProcessName = [IO.Path]::GetFileNameWithoutExtension($ProcessName)
-    try {
-        $remoteAddresses = [System.Collections.Generic.HashSet[string]]::new(
-            [StringComparer]::OrdinalIgnoreCase
-        )
-        [void]$remoteAddresses.Add($HostName)
-        foreach ($address in [Net.Dns]::GetHostAddresses($HostName)) {
-            [void]$remoteAddresses.Add($address.IPAddressToString)
-        }
-        $connections = @(Get-NetTCPConnection -State Established -ErrorAction Stop |
-            Where-Object {
-                $_.RemotePort -eq $Port -and
-                $remoteAddresses.Contains([string]$_.RemoteAddress)
-            })
-    } catch {
-        return [pscustomobject]@{
-            Connected = $false
-            Detail = "Could not inspect established TCP sessions: " +
-                $_.Exception.GetBaseException().Message
-        }
-    }
-
-    foreach ($connection in $connections) {
-        $owner = Get-Process -Id $connection.OwningProcess -ErrorAction SilentlyContinue
-        if ($owner -and $owner.ProcessName -ieq $expectedProcessName) {
-            return [pscustomobject]@{
-                Connected = $true
-                Detail = "Existing TCP session to $HostName`:$Port is established " +
-                    "by $($owner.ProcessName) (PID $($owner.Id)); no active bridge " +
-                    'probe was issued. This verifies the transport session only; ' +
-                    'serial and GRBL health were not tested.'
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        try {
+            $remoteAddresses = [System.Collections.Generic.HashSet[string]]::new(
+                [StringComparer]::OrdinalIgnoreCase
+            )
+            [void]$remoteAddresses.Add($HostName)
+            foreach ($address in [Net.Dns]::GetHostAddresses($HostName)) {
+                [void]$remoteAddresses.Add($address.IPAddressToString)
             }
+            $connections = @(Get-NetTCPConnection -State Established -ErrorAction Stop |
+                Where-Object {
+                    $_.RemotePort -eq $Port -and
+                    $remoteAddresses.Contains([string]$_.RemoteAddress)
+                })
+        } catch {
+            return [pscustomobject]@{
+                Connected = $false
+                Detail = "Could not inspect established TCP sessions: " +
+                    $_.Exception.GetBaseException().Message
+            }
+        }
+
+        foreach ($connection in $connections) {
+            $owner = Get-Process -Id $connection.OwningProcess -ErrorAction SilentlyContinue
+            if ($owner -and $owner.ProcessName -ieq $expectedProcessName) {
+                return [pscustomobject]@{
+                    Connected = $true
+                    Detail = "Existing TCP session to $HostName`:$Port is established " +
+                        "by $($owner.ProcessName) (PID $($owner.Id)); no active bridge " +
+                        'probe was issued. This verifies the transport session only; ' +
+                        'serial and GRBL health were not tested.'
+                }
+            }
+        }
+
+        if ($attempt -lt 3) {
+            Start-Sleep -Milliseconds 250
         }
     }
 
@@ -332,9 +338,25 @@ if ($AdbTarget) {
         $adbPassed = $false
         $adbDetail = 'adb.exe was not found.'
     } elseif ($adbSource) {
-        $state = (& $adbSource -s $AdbTarget get-state 2>&1 | Out-String).Trim()
+        $stateOutput = (& $adbSource -s $AdbTarget get-state 2>&1 | Out-String).Trim()
+        $stateLines = @($stateOutput -split '\r?\n' |
+            ForEach-Object { $_.Trim() } | Where-Object { $_ })
+        $reportedStates = @($stateLines | Where-Object {
+                $_ -in @('device', 'offline', 'unauthorized', 'unknown',
+                    'bootloader', 'recovery', 'sideload')
+            })
+        $state = if ($reportedStates.Count -gt 0) {
+            $reportedStates[-1]
+        } elseif ($stateLines.Count -gt 0) {
+            $stateLines[-1]
+        } else {
+            ''
+        }
         $adbPassed = $state -eq 'device'
         $adbDetail = "ADB target $AdbTarget state: $state. Executable: $adbSource"
+        if ($stateOutput -ne $state) {
+            $adbDetail += " Raw output: $stateOutput"
+        }
     } else {
         $adbPassed = $false
     }

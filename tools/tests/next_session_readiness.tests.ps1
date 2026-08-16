@@ -50,7 +50,7 @@ try {
     [IO.File]::WriteAllText($manifestPath, ($manifest | ConvertTo-Json -Depth 4))
     [IO.File]::WriteAllText(
         $FakeAdb,
-        "@echo off`r`necho device`r`n",
+        "@echo off`r`necho * daemon not running; starting now at tcp:5037 1>&2`r`necho * daemon started successfully 1>&2`r`necho device`r`n",
         [Text.ASCIIEncoding]::new()
     )
     $explicit = Invoke-Readiness -AdbPath $FakeAdb
