@@ -305,7 +305,7 @@ namespace NINA.Plugins.PolarAlignment {
     }
 
     internal sealed class SettingsUpasSupervisorStatusSource : IUpasSupervisorStatusSource {
-        private static readonly HttpClient HttpClient = new() {
+        internal static readonly HttpClient HttpClient = new() {
             Timeout = TimeSpan.FromSeconds(10)
         };
 
@@ -323,7 +323,11 @@ namespace NINA.Plugins.PolarAlignment {
             return new ModeSelectingAutomatedMoveExecutor(
                 new SettingsExternalSupervisorRequirement(),
                 new LegacyAutomatedMoveExecutor(),
-                new SupervisorRequiredAutomatedMoveExecutor(new SettingsUpasSupervisorStatusSource()));
+                new SupervisorRequiredAutomatedMoveExecutor(
+                    new HttpsUpasSupervisorRawRelativeClient(
+                        SettingsUpasSupervisorStatusSource.HttpClient,
+                        Properties.Settings.Default.UpasSupervisorEndpoint,
+                        () => Environment.GetEnvironmentVariable("UPAS_SUPERVISOR_CLIENT_TOKEN"))));
         }
     }
 }

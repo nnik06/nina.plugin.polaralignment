@@ -152,34 +152,32 @@ namespace NINA.Plugins.PolarAlignment.Test {
             var requirement = new MutableRequirement { IsRequired = true };
             var legacy = new RecordingMoveExecutor(AutomatedMoveExecutionResult.Verified("legacy"));
             var supervisor = new SupervisorRequiredAutomatedMoveExecutor(
-                new StaticStatusSource(UpasSupervisorStatus.Parse(ValidDryRunStatus)));
+                new RecordingRawRelativeClient(AutomatedMoveExecutionResult.Verified("raw")));
             var router = new ModeSelectingAutomatedMoveExecutor(requirement, legacy, supervisor);
 
             var result = await router.ExecuteAsync(null, Axis.XAxis, 12, CancellationToken.None);
 
             result.PhysicalMotionVerified.Should().BeFalse();
-            result.Reason.Should().Contain("physicalMotion=false");
+            result.Reason.Should().Contain("requires the universal UPAS actuator model");
             legacy.CallCount.Should().Be(0);
             router.RequiresLocalActuatorConnection.Should().BeFalse();
         }
 
         [Test]
-        public async Task SupervisorRequiredModeStillDeniesFutureSuccessShapedStatus() {
-            var futureStatus = UpasSupervisorStatus.Parse(
-                ValidDryRunStatus.Replace("\"physicalMotion\": false", "\"physicalMotion\": true"));
-            var supervisor = new SupervisorRequiredAutomatedMoveExecutor(new StaticStatusSource(futureStatus));
+        public async Task SupervisorRequiredModeRejectsMissingActuatorModel() {
+            var supervisor = new SupervisorRequiredAutomatedMoveExecutor(
+                new RecordingRawRelativeClient(AutomatedMoveExecutionResult.Verified("raw")));
 
             var result = await supervisor.ExecuteAsync(null, Axis.XAxis, 12, CancellationToken.None);
 
             result.PhysicalMotionVerified.Should().BeFalse();
-            result.Reason.Should().Contain("not commissioned");
+            result.Reason.Should().Contain("requires the universal UPAS actuator model");
         }
 
         [Test]
         public async Task SupervisorExecutorRejectsUnsupportedAxisWithoutMotion() {
             var supervisor = new SupervisorRequiredAutomatedMoveExecutor(
-                new StaticStatusSource(UpasSupervisorStatus.Parse(
-                    ValidDryRunStatus.Replace("\"physicalMotion\": false", "\"physicalMotion\": true"))));
+                new RecordingRawRelativeClient(AutomatedMoveExecutionResult.Verified("raw")));
 
             var result = await supervisor.ExecuteAsync(null, Axis.ZAxis, 12, CancellationToken.None);
 
@@ -190,8 +188,7 @@ namespace NINA.Plugins.PolarAlignment.Test {
         [Test]
         public async Task AltitudeCapabilityDenialPrecedesUncommissionedSubmission() {
             var supervisor = new SupervisorRequiredAutomatedMoveExecutor(
-                new StaticStatusSource(UpasSupervisorStatus.Parse(
-                    ValidDryRunStatus.Replace("\"physicalMotion\": false", "\"physicalMotion\": true"))));
+                new RecordingRawRelativeClient(AutomatedMoveExecutionResult.Verified("raw")));
 
             var result = await supervisor.ExecuteAsync(null, Axis.YAxis, 12, CancellationToken.None);
 
@@ -200,16 +197,16 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
-        public async Task CancellationNeverFallsBackToLegacy() {
+        public async Task ExternalSupervisorDenialNeverFallsBackToLegacy() {
             var requirement = new MutableRequirement { IsRequired = true };
             var legacy = new RecordingMoveExecutor(AutomatedMoveExecutionResult.Verified("legacy"));
-            var supervisor = new SupervisorRequiredAutomatedMoveExecutor(new CancellingStatusSource());
+            var supervisor = new SupervisorRequiredAutomatedMoveExecutor(
+                new RecordingRawRelativeClient(AutomatedMoveExecutionResult.Denied("denied")));
             var router = new ModeSelectingAutomatedMoveExecutor(requirement, legacy, supervisor);
 
-            Func<Task> execute = async () =>
-                await router.ExecuteAsync(null, Axis.XAxis, 12, new CancellationToken(true));
+            var result = await router.ExecuteAsync(null, Axis.XAxis, 12, CancellationToken.None);
 
-            await execute.Should().ThrowAsync<OperationCanceledException>();
+            result.PhysicalMotionVerified.Should().BeFalse();
             legacy.CallCount.Should().Be(0);
         }
 
@@ -217,7 +214,8 @@ namespace NINA.Plugins.PolarAlignment.Test {
         public async Task LegacyModeRetainsExistingExecutorPath() {
             var requirement = new MutableRequirement { IsRequired = false };
             var legacy = new RecordingMoveExecutor(AutomatedMoveExecutionResult.Verified("legacy"));
-            var supervisor = new SupervisorRequiredAutomatedMoveExecutor(new CancellingStatusSource());
+            var supervisor = new SupervisorRequiredAutomatedMoveExecutor(
+                new RecordingRawRelativeClient(AutomatedMoveExecutionResult.Denied("denied")));
             var router = new ModeSelectingAutomatedMoveExecutor(requirement, legacy, supervisor);
 
             var result = await router.ExecuteAsync(null, Axis.XAxis, 12, CancellationToken.None);
@@ -295,6 +293,13 @@ namespace NINA.Plugins.PolarAlignment.Test {
             public Task<UpasSupervisorStatus> GetStatusAsync(CancellationToken token) =>
                 Task.FromCanceled<UpasSupervisorStatus>(
                     token.IsCancellationRequested ? token : new CancellationToken(true));
+        }
+
+        private sealed class RecordingRawRelativeClient : IUpasSupervisorRawRelativeClient {
+            private readonly AutomatedMoveExecutionResult result;
+            public RecordingRawRelativeClient(AutomatedMoveExecutionResult result) => this.result = result;
+            public Task<AutomatedMoveExecutionResult> ExecuteAzimuthAsync(
+                    int rawCount, CancellationToken token) => Task.FromResult(result);
         }
 
         private sealed class RecordingMoveExecutor : IAutomatedMoveExecutor {

@@ -50,10 +50,12 @@ namespace NINA.Plugins.PolarAlignment {
     }
 
     internal sealed class SupervisorRequiredAutomatedMoveExecutor : IAutomatedMoveExecutor {
-        private readonly IUpasSupervisorStatusSource statusSource;
+        private readonly IUpasSupervisorRawRelativeClient rawRelativeClient;
 
-        public SupervisorRequiredAutomatedMoveExecutor(IUpasSupervisorStatusSource statusSource) {
-            this.statusSource = statusSource ?? throw new ArgumentNullException(nameof(statusSource));
+        public SupervisorRequiredAutomatedMoveExecutor(
+                IUpasSupervisorRawRelativeClient rawRelativeClient) {
+            this.rawRelativeClient = rawRelativeClient
+                ?? throw new ArgumentNullException(nameof(rawRelativeClient));
         }
 
         public bool RequiresLocalActuatorConnection => false;
@@ -63,28 +65,25 @@ namespace NINA.Plugins.PolarAlignment {
             Axis axis,
             float logicalUnits,
             CancellationToken token) {
-            _ = activeSystem;
-            _ = logicalUnits;
-
-            UpasSupervisorStatus status;
-            try {
-                status = await statusSource.GetStatusAsync(token).ConfigureAwait(false);
-            } catch (OperationCanceledException) {
-                throw;
-            } catch (Exception ex) {
+            if (axis != Axis.XAxis) {
                 return AutomatedMoveExecutionResult.Denied(
-                    $"External UPAS supervisor status was unavailable or invalid: {ex.Message}");
+                    axis == Axis.YAxis
+                        ? "External UPAS supervisor altitude motion is disabled because it is not commissioned."
+                        : "Unsupported external UPAS supervisor movement axis.");
             }
-
-            var readiness = UpasSupervisorReadinessPolicy.Evaluate(status, axis);
-            if (!readiness.IsReady) {
-                return AutomatedMoveExecutionResult.Denied(readiness.Reason);
+            if (activeSystem is not UniversalPolarAlignmentBaseVM upas) {
+                return AutomatedMoveExecutionResult.Denied(
+                    "External UPAS supervisor requires the universal UPAS actuator model.");
             }
-
-            // Deliberate commissioning boundary: this release has no correction-submission
-            // transport. Even a future success-shaped status cannot reach local hardware.
-            return AutomatedMoveExecutionResult.Denied(
-                "External UPAS supervisor correction submission is not commissioned in this plugin build.");
+            var logicalCommand = upas.ReverseAzimuth ? -logicalUnits : logicalUnits;
+            var rawCommand = logicalCommand * upas.XGearRatio;
+            if (!float.IsFinite(rawCommand) || rawCommand == 0
+                    || rawCommand > int.MaxValue || rawCommand < int.MinValue) {
+                return AutomatedMoveExecutionResult.Denied(
+                    "TPPA cannot quantize the requested azimuth command to a bounded raw controller count.");
+            }
+            var rawCount = checked((int)Math.Round(rawCommand, MidpointRounding.AwayFromZero));
+            return await rawRelativeClient.ExecuteAzimuthAsync(rawCount, token).ConfigureAwait(false);
         }
     }
 
