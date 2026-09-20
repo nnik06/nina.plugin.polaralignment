@@ -17,6 +17,26 @@ namespace NINA.Plugins.PolarAlignment.Test {
         private const string TransactionId = "30000000-0000-4000-8000-000000000001";
 
         [Test]
+        public void RawRelativeDigestMatchesSupervisorPythonRfc8785Vector() {
+            var payload = new JObject {
+                ["schemaVersion"] = 1,
+                ["clientId"] = "nina-tppa",
+                ["leaseId"] = LeaseId,
+                ["idempotencyKey"] = "fixed-key",
+                ["measurementSessionId"] = "tppa-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                ["measurementId"] = "move-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                ["axis"] = "az",
+                ["rawCount"] = -17,
+                ["clientMaximumRawUnits"] = 17,
+                ["coordinateConvention"] = "grblRawRelative_v1",
+                ["reason"] = "TPPA bounded sky-response command"
+            };
+
+            HttpsUpasSupervisorCoarseTppaExecutor.ComputeRequestBodySha256(payload)
+                .Should().Be("610a5d30683fcdfacee75333fcbe9f90664e9083adbe3b25d25bc19e4967c377");
+        }
+
+        [Test]
         public async Task SendsOneSignedRawCommandWithoutPhysicalTravelFields() {
             var handler = new RecordingHandler();
             using var http = new HttpClient(handler);
