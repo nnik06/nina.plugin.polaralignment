@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 namespace NINA.Plugins.PolarAlignment {
     public abstract partial class UniversalPolarAlignmentBase : IPolarAlignmentSystem {
         private readonly SerialPort port;
+        private readonly UpasSerialOwnership serialOwnership;
 
         protected abstract string SystemName { get; }
         protected virtual string NewLineSequence => "\n";
@@ -38,6 +39,8 @@ namespace NINA.Plugins.PolarAlignment {
         private static readonly TimeSpan JogCancelStatusConfirmationInterval = TimeSpan.FromMilliseconds(300);
 
         protected UniversalPolarAlignmentBase() {
+            serialOwnership = new UpasSerialOwnership(UpasSerialOwnership.DefaultPath);
+            try {
             var comPorts = SerialPort.GetPortNames();
             foreach (var comPort in comPorts) {
                 var serialPortToTest = new SerialPort() {
@@ -83,6 +86,10 @@ namespace NINA.Plugins.PolarAlignment {
                 throw new Exception($"Unable to find {SystemName}");
             }
             UpdateStatus();
+            } catch {
+                try { port?.Dispose(); } finally { serialOwnership.Dispose(); }
+                throw;
+            }
         }
 
         public bool Connected => port.IsOpen;
@@ -549,6 +556,8 @@ namespace NINA.Plugins.PolarAlignment {
             }
         }
 
-        public void Dispose() => port?.Dispose();
+        public void Dispose() {
+            try { port?.Dispose(); } finally { serialOwnership.Dispose(); }
+        }
     }
 }

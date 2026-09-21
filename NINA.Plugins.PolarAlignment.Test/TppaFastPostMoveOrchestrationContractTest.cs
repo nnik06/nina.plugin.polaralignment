@@ -153,8 +153,8 @@ namespace NINA.Plugins.PolarAlignment.Test {
         public void ExtendedOperationalModeStillAppliesTheInconclusiveResponseAbort() {
             var source = File.ReadAllText(Path.Combine(RepositoryRoot(), "PolarAlignment", "Instructions", "PolarAlignment.cs"));
 
-            source.Should().Contain(
-                "TppaPostMoveResponsePolicy.DispositionForMode(\n                                        responseDecision);");
+            source.Should().Contain("TppaPostMoveResponsePolicy.DispositionForMode(");
+            source.Should().Contain("responseDecision);");
             source.Should().Contain(
                 "if (responseDisposition.FailureMessage != null)");
             source.Should().NotContain(
@@ -208,22 +208,73 @@ namespace NINA.Plugins.PolarAlignment.Test {
         }
 
         [Test]
-        public void DirectFieldModeKeepsSupervisorProvenanceAuthoritiesOutsideItsMotionPath() {
+        public void AutomatedTppaDoesNotUseExternalSupervisorArtifactsForMotionAdmission() {
             var source = File.ReadAllText(Path.Combine(RepositoryRoot(), "PolarAlignment", "Instructions", "PolarAlignment.cs"));
-            var supervisorMode = source.IndexOf(
-                "var supervisorCampaignMode = enforceFastRuntimeBudget", StringComparison.Ordinal);
-            var supervisorBranch = source.IndexOf("if (supervisorCampaignMode) {", supervisorMode, StringComparison.Ordinal);
-            var physicalZero = source.IndexOf("RequireFreshPhysicalZeroAdmission", supervisorBranch, StringComparison.Ordinal);
-            var branchEnd = source.IndexOf("// Operational timing telemetry starts only after physical-zero admission.", supervisorBranch, StringComparison.Ordinal);
-
-            supervisorMode.Should().BeGreaterThanOrEqualTo(0);
-            supervisorBranch.Should().BeGreaterThan(supervisorMode);
-            physicalZero.Should().BeGreaterThan(supervisorBranch);
-            branchEnd.Should().BeGreaterThan(physicalZero);
+            source.Should().Contain("const bool supervisorCampaignMode = false;");
+            source.Should().NotContain("RequireFreshPhysicalZeroAdmission(token)");
+            source.Should().NotContain("RequireCommissionedCovarianceAuthority();");
+            source.Should().NotContain("RequireCommissionedCadenceAuthority(activeTppaCovarianceAuthority)");
             source.Should().Contain("activeTppaCovarianceAuthority?.RepositoryHead ?? \"direct-field\"");
             source.Should().Contain("activeTppaCadenceAuthority?.AuthorityId.ToString(\"D\") ?? \"direct-field\"");
         }
 
+        [Test]
+        public void MeasurementOnlyRunDisablesAutomaticUpasAndDiagnosticModes() {
+            var source = File.ReadAllText(Path.Combine(RepositoryRoot(), "PolarAlignment", "Instructions", "PolarAlignment.cs"));
+            source.Should().Contain("public bool MeasurementOnlyMode");
+            source.Should().Contain("MeasurementOnlyMode = MeasurementOnlyMode");
+            source.Should().Contain("MeasurementOnlyMode ? false : VerificationOnly");
+            source.Should().Contain("MeasurementOnlyMode ? false : DriftValidationOnly");
+            source.Should().Contain("manualMode = MeasurementOnlyMode ? false : value;");
+            source.Should().Contain("verificationOnly = MeasurementOnlyMode ? false : value;");
+            source.Should().Contain("driftValidationOnly = MeasurementOnlyMode ? false : value;");
+            source.Should().Contain("overdeterminedShadowModelCheck = MeasurementOnlyMode ? false : value;");
+            source.Should().Contain("enableOperationalUpasProfile = MeasurementOnlyMode ? false : value;");
+            source.Should().Contain("forceSessionLocalUpasResponseCalibration = MeasurementOnlyMode ? false : value;");
+            source.Should().Contain("if (executionPolicy.AllowActuatorPreparation && automatedAdjustmentsEnabled)");
+            source.Should().Contain("automatedAdjustmentsEnabled)) {");
+            source.Should().Contain("public bool ShowUpasRunSettings => !MeasurementOnlyMode");
+            source.Should().NotContain("PolarAlignmentPlugin.ActiveAlignmentSystemVM.DoAutomatedAdjustments = false;");
+            var template = File.ReadAllText(Path.Combine(RepositoryRoot(), "PolarAlignment", "Resources", "PolarAlignmentInstructionTemplate.xaml"));
+            template.Should().Contain("Runs one normal three-point TPPA measurement");
+            template.Should().Contain("Content=\"Use operational UPAS alignment protocol\"");
+            template.Should().Contain("Content=\"Verification only (automated mount)\"");
+            template.Should().Contain("Text=\"Manual Mode?\" Visibility=\"{Binding MeasurementOnlyMode, Converter={StaticResource InverseBooleanToVisibilityCollapsedConverter}}\"");
+            template.Should().Contain("Visibility=\"{Binding MeasurementOnlyMode, Converter={StaticResource InverseBooleanToVisibilityCollapsedConverter}}\"");
+        }
+
+        [Test]
+        public void MeasurementOnlyRunMakesOneInitialSweepThenOnlyStationaryLiveUpdates() {
+            var instructionSource = File.ReadAllText(Path.Combine(RepositoryRoot(), "PolarAlignment", "Instructions", "PolarAlignment.cs"));
+            var initialDeterminationIndex = instructionSource.IndexOf("TPPA fresh 3-point calculated error", StringComparison.Ordinal);
+            var measurementOnlyBranchIndex = instructionSource.IndexOf(
+                "await RunMeasurementOnlyContinuousUpdates(TPAPAVM, progress, localCTS.Token);",
+                StringComparison.Ordinal);
+            var actuatorWorkflowIndex = instructionSource.IndexOf(
+                "var directFullTravelQualification = TppaDirectFullTravelRouteQualification.Evaluate(",
+                StringComparison.Ordinal);
+
+            initialDeterminationIndex.Should().BeGreaterThanOrEqualTo(0);
+            measurementOnlyBranchIndex.Should().BeGreaterThan(initialDeterminationIndex);
+            actuatorWorkflowIndex.Should().BeGreaterThan(measurementOnlyBranchIndex);
+
+            var helperStart = instructionSource.IndexOf(
+                "private async Task RunMeasurementOnlyContinuousUpdates(",
+                StringComparison.Ordinal);
+            var helperEnd = instructionSource.IndexOf(
+                "private Task<PlateSolveResult> SolveWithLedger(",
+                helperStart,
+                StringComparison.Ordinal);
+            helperStart.Should().BeGreaterThanOrEqualTo(0);
+            helperEnd.Should().BeGreaterThan(helperStart);
+            var helperSource = instructionSource.Substring(helperStart, helperEnd - helperStart);
+            helperSource.Should().Contain("context.ActivateFourthStep();");
+            helperSource.Should().Contain("while (true)");
+            helperSource.Should().Contain("var solve = await Solve(context, 0, progress, token);");
+            helperSource.Should().Contain("requireContinuousErrorEstimate: true");
+            helperSource.Should().NotContain("AutomatedNextPoint");
+            helperSource.Should().NotContain("ActiveAlignmentSystemVM");
+        }
         [Test]
         public void InitialTotalErrorIsDefinedAsEuclideanHypotenuseOfComponents() {
             var source = File.ReadAllText(Path.Combine(RepositoryRoot(), "PolarAlignment", "TPAPAVM.cs"));

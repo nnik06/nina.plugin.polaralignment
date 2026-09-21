@@ -1,3 +1,59 @@
+## Version 2.2.6.145 (deployed from isolated release worktree)
+
+- Installed on Mele on 2026-09-15 at 22:47 UTC from commit
+  cb901f61b73e64a45cdcd36325d89abcad2a7329; archived NINA logs confirm loading
+  this version on 2026-09-20. Deployed plugin DLL SHA256:
+  f9e4e55d799f25a830babc34d972ff26827f949edb3d4bba01035a7f2df16223.
+- This is the isolated release's deployment record, not a claim that the later
+  master working tree was deployed. Versions 142-144 below describe candidate
+  work incorporated into that release, not separate deployment confirmations.
+
+- Measurement-only sample positioning uses the existing fixed-declination
+  absolute waypoint path instead of rate-based MoveAxis stopping.
+- Monitor the existing motion envelope during that slew, require the API's
+  success result, and explicitly StopSlew on timeout, cancellation or failure.
+  Driver cancellation may fail; such an outcome is a stop, never a retry.
+- Offline tests alone establish no physical endpoint performance claim.
+
+## Version 2.2.6.144 (historical comparison; incorporated into v145)
+
+- Recorded rate-move endpoints reject under existing precise-waypoint tolerances.
+  Absolute-plan tests preserve signed RA, wrap, declination and epoch.
+- This is not live slew qualification: in-flight monitoring and bounded
+  cancellation still require a scoped adapter. No stopping-distance claim.
+
+## Version 2.2.6.143 (historical candidate; incorporated into v145)
+
+- Keep existing position/envelope checks active during RA-axis deceleration and
+  settling, and bound the stop wait by the existing move-time allowance.
+- Movement timing schema2 distinguishes stop-decision travel from the last
+  observed endpoint travel. This detects out-of-envelope endpoints; it does not
+  establish a braking-distance model or promise prevention of physical overshoot.
+- Rebuild is required for the already-present measurement-only hold branch:
+  the inspected141 and preserved142 binaries do not contain that method.
+
+## Version 2.2.6.142 (historical candidate; incorporated into v145)
+
+- Hold the Hall controller's existing byte-range ownership lock before any
+  UPAS/OAPA serial discovery, through disposal. A competing owner denies
+  connection without probing ports. This does not itself enable Hall motion
+  while NINA runs; the Hall-side build admission must also be commissioned.
+- Measurement-only now makes exactly one ordinary three-point RA sweep, then
+  holds the mount at the final point and continuously plate-solves with the
+  live estimator forced for that session. This makes the displayed PA error
+  useful while the tripod is adjusted manually, without another three-point
+  sweep or any UPAS correction path.
+- Measurement-only runs drain and suppress process-wide actuator operations,
+  disconnect any prior actuator owner, and retain suppression through cleanup.
+
+## Version 2.2.6.141
+
+- Add a sequence-level **Measure PA only** switch for rapid PA readout.
+  It selects the normal three-point mount workflow, disables automatic UPAS
+  connection/correction and diagnostic-only modes, and leaves the camera,
+  mount, and configured mount-motion envelope protections in place. The
+  operator may then adjust the tripod from the reported TPPA error.
+
 ## Version 2.2.6.133
 
 - Latch automated UPAS motion off after a partially executed diagonal command.
@@ -1330,3 +1386,14 @@
 
 ## Version 1.0.0.5
 - Initial release using the new plugin manager approach, making the plugin available for download inside N.I.N.A.
+## Version 2.2.6.140
+
+- Keep external UPAS-supervisor artifacts observational. Automated attended TPPA
+  now derives motion authority from fresh sky geometry and its local travel,
+  response, settling, cancellation, and bounded-command guards; it no longer
+  requires a physical-zero return, covariance authority, or cadence authority.
+- Accept sub-millidegree mount-telemetry rounding at a configured motion-envelope
+  altitude boundary, preventing a measured `19.999...` degree field from being
+  rejected as outside a 20 degree safe arc.
+- In the operational UPAS profile, use the three fresh completion solves
+  directly rather than slewing back for report-only shadow evidence.

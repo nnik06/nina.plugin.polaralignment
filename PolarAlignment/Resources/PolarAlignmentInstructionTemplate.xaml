@@ -31,12 +31,15 @@
     <s:String x:Key="UpasAltitudeMaximumToolTip">Highest permitted physical altitude-marker position. Keep the default +5 degrees away from the +6 degree hard stop.</s:String>
     <s:String x:Key="UpasAltitudeTravelConfirmToolTip">Confirms the physical ALT marker was visually checked after this UPAS connection. Reconnects and ALT scale/direction changes clear this confirmation.</s:String>
     <s:String x:Key="UpasAltitudeDegreesPerUnitToolTip">Estimated physical ALT degrees per logical Y unit. With gear ratio 22 and about 0.001 degree per raw unit, use 0.022.</s:String>
+    <s:String x:Key="MeasurementOnlyModeToolTip">Runs one normal three-point TPPA measurement with automatic mount RA moves and no UPAS connection or command. It then holds the mount at the final point and continuously plate-solves so you can watch the PA error while adjusting the tripod manually. Camera, mount, and configured mount-motion envelope checks remain active.</s:String>
 
     <DataTemplate x:Key="PolarAlignmentInstructionSettings">
         <StackPanel x:Name="PART_StackPanel" Orientation="Vertical">
             <WrapPanel Orientation="Horizontal">
-                <TextBlock VerticalAlignment="Center" Text="Manual Mode?" />
-                <CheckBox VerticalAlignment="Center" IsChecked="{Binding ManualMode, UpdateSourceTrigger=PropertyChanged}" />
+                <TextBlock VerticalAlignment="Center" Text="Manual Mode?" Visibility="{Binding MeasurementOnlyMode, Converter={StaticResource InverseBooleanToVisibilityCollapsedConverter}}" />
+                <CheckBox VerticalAlignment="Center" IsChecked="{Binding ManualMode, UpdateSourceTrigger=PropertyChanged}" Visibility="{Binding MeasurementOnlyMode, Converter={StaticResource InverseBooleanToVisibilityCollapsedConverter}}" />
+                <TextBlock Margin="12,0,0,0" VerticalAlignment="Center" Text="Measure PA only?" ToolTip="{StaticResource MeasurementOnlyModeToolTip}" />
+                <CheckBox VerticalAlignment="Center" IsChecked="{Binding MeasurementOnlyMode, UpdateSourceTrigger=PropertyChanged}" ToolTip="{StaticResource MeasurementOnlyModeToolTip}" />
                 <TextBlock
                     Margin="5,0,0,0"
                     VerticalAlignment="Center"
@@ -186,7 +189,7 @@
                 <StackPanel
                     Margin="5,0,0,0"
                     IsEnabled="{Binding IsDiagnosticOnlyMode, Converter={StaticResource InverseBooleanConverter}}"
-                    Orientation="Horizontal">
+                    Orientation="Horizontal" Visibility="{Binding MeasurementOnlyMode, Converter={StaticResource InverseBooleanToVisibilityCollapsedConverter}}">
                     <TextBlock VerticalAlignment="Center" Text="Alignment Tolerance">
                         <TextBlock.ToolTip>
                             <TextBlock Text="Setting the Polar Alignment Tolerance to non-zero will specify a tolerance in arcminutes where the normal polar alignment routine automatically completes when below the threshold. Diagnostic-only modes do not use this tolerance." />
@@ -207,26 +210,26 @@
                     VerticalAlignment="Center"
                     Content="Use operational UPAS alignment protocol"
                     IsChecked="{Binding EnforceFiveMinuteRuntimeBudget, UpdateSourceTrigger=PropertyChanged}"
-                    IsEnabled="{Binding IsDiagnosticOnlyMode, Converter={StaticResource InverseBooleanConverter}}"
+                    IsEnabled="{Binding IsDiagnosticOnlyMode, Converter={StaticResource InverseBooleanConverter}}" Visibility="{Binding MeasurementOnlyMode, Converter={StaticResource InverseBooleanToVisibilityCollapsedConverter}}"
                     ToolTip="Uses bounded UPAS moves with fresh response checks, physical travel limits, settling, cancellation, and independent completion verification. Elapsed time is recorded for later optimization but does not reject an otherwise qualified move." />
                 <CheckBox
                     Margin="10,0,0,0"
                     VerticalAlignment="Center"
                     Content="Verification only (automated mount)"
-                    IsChecked="{Binding VerificationOnly, UpdateSourceTrigger=PropertyChanged}"
+                    IsChecked="{Binding VerificationOnly, UpdateSourceTrigger=PropertyChanged}" Visibility="{Binding MeasurementOnlyMode, Converter={StaticResource InverseBooleanToVisibilityCollapsedConverter}}"
                     ToolTip="Requires automated mode. Runs forward, reciprocal, and repeated-forward three-point determinations over the same A-B-C arc, reports repeatability and reciprocity, restores A, then finishes without configuring, connecting to, or moving the polar alignment actuator." />
                 <CheckBox
                     Margin="10,0,0,0"
                     VerticalAlignment="Center"
                     Content="5-position shadow model check"
-                    IsChecked="{Binding OverdeterminedShadowModelCheck, UpdateSourceTrigger=PropertyChanged}"
+                    IsChecked="{Binding OverdeterminedShadowModelCheck, UpdateSourceTrigger=PropertyChanged}" Visibility="{Binding MeasurementOnlyMode, Converter={StaticResource InverseBooleanToVisibilityCollapsedConverter}}"
                     IsEnabled="{Binding VerificationOnly}"
                     ToolTip="Adds two reciprocal half-leg solves so five distinct positions can test small-circle residuals and leave-one-out stability. Report-only: it never authorizes actuator movement or completion and adds about one minute at the qualified 30-second settle." />
                 <CheckBox
                     Margin="10,0,0,0"
                     VerticalAlignment="Center"
                     Content="Drift validation only (A-B-C-A)"
-                    IsChecked="{Binding DriftValidationOnly, UpdateSourceTrigger=PropertyChanged}"
+                    IsChecked="{Binding DriftValidationOnly, UpdateSourceTrigger=PropertyChanged}" Visibility="{Binding MeasurementOnlyMode, Converter={StaticResource InverseBooleanToVisibilityCollapsedConverter}}"
                     ToolTip="Requires automated mount control. Collects four five-minute stationary plate-solve drift tracks in A-B-C-A order, reports an independently fitted polar-error vector, and never configures, connects to, or moves the polar alignment actuator. The two diagnostic-only modes are mutually exclusive." />
             </WrapPanel>
 

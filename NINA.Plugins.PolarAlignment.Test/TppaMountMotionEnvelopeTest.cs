@@ -19,6 +19,11 @@ namespace NINA.Plugins.PolarAlignment.Test {
             Balcony.Validate(azimuth, altitude).Should().BeEmpty();
         }
 
+        [Test]
+        public void Validate_AcceptsTelemetryRoundingNoiseAtTheLowerAltitudeBoundary() {
+            Balcony.Validate(300, 24.9995).Should().BeEmpty();
+        }
+
         [TestCase(269.9, 40, "azimuth")]
         [TestCase(10.1, 40, "azimuth")]
         [TestCase(300, 24.9, "altitude")]

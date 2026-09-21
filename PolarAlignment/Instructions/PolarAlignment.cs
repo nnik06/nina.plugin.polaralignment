@@ -84,6 +84,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
         private double mountMotionAzimuthStartDegrees;
         private double mountMotionAzimuthEndDegrees = 360;
         private bool manualMode;
+        private bool measurementOnlyMode;
         private bool startFromCurrentPosition;
         private bool verificationOnly;
         private bool overdeterminedShadowModelCheck;
@@ -244,6 +245,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 EnforceFiveMinuteRuntimeBudget = EnforceFiveMinuteRuntimeBudget,
                 EnableOperationalUpasProfile = EnableOperationalUpasProfile,
                 ForceSessionLocalUpasResponseCalibration = ForceSessionLocalUpasResponseCalibration,
+                MeasurementOnlyMode = MeasurementOnlyMode,
                 Coordinates = this.Coordinates == null
                     ? null
                     : new InputTopocentricCoordinates(this.Coordinates.Coordinates.Copy())
@@ -342,9 +344,9 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
 
         [JsonProperty]
         public bool ManualMode {
-            get => manualMode;
+            get => MeasurementOnlyMode ? false : manualMode;
             set {
-                manualMode = value;
+                manualMode = MeasurementOnlyMode ? false : value;
                 RaisePropertyChanged();
             }
         }
@@ -360,9 +362,9 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
 
         [JsonProperty]
         public bool VerificationOnly {
-            get => verificationOnly;
+            get => MeasurementOnlyMode ? false : verificationOnly;
             set {
-                verificationOnly = value;
+                verificationOnly = MeasurementOnlyMode ? false : value;
                 RaisePropertyChanged();
                 RaisePropertyChanged(nameof(IsDiagnosticOnlyMode));
             }
@@ -370,9 +372,9 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
 
         [JsonProperty]
         public bool OverdeterminedShadowModelCheck {
-            get => overdeterminedShadowModelCheck;
+            get => MeasurementOnlyMode ? false : overdeterminedShadowModelCheck;
             set {
-                overdeterminedShadowModelCheck = value;
+                overdeterminedShadowModelCheck = MeasurementOnlyMode ? false : value;
                 RaisePropertyChanged();
             }
         }
@@ -393,9 +395,9 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
 
         [JsonProperty]
         public bool DriftValidationOnly {
-            get => driftValidationOnly;
+            get => MeasurementOnlyMode ? false : driftValidationOnly;
             set {
-                driftValidationOnly = value;
+                driftValidationOnly = MeasurementOnlyMode ? false : value;
                 RaisePropertyChanged();
                 RaisePropertyChanged(nameof(IsDiagnosticOnlyMode));
             }
@@ -428,15 +430,45 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
         }
 
         /// <summary>
+        /// Runs the normal three-point sky measurement without connecting to or
+        /// commanding the polar-alignment actuator. This is intended for a quick
+        /// PA readout before a manual tripod adjustment.
+        /// </summary>
+        [JsonProperty]
+        public bool MeasurementOnlyMode {
+            get => measurementOnlyMode;
+            set {
+                measurementOnlyMode = value;
+                if (value) {
+                    ManualMode = false;
+                    VerificationOnly = false;
+                    DriftValidationOnly = false;
+                    OverdeterminedShadowModelCheck = false;
+                    EnableOperationalUpasProfile = false;
+                    ForceSessionLocalUpasResponseCalibration = false;
+                }
+                RaisePropertyChanged();
+                RaisePropertyChanged(nameof(ManualMode));
+                RaisePropertyChanged(nameof(VerificationOnly));
+                RaisePropertyChanged(nameof(DriftValidationOnly));
+                RaisePropertyChanged(nameof(OverdeterminedShadowModelCheck));
+                RaisePropertyChanged(nameof(EnableOperationalUpasProfile));
+                RaisePropertyChanged(nameof(ForceSessionLocalUpasResponseCalibration));
+                RaisePropertyChanged(nameof(IsDiagnosticOnlyMode));
+                RaisePropertyChanged(nameof(ShowUpasRunSettings));
+            }
+        }
+
+        /// <summary>
         /// Opts this saved instruction into the calibrated, attended UPAS field profile.
         /// It is intentionally false by default and applied only in memory because NINA
         /// 3.2 may discard per-user plugin settings during startup recovery.
         /// </summary>
         [JsonProperty]
         public bool EnableOperationalUpasProfile {
-            get => enableOperationalUpasProfile;
+            get => MeasurementOnlyMode ? false : enableOperationalUpasProfile;
             set {
-                enableOperationalUpasProfile = value;
+                enableOperationalUpasProfile = MeasurementOnlyMode ? false : value;
                 RaisePropertyChanged();
             }
         }
@@ -448,15 +480,15 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
         /// </summary>
         [JsonProperty]
         public bool ForceSessionLocalUpasResponseCalibration {
-            get => forceSessionLocalUpasResponseCalibration;
+            get => MeasurementOnlyMode ? false : forceSessionLocalUpasResponseCalibration;
             set {
-                forceSessionLocalUpasResponseCalibration = value;
+                forceSessionLocalUpasResponseCalibration = MeasurementOnlyMode ? false : value;
                 RaisePropertyChanged();
             }
         }
 
         private void ApplyOperationalUpasProfileIfRequested() {
-            if (!EnableOperationalUpasProfile) {
+            if (!EnableOperationalUpasProfile || MeasurementOnlyMode) {
                 return;
             }
 
@@ -516,7 +548,8 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
 
         public NINA.Plugins.PolarAlignment.Avalon.UniversalPolarAlignmentVM UniversalPolarAlignmentVM => PolarAlignmentPlugin.UniversalPolarAlignmentVM;
 
-        public bool ShowUpasRunSettings => PolarAlignmentPlugin.ActiveAlignmentSystemVM is NINA.Plugins.PolarAlignment.Avalon.UniversalPolarAlignmentVM;
+        public bool ShowUpasRunSettings => !MeasurementOnlyMode
+            && PolarAlignmentPlugin.ActiveAlignmentSystemVM is NINA.Plugins.PolarAlignment.Avalon.UniversalPolarAlignmentVM;
 
         private TPAPAVM tpapa;
         public TPAPAVM TPAPAVM {
@@ -544,9 +577,16 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             await WaitIfPaused(token, progress);
             var settleOverride = TppaVerificationSettlePolicy.ResolveSequenceOverride(
                 VerificationPointSettleTimeSeconds);
-            await MoveToNextPoint(
-                totalDistance, MoveRate, eastDirectionOverride ?? EastDirection,
-                progress, token, settleOverride);
+            if (MeasurementOnlyMode) {
+                var waypoint = TppaVerificationWaypointPlan.Create(
+                    currentPointing, totalDistance, eastDirectionOverride ?? EastDirection).Forward[1];
+                await SlewToVerificationWaypoint(waypoint, totalDistance,
+                    "measurement-only next point", progress, token);
+            } else {
+                await MoveToNextPoint(
+                    totalDistance, MoveRate, eastDirectionOverride ?? EastDirection,
+                    progress, token, settleOverride);
+            }
 
             if (domeMediator.GetInfo().Connected) {
                 await domeMediator.WaitForDomeSynchronization(token);
@@ -701,10 +741,13 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
         /// <returns></returns>
         public override async Task Execute(IProgress<ApplicationStatus> externalProgress, CancellationToken token) {
             ApplyOperationalUpasProfileIfRequested();
-            var executionPolicy = PolarAlignmentExecutionPolicy.Create(VerificationOnly, DriftValidationOnly);
+            var executionPolicy = PolarAlignmentExecutionPolicy.Create(
+                MeasurementOnlyMode ? false : VerificationOnly,
+                MeasurementOnlyMode ? false : DriftValidationOnly);
             var automatedAdjustmentsEnabled =
-                PolarAlignmentPlugin.ActiveAlignmentSystemVM?.DoAutomatedAdjustments == true
-                || Properties.Settings.Default.DoAutomatedAdjustments;
+                !MeasurementOnlyMode
+                && (PolarAlignmentPlugin.ActiveAlignmentSystemVM?.DoAutomatedAdjustments == true
+                    || Properties.Settings.Default.DoAutomatedAdjustments);
             var enforceFastRuntimeBudget = EnforceFiveMinuteRuntimeBudget
                 && automatedAdjustmentsEnabled
                 && executionPolicy.AllowActuatorMovement;
@@ -724,29 +767,13 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 automatedAdjustmentsEnabled,
                 executionPolicy.AllowActuatorMovement,
                 AlignmentTolerance);
-            var supervisorCampaignMode = enforceFastRuntimeBudget
-                && Properties.Settings.Default.RequireExternalUpasSupervisorForAutomatedMoves;
-            if (supervisorCampaignMode) {
-                activePreregisteredCampaignId = RequireConfiguredTppaPreregisteredCampaignId();
-                activeTppaCovarianceAuthority =
-                    RequireCommissionedCovarianceAuthority();
-                activeTppaCadenceAuthority =
-                    RequireCommissionedCadenceAuthority(activeTppaCovarianceAuthority);
-                var physicalZero = await RequireFreshPhysicalZeroAdmission(token).ConfigureAwait(false);
-                if (!Guid.TryParseExact(physicalZero.CampaignId, "D", out activeTppaCampaignId)
-                        || activeTppaCampaignId == Guid.Empty) {
-                    throw new SequenceEntityFailedException(
-                        "Supervisor physical-zero admission did not admit the sealed TPPA campaign.");
-                }
-                coarseSolveEvidence = new ConditionalWeakTable<PlateSolveResult, TppaCapturedSolveEvidence>();
-                captureCoarseSolveEvidence = true;
-                activeObservedDeterminations.Clear();
-            }
-            // Operational timing telemetry starts only after physical-zero admission.
-            // A return-to-zero transaction and stationary reverification are preflight.
-            var qualifiedFreshDeterminationReserveSeconds = supervisorCampaignMode
-                ? activeTppaCadenceAuthority.MaximumFreshDeterminationSeconds
-                : TppaFastAlignmentExecutionBudget.DirectFieldFreshDeterminationReserveSeconds;
+            // External-supervisor artifacts remain observational. Automated attended
+            // TPPA derives motion authority from fresh sky geometry and the local
+            // physical-motion guards, never from a physical-zero return or sealed
+            // covariance/cadence evidence.
+            const bool supervisorCampaignMode = false;
+            var qualifiedFreshDeterminationReserveSeconds =
+                TppaFastAlignmentExecutionBudget.DirectFieldFreshDeterminationReserveSeconds;
             var alignmentRuntime = Stopwatch.StartNew();
             var fastRunId = enforceFastRuntimeBudget ? Guid.NewGuid() : Guid.Empty;
             var fastTerminalEventLogged = false;
@@ -838,7 +865,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 Properties.Settings.Default.RefractionAdjustment,
                 automatedAdjustmentsEnabled,
                 executionPolicy.AllowActuatorMovement,
-                DriftValidationOnly).FirstOrDefault();
+                MeasurementOnlyMode ? false : DriftValidationOnly).FirstOrDefault();
             if (poleTargetIssue != null) {
                 throw new InvalidOperationException(poleTargetIssue);
             }
@@ -864,7 +891,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         $"{geometryConfigurationIssue} No UPAS movement was authorized.");
                 }
             }
-            using var actuatorConnectionSuppression = executionPolicy.AllowActuatorConnection
+            using var actuatorConnectionSuppression = !MeasurementOnlyMode && executionPolicy.AllowActuatorConnection
                 ? null
                 : await PolarAlignmentActuatorConnectionGate.SuppressAsync(
                     TimeSpan.FromSeconds(15),
@@ -883,6 +910,9 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     } catch { }
 
                     TPAPAVM = new TPAPAVM(profileService, weatherDataMediator);
+                    if (MeasurementOnlyMode) {
+                        PolarAlignmentPlugin.ActiveAlignmentSystemVM?.Disconnect();
+                    }
                     IProgress<ApplicationStatus> progress = new Progress<ApplicationStatus>(p => {
                         TPAPAVM.Status = p;
                         externalProgress?.Report(p);
@@ -1031,7 +1061,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         }
                     }
 
-                    if (executionPolicy.AllowActuatorPreparation) {
+                    if (executionPolicy.AllowActuatorPreparation && automatedAdjustmentsEnabled) {
                         EnsureFastRuntimeBudget(
                             "UPAS preparation and initial determination",
                             TppaFastAlignmentExecutionBudget.FreshDeterminationRetryReserveSeconds);
@@ -1201,8 +1231,12 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         Logger.Warning($"TPPA same-solves alternate target diagnostic could not be calculated: {ex.Message}");
                     }
 
-                    if (executionPolicy.AllowActuatorMovement
-                            && TPAPAVM.ActiveAlignmentSystemVM?.DoAutomatedAdjustments == true) {
+                    if (MeasurementOnlyMode) {
+                        await RunMeasurementOnlyContinuousUpdates(TPAPAVM, progress, localCTS.Token);
+                        return;
+                    }
+
+                    if (executionPolicy.AllowActuatorMovement && automatedAdjustmentsEnabled) {
                         var directFullTravelQualification = TppaDirectFullTravelRouteQualification.Evaluate(
                             Properties.Settings.Default.AvalonDirectFullTravelRouteEnabled,
                             true,
@@ -1315,7 +1349,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
 
                     if (executionPolicy.ShouldConnectActuator(
                         TPAPAVM.ActiveAlignmentSystemVM != null,
-                        TPAPAVM.ActiveAlignmentSystemVM?.DoAutomatedAdjustments == true)) {
+                        automatedAdjustmentsEnabled)) {
                         await TppaFastActuatorAdmissionGate.ExecuteIfAuthorizedAsync(
                             operationalMotionProtocolActive,
                             fastInitialAdmissionGranted,
@@ -1663,7 +1697,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
 
                                 if (fastRuntimeContractArmed
                                         && executionPolicy.AllowActuatorMovement
-                                        && TPAPAVM.ActiveAlignmentSystemVM?.DoAutomatedAdjustments == true) {
+                                        && automatedAdjustmentsEnabled) {
                                     var firstRunBootstrapProbe = !supervisorCampaignMode
                                         && directFirstRunBootstrapBaselineEligible
                                         && TPAPAVM.HasPendingFirstRunTwoAxisBootstrapProbe;
@@ -3443,7 +3477,14 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 $"TPPA {operation} precise waypoint slew: from RA={startPosition.RADegrees:F6} deg, " +
                 $"Dec={startPosition.Dec:F6} deg to RA={destination.RADegrees:F6} deg, " +
                 $"Dec={destination.Dec:F6} deg; expected RA travel={expectedTravelDegrees:F3} deg.");
-            await telescopeMediator.SlewToCoordinatesAsync(destination, token);
+            if (!double.IsFinite(MoveRate) || MoveRate <= 0) {
+                throw new SequenceEntityFailedException("Absolute waypoint requires a finite positive move rate for its timeout.");
+            }
+            var moveAllowance = TimeSpan.FromSeconds(
+                expectedTravelDegrees / MoveRate * Properties.Settings.Default.MoveTimeoutFactor);
+            await TppaMonitoredWaypointSlew.Run(
+                ct => telescopeMediator.SlewToCoordinatesAsync(destination, ct),
+                EnsureMountMotionEnvelope, telescopeMediator.StopSlew, moveAllowance, token);
             EnsureVerificationOnlyActualPositionSafe(operation);
 
             var firstPosition = telescopeMediator.GetCurrentPosition();
@@ -3629,7 +3670,15 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             var completionVerificationStopwatch = Stopwatch.StartNew();
             var threePointMilliseconds = double.NaN;
             var correctionPointing = telescopeMediator.GetCurrentPosition();
-            var returnToCorrectionPointing = !ManualMode && telescopeMediator.GetInfo().Connected;
+            // The returned fourth solve is report-only shadow evidence. It grants no
+            // motion authority, so the operational UPAS profile uses the three
+            // measurement points directly and keeps that extra slew for diagnostic
+            // and commissioned-campaign modes.
+            var returnToCorrectionPointing = TppaFreshMeasurementTimingPolicy
+                .RequiresReturnField(
+                    EnableOperationalUpasProfile,
+                    ManualMode,
+                    telescopeMediator.GetInfo().Connected);
             var refractionParameter = RefractionParameters.GetRefractionParameters(weatherDataMediator.GetInfo());
             var solves = new PlateSolveResult[3];
             var solvedPointings = new List<TppaSolvedPointing>(3);
@@ -3689,6 +3738,21 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 Logger.Info(
                     $"TPPA_COMPLETION_VERIFICATION_TIMING schemaVersion=1; phase=three-point; " +
                     $"threePointMilliseconds={threePointMilliseconds:F1}; totalMilliseconds={threePointMilliseconds:F1}");
+                if (!returnToCorrectionPointing) {
+                    Logger.Info(
+                        $"TPPA_COMPLETION_VERIFICATION_TIMING schemaVersion=2; phase=three-point; " +
+                        $"receiptId={timingReceiptId:D}; " +
+                        $"startedUtc={timingStartedUtc:O}; completedUtc={DateTime.UtcNow:O}; " +
+                        $"slewDirection={(eastDirection ? "IncreasingRA" : "DecreasingRA")}; " +
+                        $"effectiveSettleSeconds={TppaVerificationSettlePolicy.Resolve(profileService.ActiveProfile.TelescopeSettings.SettleTime, VerificationPointSettleTimeSeconds):F3}; " +
+                        "timingPath=operational-three-point; " +
+                        $"measurementOnly={VerificationOnly.ToString().ToLowerInvariant()}; " +
+                        $"refractionAdjustmentEnabled={Properties.Settings.Default.RefractionAdjustment.ToString().ToLowerInvariant()}; " +
+                        $"cadenceAuthorityConsumed={(activeTppaCadenceAuthority != null).ToString().ToLowerInvariant()}; " +
+                        $"upasMovementCount={(VerificationOnly ? 0 : -1)}; " +
+                        $"threePointMilliseconds={threePointMilliseconds:F1}; " +
+                        $"returnFieldMilliseconds=0.0; totalMilliseconds={threePointMilliseconds:F1}");
+                }
             } catch (Exception ex) {
                 measurementFailure = ex;
                 throw;
@@ -3813,6 +3877,37 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 CancellationToken token) =>
             SolveCore(context, searchRadiusIncrementOnFailure, progress, token, null, null);
 
+        private async Task RunMeasurementOnlyContinuousUpdates(
+                TPAPAVM context,
+                IProgress<ApplicationStatus> progress,
+                CancellationToken token) {
+            context.ActivateFourthStep();
+            context.ArcsecPerPix = AstroUtil.ArcsecPerPixel(
+                profileService.ActiveProfile.CameraSettings.PixelSize * Binning?.X ?? 1,
+                profileService.ActiveProfile.TelescopeSettings.FocalLength);
+            var width = context.Image.Image.PixelWidth;
+            var height = context.Image.Image.PixelHeight;
+            context.Center = new Point(width / 2, height / 2);
+            await context.SelectNewReferenceStar(context.Center, token);
+
+            Logger.Info("TPPA measurement-only initial three-point determination complete. Holding the mount at the final measurement point and continuously plate-solving for manual tripod adjustment.");
+            progress?.Report(new ApplicationStatus {
+                Status = "Measurement-only: holding mount position and continuously plate solving"
+            });
+
+            while (true) {
+                token.ThrowIfCancellationRequested();
+                await WaitIfPaused(token, progress);
+                var solve = await Solve(context, 0, progress, token);
+                if (solve.Success) {
+                    await context.UpdateDetails(
+                        solve,
+                        progress,
+                        token,
+                        requireContinuousErrorEstimate: true);
+                }
+            }
+        }
         private Task<PlateSolveResult> SolveWithLedger(
                 TPAPAVM context,
                 double searchRadiusIncrementOnFailure,
@@ -4078,6 +4173,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             var slewStopWaitStopwatch = new Stopwatch();
             var settleStopwatch = new Stopwatch();
             var traveledDegrees = 0.0;
+            double? stopDecisionTraveledDegrees = null;
             var adjustedRateForReport = rate;
             var settleRequestedSeconds = 0.0;
             var outcome = "failed";
@@ -4130,12 +4226,24 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 }
 
                 telescopeMediator.MoveAxis(Core.Enum.TelescopeAxes.Primary, 0);
+                stopDecisionTraveledDegrees = traveledDegrees;
                 axisMotionStopwatch.Stop();
+
+                void ObserveStoppedPosition() {
+                    currentPosition = telescopeMediator.GetCurrentPosition();
+                    traveledDegrees = Distance(currentPosition.RADegrees, startPosition.RADegrees);
+                    EnsureMountMotionEnvelope();
+                }
 
                 slewStopWaitStopwatch.Start();
                 while (telescopeMediator.GetInfo().Slewing) {
+                    ObserveStoppedPosition();
+                    if (slewStopWaitStopwatch.Elapsed > timeToDestination) {
+                        throw new TimeoutException("RA-axis motion remained active after the bounded stop wait.");
+                    }
                     await CoreUtil.Wait(TimeSpan.FromMilliseconds(500), token, progress, "Waiting for mount to stop slewing");
                 }
+                ObserveStoppedPosition();
                 slewStopWaitStopwatch.Stop();
 
                 var settleTimeSeconds = TppaVerificationSettlePolicy.Resolve(
@@ -4145,7 +4253,12 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 Logger.Info($"TPPA point settle time: {settleTimeSeconds:F3} seconds" +
                             (settleTimeOverrideSeconds.HasValue ? " (sequence override)." : " (profile setting)."));
                 settleStopwatch.Start();
-                await CoreUtil.Wait(TimeSpan.FromSeconds(settleTimeSeconds), token, progress, "Settling");
+                while (settleStopwatch.Elapsed.TotalSeconds < settleTimeSeconds) {
+                    ObserveStoppedPosition();
+                    var remaining = settleTimeSeconds - settleStopwatch.Elapsed.TotalSeconds;
+                    await CoreUtil.Wait(TimeSpan.FromSeconds(Math.Min(0.5, Math.Max(0, remaining))), token, progress, "Settling");
+                }
+                ObserveStoppedPosition();
                 settleStopwatch.Stop();
                 SetTrackingSidereal(true);
 
@@ -4174,9 +4287,10 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
 
                 try {
                     Logger.Info("TPPA_MOVE_TIMING " + JsonConvert.SerializeObject(new {
-                        schemaVersion = 1,
+                        schemaVersion = 2,
                         requestedDegrees = moveDistance,
                         traveledDegrees,
+                        stopDecisionTraveledDegrees,
                         direction = eastDirection ? "East" : "West",
                         adjustedRate = adjustedRateForReport,
                         axisMotionMilliseconds = axisMotionStopwatch.Elapsed.TotalMilliseconds,
@@ -4469,11 +4583,14 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
 
         public bool Validate() {
             var i = new List<string>();
-            i.AddRange(PolarAlignmentExecutionPolicy.GetValidationIssues(VerificationOnly, DriftValidationOnly, ManualMode));
-            if (OverdeterminedShadowModelCheck && !VerificationOnly) {
+            var verificationOnly = MeasurementOnlyMode ? false : VerificationOnly;
+            var driftValidationOnly = MeasurementOnlyMode ? false : DriftValidationOnly;
+            var manualMode = MeasurementOnlyMode ? false : ManualMode;
+            i.AddRange(PolarAlignmentExecutionPolicy.GetValidationIssues(verificationOnly, driftValidationOnly, manualMode));
+            if (OverdeterminedShadowModelCheck && !verificationOnly) {
                 i.Add("The 5-position shadow model check requires Verification only mode.");
             }
-            if (VerificationOnly || DriftValidationOnly) {
+            if (verificationOnly || driftValidationOnly) {
                 i.AddRange(TppaVerificationSettlePolicy.GetQualificationIssues(
                     TargetDistance, profileService.ActiveProfile.TelescopeSettings.SettleTime, VerificationPointSettleTimeSeconds));
             }
@@ -4526,15 +4643,18 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 i.Add("Telescope is parked. Please unpark the telescope first!");
             }
 
-            var executionPolicy = PolarAlignmentExecutionPolicy.Create(VerificationOnly, DriftValidationOnly);
+            var executionPolicy = PolarAlignmentExecutionPolicy.Create(
+                MeasurementOnlyMode ? false : VerificationOnly,
+                MeasurementOnlyMode ? false : DriftValidationOnly);
+            var automatedAdjustmentsEnabled = !MeasurementOnlyMode
+                && (PolarAlignmentPlugin.ActiveAlignmentSystemVM?.DoAutomatedAdjustments == true
+                    || Properties.Settings.Default.DoAutomatedAdjustments);
             i.AddRange(RefractionAlignmentTarget.GetValidationIssues(
                 Properties.Settings.Default.RefractionAdjustment,
-                PolarAlignmentPlugin.ActiveAlignmentSystemVM?.DoAutomatedAdjustments == true,
+                automatedAdjustmentsEnabled,
                 executionPolicy.AllowActuatorMovement,
-                DriftValidationOnly));
-            if (executionPolicy.AllowActuatorMovement
-                    && (PolarAlignmentPlugin.ActiveAlignmentSystemVM?.DoAutomatedAdjustments == true
-                        || Properties.Settings.Default.DoAutomatedAdjustments)) {
+                driftValidationOnly));
+            if (executionPolicy.AllowActuatorMovement && automatedAdjustmentsEnabled) {
                 var supervisorCampaignMode = EnforceFiveMinuteRuntimeBudget
                     && Properties.Settings.Default.RequireExternalUpasSupervisorForAutomatedMoves;
                 i.AddRange(TppaVerificationSettlePolicy.GetActuatorQualificationIssues(
@@ -4553,7 +4673,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     Properties.Settings.Default.AvalonAltitudeTravelGuardEnabled,
                     Properties.Settings.Default.AvalonAltitudeTravelGuardConfirmed));
             }
-            if (executionPolicy.AllowActuatorMovement && PolarAlignmentPlugin.ActiveAlignmentSystemVM != null && PolarAlignmentPlugin.ActiveAlignmentSystemVM?.DoAutomatedAdjustments == true && AlignmentTolerance == 0) {
+            if (executionPolicy.AllowActuatorMovement && automatedAdjustmentsEnabled && AlignmentTolerance == 0) {
                 i.Add("Automated adjustments are enabled, but polar alignment tolerance is set to zero. Please set an alignment tolerance!");
             }
 

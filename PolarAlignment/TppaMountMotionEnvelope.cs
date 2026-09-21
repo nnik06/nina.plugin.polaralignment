@@ -7,6 +7,10 @@ namespace NINA.Plugins.PolarAlignment {
         double AzimuthStartDegrees,
         double AzimuthEndDegrees) {
 
+        // Telescope telemetry arrives as floating point values; accept only rounding
+        // noise at a configured boundary, never a meaningful excursion.
+        private const double BoundaryToleranceDegrees = 0.001;
+
         public string GetConfigurationIssue() {
             if (!double.IsFinite(MinimumAltitudeDegrees)
                     || !double.IsFinite(MaximumAltitudeDegrees)
@@ -31,7 +35,8 @@ namespace NINA.Plugins.PolarAlignment {
                 return configurationIssue;
             }
 
-            if (altitudeDegrees < MinimumAltitudeDegrees || altitudeDegrees > MaximumAltitudeDegrees) {
+            if (altitudeDegrees < MinimumAltitudeDegrees - BoundaryToleranceDegrees
+                    || altitudeDegrees > MaximumAltitudeDegrees + BoundaryToleranceDegrees) {
                 return $"altitude {altitudeDegrees:F2} deg is outside {MinimumAltitudeDegrees:F2}..{MaximumAltitudeDegrees:F2} deg";
             }
 

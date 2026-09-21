@@ -271,11 +271,15 @@ namespace NINA.Plugins.PolarAlignment {
         }
 
 
-        public async Task<bool> UpdateDetails(PlateSolveResult psr, IProgress<ApplicationStatus> progress, CancellationToken token) {
+        public async Task<bool> UpdateDetails(
+                PlateSolveResult psr,
+                IProgress<ApplicationStatus> progress,
+                CancellationToken token,
+                bool requireContinuousErrorEstimate = false) {
             PolarErrorDetermination.CurrentReferenceFrame = psr;
             var refractionParams = RefractionParameters.GetRefractionParameters(weatherDataMediator.GetInfo());
             PolarErrorDetermination.UpdateCurrentCorrectionFieldWarnings(refractionParams);
-            var useContinuousErrorEstimator = UseContinuousErrorEstimator;
+            var useContinuousErrorEstimator = requireContinuousErrorEstimate || UseContinuousErrorEstimator;
             LogTimingDiagnostic("TPPA update", PolarErrorDetermination, psr, useContinuousErrorEstimator);
             var estimateStable = true;
 
