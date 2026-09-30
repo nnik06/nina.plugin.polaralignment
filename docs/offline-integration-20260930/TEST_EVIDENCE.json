@@ -1,0 +1,92 @@
+[
+  {
+    "path": "C:\\Users\\nnik0\\OneDrive\\\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b\\Playground\\.implementation-work\\integration-20260930\\initial-demo.log",
+    "bytes": 1427,
+    "sha256": "11549ba11962d9ecd09d3c249e54550865e035273301205cbd699f4325b02718"
+  },
+  {
+    "path": "C:\\Users\\nnik0\\OneDrive\\\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b\\Playground\\.implementation-work\\integration-20260930\\initial-dotnet.log",
+    "bytes": 655,
+    "sha256": "1f6d7ae07eb518eeb134c29485f3092e547c2910e28ba8c4044ab3afbcdb0d3a"
+  },
+  {
+    "path": "C:\\Users\\nnik0\\OneDrive\\\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b\\Playground\\.implementation-work\\integration-20260930\\initial-supervisor.log",
+    "bytes": 295,
+    "sha256": "8f6e86d1326f8e52c8676c2308bc4b485b45208d56546dfc93dec172cac7cf3f"
+  },
+  {
+    "path": "C:\\Users\\nnik0\\OneDrive\\\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b\\Playground\\.implementation-work\\integration-20260930\\initial-tppa.log",
+    "bytes": 15865,
+    "sha256": "f2aa257f54c153757915b6a29e9e3d649f7bb303797c03ed43d318bb7f2228e7"
+  },
+  {
+    "path": "C:\\Users\\nnik0\\OneDrive\\\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b\\Playground\\.implementation-work\\integration-20260930\\round1-demo.log",
+    "bytes": 899,
+    "sha256": "5f9436abf5cd62b66c7b7ae7e221116bb52cc7b1e230342d55fd9ce3c958c1fa"
+  },
+  {
+    "path": "C:\\Users\\nnik0\\OneDrive\\\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b\\Playground\\.implementation-work\\integration-20260930\\round1-encoder.log",
+    "bytes": 269,
+    "sha256": "d81f1c626c0170e5b4f46d1bb9d38401d23c528b806f775dcdcde9307a57574c"
+  },
+  {
+    "path": "C:\\Users\\nnik0\\OneDrive\\\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b\\Playground\\.implementation-work\\integration-20260930\\round1-supervisor.log",
+    "bytes": 2640,
+    "sha256": "701ee3cee393a7bdfe356d59bb23a21e838c764e05cca293d01336c8e5f324c1"
+  },
+  {
+    "path": "C:\\Users\\nnik0\\OneDrive\\\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b\\Playground\\.implementation-work\\integration-20260930\\round1-tppa.log",
+    "bytes": 682436,
+    "sha256": "9373d321a1c46a74582f8460c64022c317ac6512da439c2ca29386a0b988cb92"
+  },
+  {
+    "path": "C:\\Users\\nnik0\\OneDrive\\\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b\\Playground\\.implementation-work\\integration-20260930\\round2-encoder.log",
+    "bytes": 496,
+    "sha256": "599951914c3d346b29145bccbe96628fe14d90ab50aad5b2e7ae3bb4c9855300"
+  },
+  {
+    "path": "C:\\Users\\nnik0\\OneDrive\\\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b\\Playground\\.implementation-work\\integration-20260930\\round2-measurement-demo.log",
+    "bytes": 996,
+    "sha256": "7f401db68ee33abdbd2d566441362c46b3e896d6666ef211ceec7da8c5d65d9f"
+  },
+  {
+    "path": "C:\\Users\\nnik0\\OneDrive\\\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b\\Playground\\.implementation-work\\integration-20260930\\round2-supervisor.log",
+    "bytes": 377,
+    "sha256": "0cf4c17c06f41503d018172cd713686ce05ed37f643a7de0447153c7f130cb86"
+  },
+  {
+    "path": "C:\\Users\\nnik0\\OneDrive\\\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b\\Playground\\.implementation-work\\integration-20260930\\round3-demo.log",
+    "bytes": 899,
+    "sha256": "84d4cd35bebdbbf9c91ea86652f09240fac5af27285a8dddf5c578c7dd38ef38"
+  },
+  {
+    "path": "C:\\Users\\nnik0\\OneDrive\\\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b\\Playground\\.implementation-work\\integration-20260930\\round3-supervisor.log",
+    "bytes": 70560,
+    "sha256": "941ff1c18c80a31648f8cf56a3ecfe3ccae107ccf9a7df810d9159831347c014"
+  },
+  {
+    "path": "C:\\Users\\nnik0\\OneDrive\\\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b\\Playground\\.implementation-work\\integration-20260930\\ROUND1_RESULTS.json",
+    "bytes": 9035,
+    "sha256": "329e4f45da2befac7600331c61ddcc481a8e8dc2dc736a86f827cb7c05ddf542"
+  },
+  {
+    "path": "C:\\Users\\nnik0\\OneDrive\\\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b\\Playground\\.implementation-work\\integration-20260930\\ROUND2_RESULTS.json",
+    "bytes": 2196,
+    "sha256": "ded4c71550ea88d460ea9a35027ed02627d1e2cd2a945b1f2a43c89542a28da2"
+  },
+  {
+    "path": "C:\\Users\\nnik0\\OneDrive\\\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b\\Playground\\.implementation-work\\integration-20260930\\ROUND3_RESULTS.json",
+    "bytes": 6230,
+    "sha256": "87bfbf5725529f05f15a62daa98d709321ad104217a3177839d2a6e694bcef1f"
+  },
+  {
+    "path": "C:\\Users\\nnik0\\OneDrive\\\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b\\Playground\\.implementation-work\\integration-20260930\\schema-response-audit\\SCHEMA_DIAGNOSIS.json",
+    "bytes": 4430,
+    "sha256": "7b14332e540c22ea7dc067baceb6e87543c3376357f56bca8cb2c96fb6f27232"
+  },
+  {
+    "path": "C:\\tmp\\upas-i-20260930\\tppa\\NINA.Plugins.PolarAlignment.Test\\TestResults\\offline-integration-round1.trx",
+    "bytes": 3032921,
+    "sha256": "ba3dfb34da80553ccdbc8b4404dcf9305136b7bb36c4c136ae0ae4e07921a51a"
+  }
+]

@@ -1,0 +1,18 @@
+{
+  "round": 3,
+  "source_findings": [
+    {
+      "defect": "New identity could bypass old-exposure obsolescence after motion",
+      "remedy": "persist possible-motion and terminal timestamps; reject older exposure for every new job before dispatch"
+    },
+    {
+      "defect": "PARTIAL could have known wire stop but absent actual displacement",
+      "remedy": "require fresh post-Idle witness for partial classification, record actual wrong-sign/other-axis/guard displacement; otherwise UNCERTAIN"
+    },
+    {
+      "defect": "Remainder subdivision could create a small last chunk below unchanged persistent .05 movement criterion",
+      "remedy": "balance exact whole signed integer total across finite chunks; preserve threshold and total debit"
+    }
+  ],
+  "scope": "Last allowed global correction. Preserve any unresolved failures; no extra repair allowance inferred."
+}

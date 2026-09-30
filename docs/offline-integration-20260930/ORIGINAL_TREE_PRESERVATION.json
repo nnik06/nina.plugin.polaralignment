@@ -1,0 +1,20 @@
+{
+  "enc": {
+    "head": "0a563778159dea16e9373805dbabb603dc7a78f0",
+    "status_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "unchanged": true
+  },
+  "sup": {
+    "head": "278a0cba9afa6936f36fe359cb0e085adeacc6f5",
+    "status_sha256": "47b31542c6332cb28cc829a84b66bccd1f1e835d0735247787880d1643aea1cc",
+    "patch_sha256": "d1ae3a7ea5630c974002db4dc6346914bb0b0440c33bf034f3ccbb8cdc526272",
+    "unchanged": true
+  },
+  "tppa": {
+    "head": "1218a6d0624d09fd4112f18804df4baa31201fed",
+    "status_sha256": "fe50787a5b48501f101f9b2f17d559db82c916cde2783e37af54ccb1c000e72d",
+    "patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "unchanged": true
+  }
+}

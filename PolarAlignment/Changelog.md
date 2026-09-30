@@ -1,3 +1,10 @@
+## Version 2.2.6.146 (offline integration candidate; not deployed)
+
+- Add an async sky-intent Contract A 1.1 client and unregistered plugin-facing adapter.
+- Use original exposure identity/time, durable job IDs and independent bounded cancellation cleanup.
+- Mechanical execution does not certify sky alignment. No NINA activation, hardware access or installation copy.
+- Include a headless cross-language demonstration using synthetic stdio ports and the real supervisor/encoder candidate.
+
 ## Version 2.2.6.145 (deployed from isolated release worktree)
 
 - Installed on Mele on 2026-09-15 at 22:47 UTC from commit

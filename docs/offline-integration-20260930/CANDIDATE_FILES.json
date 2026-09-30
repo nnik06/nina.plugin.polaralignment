@@ -1,0 +1,112 @@
+[
+  {
+    "project": "enc",
+    "path": "src/upas_encoders/interface/window_provider.py",
+    "sha256": "7f9aa4514202e07c5ff4e4bdba114c77549a1081a7dd615a209c93b7f8e196f9"
+  },
+  {
+    "project": "enc",
+    "path": "tests/interface/test_window_provider.py",
+    "sha256": "545d0ecb98ef91e03347fa825ad615bf62a82ff898eecfb52ec913b7101f011c"
+  },
+  {
+    "project": "sup",
+    "path": "src/upas_supervisord/encoder_contract_consumer.py",
+    "sha256": "41a3ff222ffc04909a4639369d339f46dbb4679ecad331c95886ac210e02dee0"
+  },
+  {
+    "project": "sup",
+    "path": "src/upas_supervisord/integration_api.py",
+    "sha256": "5dde33eb67f1c8c38927f9f63191c3cdedbbff4ef76ab18453892ad6fa70cdfc"
+  },
+  {
+    "project": "sup",
+    "path": "src/upas_supervisord/integration_fake_backend.py",
+    "sha256": "6c7ccb2f6bf0d86110d4b3cab6b1c466203ad75c684caf2a5f7d3f4672a09fe3"
+  },
+  {
+    "project": "sup",
+    "path": "src/upas_supervisord/integration_jobs.py",
+    "sha256": "240383558067832222156180e5b37a18421d8f3cdc06c41ca154fd4236392b85"
+  },
+  {
+    "project": "sup",
+    "path": "src/upas_supervisord/integration_store.py",
+    "sha256": "b1bd914962f87a80ad5dff6dcead06643102154f6bca80b05d09c8daf54859bb"
+  },
+  {
+    "project": "sup",
+    "path": "tests/unit/test_fresh_alt_audit_integration.py",
+    "sha256": "e665ba009ee5af1870daed66732042116fff3304995fb4c819026a2d09506061"
+  },
+  {
+    "project": "sup",
+    "path": "tests/unit/test_measurement_70_integration.py",
+    "sha256": "d40322aa37bf7ba9fbe845eae20389abf17d771672a021a15bcc2a450a3f42c4"
+  },
+  {
+    "project": "sup",
+    "path": "tests/unit/test_offline_integration.py",
+    "sha256": "1b47bf954536fea1f806572327e506f01c57ee0f32b9d695032af8feddbb1057"
+  },
+  {
+    "project": "sup",
+    "path": "tools/offline_integration_bridge.py",
+    "sha256": "39fd38d040c2704d125d88d661eed6d407b730649eed6bede6818b445d3d33b5"
+  },
+  {
+    "project": "sup",
+    "path": "tools/offline_trial_adapters/audit_cli.py",
+    "sha256": "f8f5f8c5397bd841fa522154eb1ba9b3440995e4ae7b28e55f7fbdfe5d738f3d"
+  },
+  {
+    "project": "sup",
+    "path": "tools/offline_trial_adapters/fresh_alt_audit.py",
+    "sha256": "95fed91b3c994e1dea5476aa1125079e6867ed9db813d036e2328a4365940615"
+  },
+  {
+    "project": "sup",
+    "path": "tools/offline_trial_adapters/measurement_70.py",
+    "sha256": "cae5f029c8ebb2687f512826c9f131e5e87598603f92913d4fbe61f4b72230fa"
+  },
+  {
+    "project": "sup",
+    "path": "tools/offline_trial_adapters/measurement_demo.py",
+    "sha256": "6dd3f347358f1ee1e5d032585024b37b24cb9d429d3c5a11291d085d267f3172"
+  },
+  {
+    "project": "tppa",
+    "path": "NINA.Plugins.PolarAlignment.Test/UpasSkyJobIntegrationTest.cs",
+    "sha256": "fabeff3ed4938ac4c5cac0b3f86ea251080e3fc55cd8dfc2c6fb68210cb3b74f"
+  },
+  {
+    "project": "tppa",
+    "path": "PolarAlignment/Changelog.md",
+    "sha256": "c9c30ebc03f0ed255ab114f7fee884845627b24cc6623ddfd213e63e538c66f5"
+  },
+  {
+    "project": "tppa",
+    "path": "PolarAlignment/NINA.Plugins.PolarAlignment.csproj",
+    "sha256": "0bbbfaf4be23e2715ccc585ecb64511731e8f5aa59beea7b6d2a15caf22e228b"
+  },
+  {
+    "project": "tppa",
+    "path": "PolarAlignment/UpasSkyJobIntegrationAdapter.cs",
+    "sha256": "34507cda4b2b9d5cd6a27f88dd03d11aa4c91c48d9a6cc4f937d0f35a0548885"
+  },
+  {
+    "project": "tppa",
+    "path": "QualificationCore/UpasSkyCorrectionClient.cs",
+    "sha256": "05aaa173f56c655ca440cdad70f6c21d623f7ef2941e3b62a39a8a2b12a1a50d"
+  },
+  {
+    "project": "tppa",
+    "path": "tools/UpasOfflineIntegration/Program.cs",
+    "sha256": "c43ea92d3cb162bb257bc4c08f83fe961dabe344fb043ca7f75a495cc401587b"
+  },
+  {
+    "project": "tppa",
+    "path": "tools/UpasOfflineIntegration/UpasOfflineIntegration.csproj",
+    "sha256": "499c8f97f9fc13f0b74fd576f42b7f60c77b702bd0a90307471705c8017ae877"
+  }
+]

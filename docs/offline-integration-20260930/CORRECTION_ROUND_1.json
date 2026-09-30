@@ -1,0 +1,21 @@
+{
+  "round": 1,
+  "initial_failures": [
+    {
+      "check": "TPPA new test compilation",
+      "cause": "missing System.Net.Http import",
+      "remedy": "explicit namespace import"
+    },
+    {
+      "check": "cross-language demo cleanup",
+      "cause": "HttpClient and using declaration both dispose owned handler",
+      "remedy": "idempotent bounded handler disposal"
+    },
+    {
+      "check": "entire historical encoder collection",
+      "cause": "300-second timeout before completion; no verdict",
+      "remedy": "target changed interfaces and inherited commissioned/handover modules; retain full-suite timeout as unverified scope"
+    }
+  ],
+  "new_initial_scope": "Materialize and exercise unchanged 70-raw and file-only audit adapters in supervisor-owned offline tooling."
+}

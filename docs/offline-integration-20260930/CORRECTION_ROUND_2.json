@@ -1,0 +1,20 @@
+{
+  "round": 2,
+  "failures": [
+    {
+      "check": "encoder selected suite",
+      "cause": "incorrect tests/hall directory name",
+      "remedy": "use actual tests/unit/test_hall_psi.py and test_hall_vector_map.py paths"
+    },
+    {
+      "check": "supervisor native input pin test",
+      "cause": "relocated adapter test incorrectly resolved frozen AUDIT_INPUTS under its executable tools directory",
+      "remedy": "bind immutable source closure explicitly to verified encoder handover; never weaken pin checks"
+    }
+  ],
+  "passing_checks": [
+    "1209 TPPA Release tests",
+    "actual cross-language demo including clean disposal",
+    "89 supervisor tests"
+  ]
+}

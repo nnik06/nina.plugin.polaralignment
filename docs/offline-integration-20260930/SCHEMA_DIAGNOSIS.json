@@ -1,0 +1,180 @@
+[
+  {
+    "kind": "status",
+    "response": {
+      "serviceVersion": "offline-integration-v1",
+      "contractVersion": "1.1",
+      "canMove": false,
+      "reasonIfNot": "OFFLINE_CANDIDATE_NO_LIVE_AUTHORITY",
+      "axes": {
+        "AZ": {
+          "health": "UNKNOWN",
+          "headroomArcmin": {
+            "plus": null,
+            "minus": null
+          }
+        },
+        "ALT": {
+          "health": "UNKNOWN",
+          "headroomArcmin": {
+            "plus": null,
+            "minus": null
+          }
+        }
+      },
+      "activeFaults": []
+    },
+    "passed": true,
+    "errors": []
+  },
+  {
+    "kind": "leaseResponse",
+    "response": {
+      "leaseId": "34b5781d-53c2-45e8-8255-e73b166a92c9",
+      "expiresAtUtc": "2026-10-01T00:02:01Z"
+    },
+    "passed": false,
+    "errors": [
+      {
+        "path": [],
+        "message": "'clientId' is a required property"
+      },
+      {
+        "path": [],
+        "message": "'durationSeconds' is a required property"
+      }
+    ]
+  },
+  {
+    "kind": "leaseResponse",
+    "response": {
+      "leaseId": "34b5781d-53c2-45e8-8255-e73b166a92c9",
+      "expiresAtUtc": "2026-10-01T00:02:01Z"
+    },
+    "passed": false,
+    "errors": [
+      {
+        "path": [],
+        "message": "'clientId' is a required property"
+      },
+      {
+        "path": [],
+        "message": "'durationSeconds' is a required property"
+      }
+    ]
+  },
+  {
+    "kind": "skyCorrectionRequest",
+    "response": {
+      "measurementId": "m",
+      "measurementSessionId": "s",
+      "measuredAtUtc": "2026-10-01T00:00:01Z",
+      "coordinateConvention": "tppaAzimuthCoordinateTruePoleRefractionOnV1",
+      "hemisphere": "NORTH",
+      "azErrArcmin": -18,
+      "altErrArcmin": -18,
+      "leaseId": "34b5781d-53c2-45e8-8255-e73b166a92c9",
+      "idempotencyKey": "move"
+    },
+    "passed": true,
+    "errors": []
+  },
+  {
+    "kind": "jobAccepted",
+    "response": {
+      "jobId": "c874a252-5b24-4b05-8dce-b1d22f09d07e",
+      "state": "ACCEPTED"
+    },
+    "passed": true,
+    "errors": []
+  },
+  {
+    "kind": "job",
+    "response": {
+      "jobId": "c874a252-5b24-4b05-8dce-b1d22f09d07e",
+      "state": "EXECUTED",
+      "requestedArcmin": {
+        "AZ": -18,
+        "ALT": -18
+      },
+      "executed": {
+        "AZ": {
+          "encoderDeltaDeg": 0.30000000000000004,
+          "units": "scale",
+          "witness": "ENGAGED"
+        },
+        "ALT": {
+          "encoderDeltaDeg": 0.30000000000000004,
+          "units": "scale",
+          "witness": "ENGAGED"
+        }
+      },
+      "remainingHeadroomArcmin": {
+        "AZ": {
+          "plus": null,
+          "minus": null
+        },
+        "ALT": {
+          "plus": null,
+          "minus": null
+        }
+      },
+      "reason": null
+    },
+    "passed": true,
+    "errors": []
+  },
+  {
+    "kind": "stopAcknowledgement",
+    "response": {
+      "jobId": null,
+      "cancelRequested": true,
+      "stopConfirmed": false
+    },
+    "passed": true,
+    "errors": []
+  },
+  {
+    "kind": "measurementFeedbackResponse",
+    "response": {
+      "feedbackId": "1eca051f-47bc-4055-9a84-f386acec89b7",
+      "jobId": "c874a252-5b24-4b05-8dce-b1d22f09d07e",
+      "measurementId": "post",
+      "state": "RECORDED",
+      "motionRequested": false
+    },
+    "passed": true,
+    "errors": []
+  },
+  {
+    "kind": "leaseReleaseResponse",
+    "response": {
+      "leaseId": "34b5781d-53c2-45e8-8255-e73b166a92c9",
+      "released": true,
+      "furtherChunksAllowed": false,
+      "jobId": null,
+      "stopConfirmed": false
+    },
+    "passed": true,
+    "errors": []
+  },
+  {
+    "kind": "conflict",
+    "response": {
+      "reason": "IDEMPOTENCY_CONFLICT"
+    },
+    "passed": false,
+    "errors": [
+      {
+        "path": [
+          "reason"
+        ],
+        "message": "'IDEMPOTENCY_CONFLICT' is not one of ['IDEMPOTENCY_PAYLOAD_CONFLICT', 'MEASUREMENT_IDENTITY_CONFLICT', 'MEASUREMENT_OBSOLETE', 'MEASUREMENT_EXPIRED', 'MEASUREMENT_IN_FUTURE', 'LEASE_HELD', 'LEASE_INVALID', 'MEASUREMENT_TIME_UNTRUSTED', 'FEEDBACK_JOB_MISMATCH', 'FEEDBACK_NOT_POST_JOB', 'JOB_UNRESOLVED', 'CONVENTION_UNSUPPORTED']"
+      },
+      {
+        "path": [],
+        "message": "'holderClientId' is a required property"
+      }
+    ]
+  }
+]
