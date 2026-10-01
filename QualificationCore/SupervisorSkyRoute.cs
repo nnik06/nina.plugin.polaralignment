@@ -16,6 +16,11 @@ public sealed class SupervisorSkyRoute : IDisposable, IAsyncDisposable {
         if (value != "1") throw new ArgumentException("UPAS_CONTRACT_A_ROUTE must be explicitly 0 or 1.");
         return true;
     }
+    public static void RequireOpticalConfiguration(string actual, Func<string,string> environment) {
+        var expected = environment("UPAS_SKY_OPTICAL_CONFIGURATION_ID");
+        if (string.IsNullOrWhiteSpace(expected) || !System.Text.RegularExpressions.Regex.IsMatch(expected,"^[0-9a-f]{64}$") || actual != expected)
+            throw new InvalidOperationException("Exact adopted optical configuration required; requalify after configuration changes.");
+    }
     public SupervisorSkyRoute(HttpClient authenticatedHttp,string clientId, string? admittedOperationId = null) {
         if (admittedOperationId != null) workflow = new(authenticatedHttp,clientId,admittedOperationId);
         http = authenticatedHttp;

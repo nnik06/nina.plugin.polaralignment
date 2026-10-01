@@ -11,8 +11,8 @@
     <Authors>Stefan Berg @isbeorn</Authors>
     <Product>NINA.Plugins</Product>
     <Description>Three Point Polar Alignment almost anywhere in the sky</Description>
-    <Copyright>Copyright ©  2021-2025</Copyright>
-    <Version>2.2.6.149</Version>
+    <Copyright>Copyright Â©  2021-2025</Copyright>
+    <Version>2.2.6.150</Version>
   </PropertyGroup>
   <ItemGroup>    
     <PackageReference Include="NINA.Plugin" Version="3.1.2.9001" />    

@@ -597,8 +597,8 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             var distance = Distance(previousMountRADegrees, telescopeMediator.GetCurrentPosition().RADegrees);
             if (distance - totalDistance < -1) {
 
-                Logger.Warning($"The mount did not move far enough to reach the target distance for the next point ({Math.Round(distance, 2)}°/{Math.Round(totalDistance, 2)}°).");
-                Notification.ShowWarning($"The mount did not move far enough to reach the target distance for the next point ({Math.Round(distance, 2)}°/{Math.Round(totalDistance, 2)}°).{Environment.NewLine}This will happen when the mount driver's rate implementation is not according to the specifications to be degrees per seconds!{Environment.NewLine}Tip: Increase the slew rate and adjust the timeout setting inside the plugin options.");
+                Logger.Warning($"The mount did not move far enough to reach the target distance for the next point ({Math.Round(distance, 2)}ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°/{Math.Round(totalDistance, 2)}ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°).");
+                Notification.ShowWarning($"The mount did not move far enough to reach the target distance for the next point ({Math.Round(distance, 2)}ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°/{Math.Round(totalDistance, 2)}ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°).{Environment.NewLine}This will happen when the mount driver's rate implementation is not according to the specifications to be degrees per seconds!{Environment.NewLine}Tip: Increase the slew rate and adjust the timeout setting inside the plugin options.");
             }
 
             return solve;
@@ -630,7 +630,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 if (distance - totalDistance < -1) {
                     traveledFarEnough = false;
 
-                    progress.Report(new ApplicationStatus() { Status = $"Move mount along RA axis! {Math.Round(distance, 2)}°/{Math.Round(totalDistance, 2)}°" });
+                    progress.Report(new ApplicationStatus() { Status = $"Move mount along RA axis! {Math.Round(distance, 2)}ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°/{Math.Round(totalDistance, 2)}ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°" });
                     await Task.Delay(TimeSpan.FromSeconds(1));
                 } else {
                     traveledFarEnough = true;
@@ -740,6 +740,14 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
         /// <param name="token">When a cancel signal is triggered from outside, this token can be used to register to it or check if it is cancelled</param>
         /// <returns></returns>
         public override async Task Execute(IProgress<ApplicationStatus> externalProgress, CancellationToken token) {
+            var exportRequest = Environment.GetEnvironmentVariable("UPAS_SKY_GAIN_EXPORT_REQUEST");
+            var gainExport = string.IsNullOrWhiteSpace(exportRequest) ? null
+                : new NINA.Plugins.PolarAlignment.Qualification.SupervisorGainMeasurementExport(exportRequest,
+                    MeasurementOnlyMode, NINA.Plugins.PolarAlignment.Qualification.SupervisorSkyRoute.Requested(Environment.GetEnvironmentVariable),
+                    PolarAlignmentPlugin.ActiveAlignmentSystemVM?.DoAutomatedAdjustments == true
+                        || Properties.Settings.Default.DoAutomatedAdjustments,
+                    Properties.Settings.Default.RefractionAdjustment,
+                    CaptureCurrentTppaHardwareIdentity(TppaLoadedAssemblyEvidenceFactory.Capture(typeof(PolarAlignment).Assembly).Sha256).HardwareConfigurationId);
             await using var contractARoute = NINA.Plugins.PolarAlignment.Qualification.SupervisorSkyRoute.Requested(Environment.GetEnvironmentVariable)
                 ? NINA.Plugins.PolarAlignment.Qualification.SupervisorSkyRoute.FromEnvironment(Environment.GetEnvironmentVariable)
                 : null;
@@ -749,10 +757,13 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                     || !Properties.Settings.Default.RefractionAdjustment) {
                     throw new SequenceEntityFailedException("Explicit UPAS automated true-pole route required. No plugin controller fallback.");
                 }
+                NINA.Plugins.PolarAlignment.Qualification.SupervisorSkyRoute.RequireOpticalConfiguration(
+                    CaptureCurrentTppaHardwareIdentity(TppaLoadedAssemblyEvidenceFactory.Capture(typeof(PolarAlignment).Assembly).Sha256).HardwareConfigurationId,
+                    Environment.GetEnvironmentVariable);
                 // Check before telescope/camera acquisition and legacy UPAS Connect.
                 await contractARoute.RequireReadyBeforeMeasurementAsync(token);
             }
-            ApplyOperationalUpasProfileIfRequested();
+            if (gainExport == null) ApplyOperationalUpasProfileIfRequested();
             var executionPolicy = PolarAlignmentExecutionPolicy.Create(
                 MeasurementOnlyMode ? false : VerificationOnly,
                 MeasurementOnlyMode ? false : DriftValidationOnly);
@@ -1180,9 +1191,26 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         determination,
                         executionPolicy.AllowActuatorMovement && automatedAdjustmentsEnabled,
                         "initial fresh determination");
+                    if (gainExport != null) {
+                        NINA.Plugins.PolarAlignment.Qualification.SupervisorGainMeasurementExport.RequireMeasurementOnly(
+                            MeasurementOnlyMode, NINA.Plugins.PolarAlignment.Qualification.SupervisorSkyRoute.Requested(Environment.GetEnvironmentVariable),
+                            PolarAlignmentPlugin.ActiveAlignmentSystemVM?.DoAutomatedAdjustments == true || Properties.Settings.Default.DoAutomatedAdjustments,
+                            Properties.Settings.Default.RefractionAdjustment);
+                        var qualifiedGeometry = BindFreshGeometryQualification(TPAPAVM, determination, false, "gain-probe export");
+                        gainExport.Publish(determination.InitialMountAxisAzimuthError.ArcMinutes,
+                            determination.InitialMountAxisAltitudeError.ArcMinutes,
+                            profileService.ActiveProfile.AstrometrySettings.Latitude >= 0 ? "NORTH" : "SOUTH",
+                            new[] { solve1, solve2, solve3 }.Select(s => s.Coordinates.DateTime.UtcNow),
+                            qualifiedGeometry.IsQualified && initialSolveConsistency.IsQualified,
+                            CaptureCurrentTppaHardwareIdentity(TppaLoadedAssemblyEvidenceFactory.Capture(typeof(PolarAlignment).Assembly).Sha256).HardwareConfigurationId);
+                        return;
+                    }
                     if (contractARoute != null) {
                         NINA.Plugins.PolarAlignment.Qualification.SkyAlignmentMeasurement SkyMeasurement(
                                 PolarErrorDetermination value, PlateSolveResult[] source) {
+                            NINA.Plugins.PolarAlignment.Qualification.SupervisorSkyRoute.RequireOpticalConfiguration(
+                                CaptureCurrentTppaHardwareIdentity(TppaLoadedAssemblyEvidenceFactory.Capture(typeof(PolarAlignment).Assembly).Sha256).HardwareConfigurationId,
+                                Environment.GetEnvironmentVariable);
                             var times = source.Select(s => s.Coordinates.DateTime.UtcNow).ToArray();
                             if (times.Any(t => t.Kind != DateTimeKind.Utc || t > DateTime.UtcNow))
                                 throw new SequenceEntityFailedException("Original exposure UTC required.");
@@ -4237,7 +4265,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 }
                 adjustedRateForReport = adjustedRate;
 
-                Logger.Info($"Moving axis by {adjustedRate} into direction {(eastDirection ? "East" : "West")} until distance {moveDistance}° is traveled");
+                Logger.Info($"Moving axis by {adjustedRate} into direction {(eastDirection ? "East" : "West")} until distance {moveDistance}ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â° is traveled");
                 axisMotionStopwatch.Start();
                 telescopeMediator.MoveAxis(Core.Enum.TelescopeAxes.Primary, eastDirection ? adjustedRate : -adjustedRate);
 
