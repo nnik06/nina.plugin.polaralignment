@@ -1,3 +1,9 @@
+## Version 2.2.6.149 (continuous reference and bounded sky candidate)
+
+- Await the explicitly admitted supervisor home epoch before imaging and retain its measurement-session identity.
+- Carry original exposure times through independent post-job measurements and stationary final confirmation; preserve Contract A1.1 and controller ownership.
+- Require measured local conversions and a separately adopted native observation profile. Sky field qualification remains pending; no live activation is claimed.
+
 ## Version 2.2.6.148 (explicit supervisor route candidate)
 
 - Add default-off Contract A route selection to the actual NINA sequence entry.
