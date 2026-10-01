@@ -1370,7 +1370,7 @@
 - Adjusted plugin description with new markdown syntax
 
 ## Version 1.3.3.0
-- Fix DefaultAzimuthOffset to be correctly applied in the southern hemisphere as azimuth 180Ã‚Â° + offset (instead of 0Ã‚Â° + offset)
+- Fix DefaultAzimuthOffset to be correctly applied in the southern hemisphere as azimuth 180° + offset (instead of 0° + offset)
 
 ## Version 1.3.2.0
 - Remove the compensation when the automated slew did not reach the expected distance. The various mount drivers differ too much to determine a clever compensation model
@@ -1412,7 +1412,7 @@
 - Fix: When using debayered images the plugin would close on the final step with an error
 
 ## Version 1.0.0.7
-- Fix: Azimuth error could sometimes exceed 180Ã‚Â° instead of showing a negative error instead
+- Fix: Azimuth error could sometimes exceed 180° instead of showing a negative error instead
 
 ## Version 1.0.0.6
 - Fix: Azimuth error for southern hemisphere was calculated incorrectly

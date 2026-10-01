@@ -597,8 +597,8 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
             var distance = Distance(previousMountRADegrees, telescopeMediator.GetCurrentPosition().RADegrees);
             if (distance - totalDistance < -1) {
 
-                Logger.Warning($"The mount did not move far enough to reach the target distance for the next point ({Math.Round(distance, 2)}ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°/{Math.Round(totalDistance, 2)}ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°).");
-                Notification.ShowWarning($"The mount did not move far enough to reach the target distance for the next point ({Math.Round(distance, 2)}ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°/{Math.Round(totalDistance, 2)}ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°).{Environment.NewLine}This will happen when the mount driver's rate implementation is not according to the specifications to be degrees per seconds!{Environment.NewLine}Tip: Increase the slew rate and adjust the timeout setting inside the plugin options.");
+                Logger.Warning($"The mount did not move far enough to reach the target distance for the next point ({Math.Round(distance, 2)}°/{Math.Round(totalDistance, 2)}°).");
+                Notification.ShowWarning($"The mount did not move far enough to reach the target distance for the next point ({Math.Round(distance, 2)}°/{Math.Round(totalDistance, 2)}°).{Environment.NewLine}This will happen when the mount driver's rate implementation is not according to the specifications to be degrees per seconds!{Environment.NewLine}Tip: Increase the slew rate and adjust the timeout setting inside the plugin options.");
             }
 
             return solve;
@@ -630,7 +630,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 if (distance - totalDistance < -1) {
                     traveledFarEnough = false;
 
-                    progress.Report(new ApplicationStatus() { Status = $"Move mount along RA axis! {Math.Round(distance, 2)}ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°/{Math.Round(totalDistance, 2)}ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°" });
+                    progress.Report(new ApplicationStatus() { Status = $"Move mount along RA axis! {Math.Round(distance, 2)}°/{Math.Round(totalDistance, 2)}°" });
                     await Task.Delay(TimeSpan.FromSeconds(1));
                 } else {
                     traveledFarEnough = true;
@@ -4265,7 +4265,7 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 }
                 adjustedRateForReport = adjustedRate;
 
-                Logger.Info($"Moving axis by {adjustedRate} into direction {(eastDirection ? "East" : "West")} until distance {moveDistance}ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â° is traveled");
+                Logger.Info($"Moving axis by {adjustedRate} into direction {(eastDirection ? "East" : "West")} until distance {moveDistance}° is traveled");
                 axisMotionStopwatch.Start();
                 telescopeMediator.MoveAxis(Core.Enum.TelescopeAxes.Primary, eastDirection ? adjustedRate : -adjustedRate);
 
