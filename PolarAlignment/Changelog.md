@@ -1,3 +1,9 @@
+## Version 2.2.6.147 (production connection candidate; activation inhibited)
+
+- Bind the async sky-intent adapter to an authenticated HTTPS or local loopback Contract A endpoint.
+- Honor incompatible or inhibited status before lease acquisition; no fallback to plugin-owned raw motor commands.
+- Keep fresh exposure geometry and mechanical completion separate from sky verification. No NINA installation copy or live activation.
+
 ## Version 2.2.6.146 (offline integration candidate; not deployed)
 
 - Add an async sky-intent Contract A 1.1 client and unregistered plugin-facing adapter.
@@ -1404,3 +1410,4 @@
   rejected as outside a 20 degree safe arc.
 - In the operational UPAS profile, use the three fresh completion solves
   directly rather than slewing back for report-only shadow evidence.
+

@@ -5,9 +5,23 @@ using System.Text.Json;
 using NINA.Plugins.PolarAlignment;
 using NINA.Plugins.PolarAlignment.Qualification;
 
-if (args.Length != 4) throw new ArgumentException("Usage: PythonExe SupervisorRoot EncoderRoot NewJournalFile (synthetic stdio only)");
-using var transport = new SyntheticProcessHandler(args[0], args[1], args[2], args[3]);
-using var http = new HttpClient(transport) { BaseAddress = new Uri("http://offline.invalid") };
+bool production = args.Length == 7;
+if (args.Length != 4 && !production) throw new ArgumentException("Usage: PythonExe SupervisorRoot EncoderRoot NewJournalFile (synthetic stdio only)");
+using var transport = new SyntheticProcessHandler(args[0], args[1], args[2], args[3], production ? args[4] : null, production ? args[5] : null, production ? args[6] : null);
+using var http = new HttpClient(transport) { BaseAddress = new Uri(production ? "http://127.0.0.1" : "http://offline.invalid") };
+if (production) {
+    http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "stdio-demo-identity-not-network-token");
+    var connection = new SupervisorSkyIntentConnection(http, "tppa");
+    var productionAdapter = UpasSkyJobIntegrationAdapter.ForProductionConnection(connection);
+    var exposure = new UpasSkyMeasurement("production-m", "production-s", DateTimeOffset.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"), UpasSkyMeasurement.Convention, "NORTH", -18, -18);
+    var refused = await productionAdapter.ExecuteAsync(exposure, "production-intent", true, CancellationToken.None);
+    var diagnostics = await transport.ControlAsync(null);
+    if (refused.State != "REFUSED" || refused.JobId != null || refused.MechanicalExecutionComplete || refused.SkyAlignmentVerified || diagnostics.GetProperty("writes").GetInt32() != 0)
+        throw new Exception("Inhibited production connection dispatched or misreported completion.");
+    Console.WriteLine(JsonSerializer.Serialize(new { result = refused, diagnostics, hardwareOperations = 0,
+        path = "actual plugin production seam -> actual async authenticated client -> source-bound inhibited supervisor -> native encoder clock/profile binding" }));
+    return;
+}
 var client = new UpasSkyCorrectionClient(http, "tppa", timeout: TimeSpan.FromSeconds(10), pollInterval: TimeSpan.FromMilliseconds(5));
 var adapter = new UpasSkyJobIntegrationAdapter(client);
 var measurement = new UpasSkyMeasurement("dotnet-measurement", "dotnet-session", "2026-10-01T00:00:01Z", UpasSkyMeasurement.Convention, "NORTH", -18, -18);
@@ -30,12 +44,19 @@ sealed class SyntheticProcessHandler : HttpMessageHandler {
     private readonly SemaphoreSlim gate = new(1, 1);
     private readonly Task<string> errors;
     private bool disposed;
-    public SyntheticProcessHandler(string python, string supervisor, string encoder, string journal) {
+    private readonly bool production;
+    public SyntheticProcessHandler(string python, string supervisor, string encoder, string journal, string? package = null, string? host = null, string? boot = null) {
+        production = package != null;
         if (File.Exists(journal)) throw new ArgumentException("Fresh finite demo journal required.");
         var start = new ProcessStartInfo(python) { UseShellExecute = false, RedirectStandardInput = true,
             RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
-        start.ArgumentList.Add(Path.Combine(supervisor, "tools", "offline_integration_bridge.py"));
+        start.ArgumentList.Add(Path.Combine(supervisor, "tools", production ? "production_candidate_stdio.py" : "offline_integration_bridge.py"));
         start.ArgumentList.Add("--journal"); start.ArgumentList.Add(journal);
+        if (production) {
+            start.ArgumentList.Add("--package"); start.ArgumentList.Add(package!);
+            start.ArgumentList.Add("--host"); start.ArgumentList.Add(host!);
+            start.ArgumentList.Add("--boot"); start.ArgumentList.Add(boot!);
+        }
         start.Environment["PYTHONPATH"] = Path.Combine(supervisor,"src") + Path.PathSeparator + Path.Combine(encoder,"src");
         process = Process.Start(start) ?? throw new Exception("Synthetic bridge failed to start.");
         errors = process.StandardError.ReadToEndAsync();
@@ -55,8 +76,8 @@ sealed class SyntheticProcessHandler : HttpMessageHandler {
         } finally { gate.Release(); }
     }
     public async Task<JsonElement> ControlAsync(string? mode) {
-        using var client = new HttpClient(this, false) { BaseAddress = new Uri("http://offline.invalid") };
-        using var response = await client.PostAsync("/offline/test/control",new StringContent(JsonSerializer.Serialize(new { mode }),Encoding.UTF8,"application/json"));
+        using var client = new HttpClient(this, false) { BaseAddress = new Uri(production ? "http://127.0.0.1" : "http://offline.invalid") };
+        using var response = await client.PostAsync(production ? "/candidate/diagnostics" : "/offline/test/control",new StringContent(JsonSerializer.Serialize(new { mode }),Encoding.UTF8,"application/json"));
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync()); return doc.RootElement.Clone();
     }
     protected override void Dispose(bool disposing) {
@@ -70,3 +91,4 @@ sealed class SyntheticProcessHandler : HttpMessageHandler {
         base.Dispose(disposing);
     }
 }
+
