@@ -740,6 +740,18 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
         /// <param name="token">When a cancel signal is triggered from outside, this token can be used to register to it or check if it is cancelled</param>
         /// <returns></returns>
         public override async Task Execute(IProgress<ApplicationStatus> externalProgress, CancellationToken token) {
+            using var contractARoute = NINA.Plugins.PolarAlignment.Qualification.SupervisorSkyRoute.Requested(Environment.GetEnvironmentVariable)
+                ? NINA.Plugins.PolarAlignment.Qualification.SupervisorSkyRoute.FromEnvironment(Environment.GetEnvironmentVariable)
+                : null;
+            if (contractARoute != null) {
+                if (MeasurementOnlyMode || VerificationOnly || DriftValidationOnly
+                    || PolarAlignmentPlugin.ActiveAlignmentSystemVM is not NINA.Plugins.PolarAlignment.Avalon.UniversalPolarAlignmentVM
+                    || !Properties.Settings.Default.RefractionAdjustment) {
+                    throw new SequenceEntityFailedException("Explicit UPAS automated true-pole route required. No plugin controller fallback.");
+                }
+                // Check before telescope/camera acquisition and legacy UPAS Connect.
+                await contractARoute.RequireReadyBeforeMeasurementAsync(token);
+            }
             ApplyOperationalUpasProfileIfRequested();
             var executionPolicy = PolarAlignmentExecutionPolicy.Create(
                 MeasurementOnlyMode ? false : VerificationOnly,
@@ -748,10 +760,11 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                 !MeasurementOnlyMode
                 && (PolarAlignmentPlugin.ActiveAlignmentSystemVM?.DoAutomatedAdjustments == true
                     || Properties.Settings.Default.DoAutomatedAdjustments);
-            var enforceFastRuntimeBudget = EnforceFiveMinuteRuntimeBudget
+            var enforceFastRuntimeBudget = contractARoute == null && EnforceFiveMinuteRuntimeBudget
                 && automatedAdjustmentsEnabled
                 && executionPolicy.AllowActuatorMovement;
             var operationalMotionProtocolActive = automatedAdjustmentsEnabled
+                && contractARoute == null
                 && executionPolicy.AllowActuatorMovement;
             var operationalTier = TppaOperationalAlignmentTierPolicy.Evaluate(AlignmentTolerance);
             if (automatedAdjustmentsEnabled
@@ -1167,6 +1180,28 @@ namespace NINA.Plugins.PolarAlignment.Instructions {
                         determination,
                         executionPolicy.AllowActuatorMovement && automatedAdjustmentsEnabled,
                         "initial fresh determination");
+                    if (contractARoute != null) {
+                        // This branch exits before local actuator rebase/connect/move.
+                        // Coordinates retain the original exposure midpoint stamped in SolveCore.
+                        var exposureUtc = new[] { solve1, solve2, solve3 }
+                            .Select(s => s.Coordinates.DateTime.UtcNow).Min();
+                        if (exposureUtc.Kind != DateTimeKind.Utc || exposureUtc > DateTime.UtcNow)
+                            throw new SequenceEntityFailedException("Original exposure UTC is unavailable or inconsistent.");
+                        var measurement = new NINA.Plugins.PolarAlignment.Qualification.UpasSkyMeasurement(
+                            Guid.NewGuid().ToString("D"), Guid.NewGuid().ToString("D"), exposureUtc.ToString("O"),
+                            NINA.Plugins.PolarAlignment.Qualification.UpasSkyMeasurement.Convention,
+                            Latitude.Degree >= 0 ? "NORTH" : "SOUTH",
+                            determination.InitialMountAxisAzimuthError.ArcMinutes,
+                            determination.InitialMountAxisAltitudeError.ArcMinutes);
+                        var result = await contractARoute.ExecuteFreshAsync(measurement, Guid.NewGuid().ToString("D"),
+                            TPAPAVM.AutomatedAdjustmentGeometryQualification == true, localCTS.Token);
+                        Logger.Info($"TPPA_CONTRACT_A terminal={result.State}; jobId={result.JobId}; reason={result.Reason}; skyVerified=false");
+                        if (!result.MechanicalExecutionComplete)
+                            throw new SequenceEntityFailedException($"UPAS supervisor returned {result.State}: {result.Reason}. No local actuator fallback.");
+                        // One fresh intent is the bounded route deliverable. Mechanical
+                        // completion alone is never reported as final sky alignment.
+                        return;
+                    }
                     if (executionPolicy.AllowActuatorConfiguration && TPAPAVM.AutomatedAdjustmentRequiresFreshMeasurementFeedback) {
                         TPAPAVM.RebaseAutomatedAdjustmentToFreshDetermination();
                     }

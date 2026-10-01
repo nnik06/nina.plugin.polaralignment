@@ -1,3 +1,10 @@
+## Version 2.2.6.148 (explicit supervisor route candidate)
+
+- Add default-off Contract A route selection to the actual NINA sequence entry.
+- Check authenticated supervisor readiness before acquisition; pass original exposure UTC and fresh sky geometry asynchronously.
+- Exit before plugin controller rebase/connect/move and refuse without fallback. One intent completion is mechanical evidence, not final sky alignment.
+- Sky conversion and stable measurement/reference lifecycle remain activation requirements; no live sky qualification is claimed.
+
 ## Version 2.2.6.147 (production connection candidate; activation inhibited)
 
 - Bind the async sky-intent adapter to an authenticated HTTPS or local loopback Contract A endpoint.
